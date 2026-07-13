@@ -23,10 +23,8 @@ pnpm install --frozen-lockfile
 pnpm --filter @dha/api prisma:generate
 pnpm --filter @dha/api prisma:deploy
 
-# 4. Сборка всех веб-приложений
-pnpm --filter @dha/api build
-pnpm --filter @dha/web build
-pnpm --filter @dha/admin build
+# 4. Сборка (turbo соблюдает порядок: пакеты → apps)
+pnpm build
 
 # 5. Перезапуск процессов (startOrReload — поднимет, если ещё не запущены)
 pm2 startOrReload infra/deploy/ecosystem.config.js --update-env
