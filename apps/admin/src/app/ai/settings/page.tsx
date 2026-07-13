@@ -1,0 +1,174 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Button, Card } from '@dha/ui';
+import { adminApi, type AiChannel, type TelegramAdminConfig } from '../../../lib/api';
+import { useRequireAdmin } from '../../../lib/use-admin';
+import { useEsc } from '../../../lib/use-esc';
+
+const fieldCls = 'w-full rounded-md border border-ink/20 bg-white px-3 py-2 text-sm';
+const labelCls = 'mb-1 block text-xs font-medium text-dark-gray';
+
+type Tab = 'integrations';
+const TABS: { id: Tab; label: string }[] = [{ id: 'integrations', label: 'Интеграции' }];
+
+export default function AiSettingsPage() {
+  const ready = useRequireAdmin();
+  const [tab, setTab] = useState<Tab>('integrations');
+  if (!ready) return <main className="px-8 py-12 text-dark-gray">Загрузка…</main>;
+  return (
+    <main className="px-8 py-8">
+      <h1 className="mb-1 text-3xl font-light text-ink">AI и коммуникации · настройки</h1>
+      <p className="mb-6 text-sm text-dark-gray">
+        Каналы, через которые гость общается с AI-агентом и операторами. Подключение — вводом реквизитов аккаунта; часть каналов работает из коробки.
+      </p>
+
+      <div className="mb-6 flex flex-wrap gap-1 border-b border-ink/10">
+        {TABS.map((t) => (
+          <button key={t.id} type="button" onClick={() => setTab(t.id)}
+            className={`-mb-px border-b-2 px-4 py-2.5 text-sm transition ${tab === t.id ? 'border-ink font-medium text-ink' : 'border-transparent text-dark-gray hover:text-ink'}`}>{t.label}</button>
+        ))}
+      </div>
+
+      {tab === 'integrations' ? <IntegrationsTab /> : null}
+    </main>
+  );
+}
+
+// ─── Интеграции (каналы) ───
+function IntegrationsTab() {
+  const [items, setItems] = useState<AiChannel[]>([]);
+  const [configuring, setConfiguring] = useState<AiChannel['id'] | null>(null);
+  const [openSetup, setOpenSetup] = useState<string | null>(null);
+  const load = () => adminApi.aiChannels().then(setItems).catch(() => setItems([]));
+  useEffect(() => { void load(); }, []);
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      {items.map((i) => (
+        <Card key={i.id} className="p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-lg font-medium text-ink">{i.name}</p>
+                {i.available
+                  ? <span className={`rounded-full px-2 py-0.5 text-xs ${i.connected ? 'bg-emerald-100 text-emerald-800' : i.needsSetup ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                      {i.connected ? 'Подключено' : 'Не настроено'}
+                    </span>
+                  : <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs text-dark-gray">Скоро (v2)</span>}
+                {i.available && !i.needsSetup ? <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-800">Из коробки</span> : null}
+              </div>
+              <p className="mt-1 text-sm text-dark-gray">{i.description}</p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {i.id === 'telegram' && i.available ? (
+                  <Button variant="secondary" onClick={() => setConfiguring('telegram')}>Настроить</Button>
+                ) : null}
+                {i.setup ? (
+                  <Button variant="secondary" onClick={() => setOpenSetup(openSetup === i.id ? null : i.id)}>
+                    {openSetup === i.id ? 'Скрыть инструкцию' : 'Инструкция'}
+                  </Button>
+                ) : null}
+              </div>
+
+              {openSetup === i.id && i.setup ? (
+                <pre className="mt-3 whitespace-pre-wrap rounded-md bg-ink/[0.03] px-3 py-2 text-xs leading-relaxed text-dark-gray">{i.setup}</pre>
+              ) : null}
+            </div>
+          </div>
+          {!i.available ? <p className="mt-3 rounded-md bg-ink/[0.03] px-3 py-2 text-xs text-dark-gray">Канал появится на следующем этапе. Здесь будут поля подключения аккаунта.</p> : null}
+        </Card>
+      ))}
+      {items.length === 0 ? <Card className="p-6 text-sm text-dark-gray">Загрузка каналов…</Card> : null}
+      {configuring === 'telegram' ? <TelegramSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
+    </div>
+  );
+}
+
+// ─── Настройка Telegram-бота ───
+function TelegramSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  useEsc(onClose);
+  const [cfg, setCfg] = useState<TelegramAdminConfig | null>(null);
+  const [token, setToken] = useState('');
+  const [secret, setSecret] = useState('');
+  const [username, setUsername] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  useEffect(() => {
+    void adminApi.aiTelegramConfig().then((c) => { setCfg(c); setUsername(c.botUsername); }).catch(() => setErr('Не удалось загрузить настройки'));
+  }, []);
+
+  const save = async () => {
+    setBusy(true); setErr('');
+    try {
+      await adminApi.aiSaveTelegram({
+        botToken: token || undefined,
+        botUsername: username,
+        webhookSecret: secret || undefined,
+      });
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка сохранения'); } finally { setBusy(false); }
+  };
+
+  const test = async () => {
+    setTesting(true); setErr(''); setTestResult(null);
+    try {
+      const r = await adminApi.aiTestTelegram(token || undefined);
+      setTestResult(r);
+    } catch (e) { setTestResult({ ok: false, message: e instanceof Error ? e.message : 'Ошибка проверки' }); } finally { setTesting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <Card className="max-h-[90vh] w-full max-w-lg overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-xl font-light text-ink">Telegram-бот</p>
+          {cfg ? <span className={`rounded-full px-2 py-0.5 text-xs ${cfg.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{cfg.connected ? 'Подключено' : 'Не настроено'}</span> : null}
+        </div>
+        <p className="mb-5 text-sm text-dark-gray">Токен выдаёт @BotFather при создании бота. После сохранения нажмите «Проверить подключение», затем один раз зарегистрируйте вебхук (см. инструкцию внизу).</p>
+
+        {!cfg ? <p className="text-sm text-dark-gray">Загрузка…</p> : (
+          <>
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>Токен бота (@BotFather)</label>
+                <input type="password" value={token} onChange={(e) => setToken(e.target.value)} className={fieldCls} autoComplete="new-password"
+                  placeholder={cfg.tokenSet ? '•••••••• (задан — оставьте пустым, чтобы не менять)' : 'например 123456789:AA...'} />
+                <p className="mt-1 text-xs text-dark-gray">Хранится в зашифрованном виде и обратно не показывается.</p>
+              </div>
+              <div>
+                <label className={labelCls}>Username бота (без @)</label>
+                <input value={username} onChange={(e) => setUsername(e.target.value)} className={fieldCls} placeholder="dha_bot" autoComplete="off" />
+                <p className="mt-1 text-xs text-dark-gray">По нему собирается ссылка для гостей: t.me/&lt;username&gt;.{cfg.botLink ? ` Текущая: ${cfg.botLink}` : ''}</p>
+              </div>
+              <div>
+                <label className={labelCls}>Секрет вебхука</label>
+                <input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} className={fieldCls} autoComplete="new-password"
+                  placeholder={cfg.webhookSecretSet ? '•••••••• (задан — оставьте пустым, чтобы не менять)' : 'любая длинная строка'} />
+                <p className="mt-1 text-xs text-dark-gray">Проверяется в заголовке входящих вебхуков (X-Telegram-Bot-Api-Secret-Token).</p>
+              </div>
+            </div>
+
+            {testResult ? <p className={`mt-4 rounded-md px-3 py-2 text-sm ${testResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{testResult.ok ? '✓ ' : '✕ '}{testResult.message}</p> : null}
+            {err ? <p className="mt-3 text-sm text-red-600">{err}</p> : null}
+
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              <Button onClick={save} disabled={busy || testing}>{busy ? 'Сохранение…' : 'Сохранить'}</Button>
+              <Button variant="secondary" onClick={test} disabled={busy || testing}>{testing ? 'Проверка…' : 'Проверить подключение'}</Button>
+              <Button variant="secondary" onClick={onClose} disabled={busy || testing}>Отмена</Button>
+            </div>
+
+            <div className="mt-5 rounded-md bg-ink/[0.03] px-3 py-3 text-xs leading-relaxed text-dark-gray">
+              <p className="mb-1 font-medium text-ink">Регистрация вебхука (один раз)</p>
+              <p>После сохранения токена подставьте свой публичный адрес API и откройте ссылку в браузере:</p>
+              <code className="mt-1 block break-all rounded bg-white px-2 py-1">https://api.telegram.org/bot&lt;ТОКЕН&gt;/setWebhook?url=&lt;ПУБЛИЧНЫЙ_URL&gt;/api/ai/telegram/webhook&amp;secret_token=&lt;СЕКРЕТ&gt;</code>
+              <p className="mt-1">Проверка подключения использует метод getMe и не трогает вебхук.</p>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}

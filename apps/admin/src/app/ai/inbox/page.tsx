@@ -1,0 +1,362 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Card } from '@dha/ui';
+import {
+  adminApi,
+  type InboxConversationRow,
+  type InboxOperator,
+  type InboxThread,
+} from '../../../lib/api';
+import { useAdminMe, useRequireAdmin } from '../../../lib/use-admin';
+
+const CHANNEL_RU: Record<string, string> = {
+  WEB: 'Сайт',
+  APP: 'Приложение',
+  TELEGRAM: 'Telegram',
+  ADMIN: 'Админка',
+};
+const shortId = (id: string) => id.slice(0, 8);
+const guestLabel = (name: string | null, id: string | null) =>
+  name || (id ? `гость ${shortId(id)}` : 'аноним');
+const operatorLabel = (name: string | null, id: string | null) =>
+  name || (id ? `оператор ${shortId(id)}` : '');
+
+function timeAgo(iso: string): string {
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'только что';
+  if (s < 3600) return `${Math.floor(s / 60)} мин назад`;
+  if (s < 86400) return `${Math.floor(s / 3600)} ч назад`;
+  return `${Math.floor(s / 86400)} дн назад`;
+}
+
+export default function InboxPage() {
+  const ready = useRequireAdmin();
+  const me = useAdminMe();
+  const [list, setList] = useState<InboxConversationRow[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [thread, setThread] = useState<InboxThread | null>(null);
+  const [reply, setReply] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [operators, setOperators] = useState<InboxOperator[]>([]);
+  const [showDelegate, setShowDelegate] = useState(false);
+  const [delegateTo, setDelegateTo] = useState('');
+  const [delegateNote, setDelegateNote] = useState('');
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const loadList = useCallback(async () => {
+    try {
+      const rows = await adminApi.inboxList();
+      setList(rows);
+      setSelected((cur) => cur ?? rows[0]?.id ?? null); // авто-выбор первого, если ничего не выбрано
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Не удалось загрузить очередь');
+    }
+  }, []);
+
+  const loadThread = useCallback(async (id: string) => {
+    try {
+      setThread(await adminApi.inboxThread(id));
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Не удалось загрузить диалог');
+    }
+  }, []);
+
+  // Очередь: начальная загрузка + опрос каждые 10 c (появляются новые эскалации).
+  useEffect(() => {
+    if (!ready) return;
+    void loadList();
+    const t = setInterval(() => void loadList(), 10_000);
+    return () => clearInterval(t);
+  }, [ready, loadList]);
+
+  // Список сотрудников для делегирования (загружаем один раз).
+  useEffect(() => {
+    if (ready) adminApi.inboxOperators().then(setOperators).catch(() => undefined);
+  }, [ready]);
+
+  // Выбранный диалог: опрос каждые 5 c (гость может дописывать, пока оператор думает).
+  useEffect(() => {
+    setShowDelegate(false);
+    if (!selected) {
+      setThread(null);
+      return;
+    }
+    void loadThread(selected);
+    const t = setInterval(() => void loadThread(selected), 5_000);
+    return () => clearInterval(t);
+  }, [selected, loadThread]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [thread?.messages.length]);
+
+  async function send() {
+    const text = reply.trim();
+    if (!text || !selected || busy) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminApi.inboxReply(selected, text);
+      setReply('');
+      await loadThread(selected);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Не удалось отправить');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function assign() {
+    if (!selected || busy) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminApi.inboxAssign(selected);
+      await Promise.all([loadThread(selected), loadList()]);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function close() {
+    if (!selected || busy) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminApi.inboxClose(selected);
+      setSelected(null);
+      setThread(null);
+      await loadList();
+      setNote('Диалог закрыт.');
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function delegate() {
+    if (!selected || !delegateTo || busy) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminApi.inboxDelegate(selected, delegateTo, delegateNote.trim() || undefined);
+      setShowDelegate(false);
+      setDelegateTo('');
+      setDelegateNote('');
+      await Promise.all([loadThread(selected), loadList()]);
+      setNote('Диалог передан.');
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Не удалось передать');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!ready) return <main className="px-8 py-12 text-dark-gray">Загрузка…</main>;
+
+  const conv = thread?.conversation;
+  const mineAssigned = Boolean(conv?.operatorId && me && conv.operatorId === me.id);
+
+  return (
+    <main className="px-8 py-8">
+      <div className="mb-6">
+        <h1 className="text-3xl font-light text-ink">Лента эскалаций</h1>
+        <p className="mt-1 text-sm text-dark-gray">
+          Диалоги, переданные AI-администратором человеку. Ответ уходит гостю в его канал (§4.7).
+        </p>
+      </div>
+
+      {note && (
+        <div className="mb-4 rounded-lg border border-primary-100 bg-primary-50 px-4 py-2 text-sm text-primary-700">
+          {note}
+        </div>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+        {/* Очередь */}
+        <Card className="p-2">
+          <p className="px-2 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Очередь · {list.length}
+          </p>
+          {list.length === 0 ? (
+            <p className="px-2 py-6 text-center text-sm text-slate-400">Нет открытых эскалаций 🎉</p>
+          ) : (
+            <div className="space-y-1">
+              {list.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => setSelected(c.id)}
+                  className={`w-full rounded-lg px-3 py-2 text-left transition ${
+                    selected === c.id ? 'bg-primary-50 ring-1 ring-primary-100' : 'hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-ink">Диалог {shortId(c.id)}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
+                      {CHANNEL_RU[c.channel] ?? c.channel}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between text-[11px] text-slate-400">
+                    <span>{guestLabel(c.guestName, c.guestId)}</span>
+                    <span>{timeAgo(c.updatedAt)}</span>
+                  </div>
+                  {c.operatorId && (
+                    <span className="mt-1 inline-block rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+                      взят
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Диалог */}
+        <Card className="flex h-[70vh] flex-col p-0">
+          {!conv ? (
+            <div className="grid flex-1 place-items-center text-sm text-slate-400">Выберите диалог слева</div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between border-b border-ink/[0.06] px-5 py-3">
+                <div>
+                  <p className="text-sm font-medium text-ink">
+                    Диалог {shortId(conv.id)} · {CHANNEL_RU[conv.channel] ?? conv.channel}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {guestLabel(conv.guestName, conv.guestId)}
+                    {conv.operatorId
+                      ? ` · ${mineAssigned ? 'у вас' : operatorLabel(conv.operatorName, conv.operatorId)}`
+                      : ' · не взят'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!mineAssigned && (
+                    <button
+                      onClick={() => void assign()}
+                      disabled={busy}
+                      className="rounded-lg border border-ink/10 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Взять себе
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowDelegate((v) => !v)}
+                    disabled={busy}
+                    className="rounded-lg border border-ink/10 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Передать
+                  </button>
+                  <button
+                    onClick={() => void close()}
+                    disabled={busy}
+                    className="rounded-lg border border-ink/10 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                  >
+                    Закрыть
+                  </button>
+                </div>
+              </div>
+
+              {showDelegate && (
+                <div className="flex flex-wrap items-center gap-2 border-b border-ink/[0.06] bg-slate-50/60 px-5 py-3">
+                  <select
+                    value={delegateTo}
+                    onChange={(e) => setDelegateTo(e.target.value)}
+                    className="rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+                  >
+                    <option value="">Кому передать…</option>
+                    {operators
+                      .filter((o) => o.id !== me?.id)
+                      .map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name} · {o.role}
+                        </option>
+                      ))}
+                  </select>
+                  <input
+                    value={delegateNote}
+                    onChange={(e) => setDelegateNote(e.target.value)}
+                    placeholder="Комментарий для коллеги (необязательно)"
+                    className="min-w-0 flex-1 rounded-lg border border-ink/15 px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+                  />
+                  <button
+                    onClick={() => void delegate()}
+                    disabled={busy || !delegateTo}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+                  >
+                    Передать
+                  </button>
+                  <button
+                    onClick={() => setShowDelegate(false)}
+                    className="rounded-lg px-2 py-1.5 text-sm text-slate-500 transition hover:text-ink"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              )}
+
+              <div className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
+                {thread?.messages.map((m, i) =>
+                  m.role === 'system' ? (
+                    <div key={i} className="flex justify-center">
+                      <div className="rounded-full bg-slate-100 px-3 py-1 text-center text-[11px] text-slate-500">
+                        {m.text}
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
+                      <div className="max-w-[75%]">
+                        {m.role === 'ai' && (
+                          <div className="mb-0.5 text-right text-[10px] text-slate-400">AI</div>
+                        )}
+                        <div
+                          className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
+                            m.role === 'user'
+                              ? 'bg-slate-100 text-ink'
+                              : m.role === 'staff'
+                                ? 'bg-primary text-white'
+                                : 'border border-ink/10 bg-white text-slate-500'
+                          }`}
+                        >
+                          {m.text}
+                        </div>
+                      </div>
+                    </div>
+                  ),
+                )}
+                <div ref={endRef} />
+              </div>
+
+              <div className="flex items-end gap-2 border-t border-ink/[0.06] px-4 py-3">
+                <textarea
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void send();
+                    }
+                  }}
+                  rows={1}
+                  placeholder="Ответ гостю… (Enter — отправить, Shift+Enter — перенос)"
+                  className="max-h-32 flex-1 resize-none rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                />
+                <button
+                  onClick={() => void send()}
+                  disabled={busy || !reply.trim()}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+                >
+                  Отправить
+                </button>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+    </main>
+  );
+}

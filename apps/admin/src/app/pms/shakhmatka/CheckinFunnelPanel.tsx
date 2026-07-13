@@ -1,0 +1,146 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { adminApi, type CheckinFunnelPanel as PanelData } from '../../../lib/api';
+
+/**
+ * Панель «Заселение» в окне брони (CHECK-IN-TZ §1/§11, спринт 1 — read-only).
+ * Вторая ось статусов: стадия воронки самозаезда внутри CONFIRMED + цветовая
+ * индикация шлюзов (контакт/регистрация/оплата/номер/окно) и журнал ключей.
+ */
+
+const STAGE_META: Record<PanelData['stage'], { label: string; badge: string }> = {
+  AWAITING: { label: 'Ожидание гостя', badge: 'bg-slate-100 text-slate-600' },
+  IDENTIFIED: { label: 'Контакт есть', badge: 'bg-indigo-50 text-indigo-600' },
+  REGISTERED: { label: 'Регистрация пройдена', badge: 'bg-indigo-100 text-indigo-700' },
+  PAID: { label: 'Оплачено', badge: 'bg-violet-100 text-violet-700' },
+  READY: { label: 'Готов к заезду', badge: 'bg-emerald-100 text-emerald-700' },
+  KEY_ISSUED: { label: 'Ключ выдан', badge: 'bg-emerald-500 text-white' },
+  COMPLETED: { label: 'Воронка завершена', badge: 'bg-sky-100 text-sky-700' },
+  NO_SHOW: { label: 'Незаезд', badge: 'bg-rose-100 text-rose-700' },
+  CANCELLED: { label: 'Бронь отменена', badge: 'bg-rose-100 text-rose-700' },
+};
+
+/** Порядок стадий для степпера (терминальные не показываем в шкале). */
+const STEPPER: PanelData['stage'][] = ['AWAITING', 'IDENTIFIED', 'REGISTERED', 'PAID', 'READY', 'KEY_ISSUED'];
+
+const GATE_LABEL: Record<string, string> = {
+  contact_verified: 'Контакт гостя',
+  registration_approved: 'Онлайн-регистрация',
+  payment_paid: 'Оплата/депозит',
+  room_assigned: 'Номер назначен',
+  time_window_open: 'Окно выдачи ключа',
+};
+
+const KEY_STATUS_LABEL: Record<string, string> = {
+  ISSUING: 'создаётся',
+  ACTIVE: 'активен',
+  REVOKED: 'отозван',
+  FAILED: 'ошибка',
+};
+
+const fmtDT = (iso: string) =>
+  new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+export function CheckinFunnelPanel({ bookingId, bookingStatus }: { bookingId: string; bookingStatus: string }) {
+  const [data, setData] = useState<PanelData | null>(null);
+  const [err, setErr] = useState(false);
+  const [linkMsg, setLinkMsg] = useState('');
+
+  /** Выпустить magic-link гостевого портала и скопировать в буфер (CHECK-IN-TZ §4). */
+  const copyLink = () => {
+    setLinkMsg('');
+    void adminApi.pmsCheckinLink(bookingId)
+      .then(async ({ url }) => {
+        try { await navigator.clipboard.writeText(url); setLinkMsg('Ссылка скопирована'); }
+        catch { setLinkMsg(url); }
+      })
+      .catch(() => setLinkMsg('Не удалось выпустить ссылку'));
+  };
+
+  useEffect(() => {
+    let alive = true;
+    adminApi.pmsCheckinPanel(bookingId)
+      .then((d) => { if (alive) { setData(d); setErr(false); } })
+      .catch(() => { if (alive) setErr(true); });
+    return () => { alive = false; };
+    // Пересчитываем при смене статуса шахматки (заезд/выезд меняют стадию).
+  }, [bookingId, bookingStatus]);
+
+  if (err) return null; // нет права/сети — панель просто не показываем
+  if (!data) {
+    return (
+      <div className="rounded-xl border border-ink/10 p-4">
+        <p className="text-xs uppercase tracking-wide text-dark-gray">Заселение</p>
+        <p className="mt-2 text-sm text-dark-gray">Загрузка…</p>
+      </div>
+    );
+  }
+
+  const sm = STAGE_META[data.stage];
+  const stepIdx = STEPPER.indexOf(data.stage);
+  const terminal = stepIdx === -1;
+
+  return (
+    <div className="rounded-xl border border-ink/10 p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-xs uppercase tracking-wide text-dark-gray">Заселение</p>
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${sm.badge}`}>{sm.label}</span>
+      </div>
+
+      {/* Степпер воронки */}
+      {!terminal ? (
+        <div className="mb-3 flex items-center gap-1">
+          {STEPPER.map((s, i) => (
+            <div key={s} title={STAGE_META[s].label}
+              className={`h-1.5 flex-1 rounded-full ${i <= stepIdx ? 'bg-indigo-500' : 'bg-ink/10'}`} />
+          ))}
+        </div>
+      ) : null}
+
+      {/* Шлюзы */}
+      <ul className="space-y-1.5">
+        {data.gates.map((g) => (
+          <li key={g.key} className="flex items-start gap-2 text-sm">
+            <span className={`mt-0.5 inline-flex h-4 w-4 flex-none items-center justify-center rounded-full text-[10px] font-bold ${g.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'}`}>
+              {g.ok ? '✓' : '✕'}
+            </span>
+            <span className="min-w-0">
+              <span className={g.ok ? 'text-ink' : 'text-dark-gray'}>{GATE_LABEL[g.key] ?? g.key}</span>
+              {!g.ok && g.reason ? <span className="block text-xs text-rose-600/80">{g.reason}</span> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {/* Окно ключа + номер + ссылка заселения */}
+      <div className="mt-3 space-y-0.5 border-t border-ink/10 pt-2 text-xs text-dark-gray">
+        <p>Окно ключа: {fmtDT(data.window.start)} — {fmtDT(data.window.end)}</p>
+        <p>Номер: {data.roomName ?? 'не назначен'}</p>
+        <div className="pt-1">
+          <button type="button" onClick={copyLink} className="rounded-md border border-ink/20 px-2 py-1 text-xs text-ink hover:bg-ink/5">
+            🔗 Ссылка заселения (портал)
+          </button>
+          {linkMsg ? <p className="mt-1 break-all text-[11px] text-indigo-600">{linkMsg}</p> : null}
+        </div>
+      </div>
+
+      {/* Журнал ключей */}
+      {data.keys.length > 0 ? (
+        <div className="mt-2 border-t border-ink/10 pt-2">
+          <p className="mb-1 text-xs uppercase tracking-wide text-dark-gray">Цифровые ключи</p>
+          <ul className="space-y-0.5 text-xs">
+            {data.keys.map((k, i) => (
+              <li key={i} className="flex justify-between gap-2">
+                <span className="truncate text-ink">{k.doorName ?? 'Дверь'}</span>
+                <span className={k.status === 'ACTIVE' ? 'text-emerald-600' : k.status === 'FAILED' ? 'text-rose-600' : 'text-dark-gray'}>
+                  {KEY_STATUS_LABEL[k.status] ?? k.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}

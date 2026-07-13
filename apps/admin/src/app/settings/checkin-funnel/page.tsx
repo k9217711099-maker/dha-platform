@@ -1,0 +1,353 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import {
+  adminApi,
+  type CheckinFunnel,
+  type FunnelDictionary,
+  type FunnelStageConfig,
+  type FunnelStagePatch,
+  type PmsProperty,
+} from '../../../lib/api';
+import { useRequireAdmin } from '../../../lib/use-admin';
+
+const fieldCls = 'w-full rounded-md border border-ink/20 bg-white px-3 py-2 text-sm';
+
+/**
+ * Конструктор воронки заселения (CHECK-IN-TZ §2.3): этапы и условия редактируются
+ * данными — порядок, вкл/выкл, условия-шлюзы из словаря, каналы коммуникации,
+ * тексты «как это работает» для гостя и заметки сотруднику.
+ */
+export default function CheckinFunnelPage() {
+  const ready = useRequireAdmin();
+  const [funnels, setFunnels] = useState<CheckinFunnel[]>([]);
+  const [dict, setDict] = useState<FunnelDictionary | null>(null);
+  const [properties, setProperties] = useState<PmsProperty[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [err, setErr] = useState('');
+
+  const load = () =>
+    adminApi.funnels().then((fs) => {
+      setFunnels(fs);
+      setSelectedId((cur) => cur ?? fs[0]?.id ?? null);
+    }).catch((e) => setErr(e instanceof Error ? e.message : 'Ошибка загрузки'));
+
+  useEffect(() => {
+    if (!ready) return;
+    void load();
+    void adminApi.funnelDictionary().then(setDict).catch(() => undefined);
+    void adminApi.pmsProperties().then(setProperties).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  const selected = funnels.find((f) => f.id === selectedId) ?? null;
+  const applyUpdated = (f: CheckinFunnel) => setFunnels((prev) => prev.map((x) => (x.id === f.id ? f : x)));
+
+  if (!ready) return <main className="px-8 py-12 text-dark-gray">Загрузка…</main>;
+
+  return (
+    <main className="px-8 py-8">
+      <h1 className="mb-1 text-3xl font-light text-ink">Заселение · Конструктор воронки</h1>
+      <p className="mb-6 max-w-3xl text-sm text-dark-gray">
+        Этапы и условия автоматизированного заселения — от брони до открытия замка. Одна воронка на сеть
+        (default) + переопределения по объектам. Условия выбираются из словаря шлюзов; каналы — из
+        подключённых средств связи. Тексты «как это работает» гость видит на каждом шаге.
+      </p>
+      {err ? <p className="mb-4 text-sm text-red-600">{err}</p> : null}
+
+      <div className="grid gap-6 lg:grid-cols-4">
+        {/* Список воронок */}
+        <div className="space-y-3">
+          {funnels.map((f) => (
+            <button key={f.id} type="button" onClick={() => setSelectedId(f.id)}
+              className={`block w-full rounded-xl border p-3 text-left transition ${f.id === selectedId ? 'border-indigo-400 bg-indigo-50/60' : 'border-ink/10 hover:border-ink/25'}`}>
+              <p className="text-sm font-medium text-ink">{f.name}</p>
+              <p className="mt-0.5 text-xs text-dark-gray">
+                {f.isDefault ? 'По умолчанию (сеть)' : f.propertyId ? `Объект: ${properties.find((p) => p.id === f.propertyId)?.name ?? '…'}` : 'Сетевая'}
+                {!f.active ? ' · выключена' : ''}
+              </p>
+            </button>
+          ))}
+          <NewFunnelForm properties={properties} onCreated={(f) => { setFunnels((p) => [...p, f]); setSelectedId(f.id); }} />
+        </div>
+
+        {/* Редактор выбранной воронки */}
+        <div className="lg:col-span-3">
+          {selected && dict ? (
+            <FunnelEditor funnel={selected} dict={dict} properties={properties}
+              onChanged={applyUpdated}
+              onDeleted={() => { setFunnels((p) => p.filter((x) => x.id !== selected.id)); setSelectedId(null); void load(); }} />
+          ) : (
+            <p className="text-sm text-dark-gray">Выберите воронку слева.</p>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function NewFunnelForm({ properties, onCreated }: { properties: PmsProperty[]; onCreated: (f: CheckinFunnel) => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [propertyId, setPropertyId] = useState('');
+  const [busy, setBusy] = useState(false);
+  if (!open) {
+    return <button type="button" onClick={() => setOpen(true)} className="w-full rounded-xl border border-dashed border-ink/25 p-3 text-sm text-dark-gray hover:border-ink/40 hover:text-ink">+ Новая воронка</button>;
+  }
+  const create = () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    void adminApi.createFunnel({ name: name.trim(), propertyId: propertyId || undefined })
+      .then((f) => { onCreated(f); setOpen(false); setName(''); setPropertyId(''); })
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="space-y-2 rounded-xl border border-ink/10 p-3">
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Название" className={fieldCls} />
+      <select value={propertyId} onChange={(e) => setPropertyId(e.target.value)} className={fieldCls}>
+        <option value="">Вся сеть</option>
+        {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+      <div className="flex gap-2">
+        <button type="button" onClick={create} disabled={busy || !name.trim()} className="rounded-md bg-ink px-3 py-1.5 text-xs text-beige disabled:opacity-40">Создать</button>
+        <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-ink/20 px-3 py-1.5 text-xs text-ink">Отмена</button>
+      </div>
+    </div>
+  );
+}
+
+function FunnelEditor({ funnel, dict, properties, onChanged, onDeleted }: {
+  funnel: CheckinFunnel; dict: FunnelDictionary; properties: PmsProperty[];
+  onChanged: (f: CheckinFunnel) => void; onDeleted: () => void;
+}) {
+  const [name, setName] = useState(funnel.name);
+  const [description, setDescription] = useState(funnel.description ?? '');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => { setName(funnel.name); setDescription(funnel.description ?? ''); setErr(''); }, [funnel.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const run = async (fn: () => Promise<CheckinFunnel>) => {
+    setBusy(true); setErr('');
+    try { onChanged(await fn()); } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка'); } finally { setBusy(false); }
+  };
+
+  const saveMeta = () => run(() => adminApi.updateFunnel(funnel.id, {
+    name, description: description || undefined, active: funnel.active, propertyId: funnel.propertyId ?? undefined,
+  }));
+
+  const move = (idx: number, dir: -1 | 1) => {
+    const ids = funnel.stages.map((s) => s.id);
+    const j = idx + dir;
+    if (j < 0 || j >= ids.length) return;
+    const [a, b] = [ids[idx]!, ids[j]!];
+    ids[idx] = b; ids[j] = a;
+    void run(() => adminApi.reorderFunnelStages(funnel.id, ids));
+  };
+
+  /** Patch этапа; при отказе по защищённому шлюзу — confirm + force (§2.3). */
+  const patchStage = async (stageId: string, body: FunnelStagePatch) => {
+    setBusy(true); setErr('');
+    try {
+      onChanged(await adminApi.updateFunnelStage(funnel.id, stageId, body));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Ошибка';
+      if (msg.includes('force') && confirm(`${msg}\n\nОтключить всё равно?`)) {
+        try { onChanged(await adminApi.updateFunnelStage(funnel.id, stageId, { ...body, force: true })); }
+        catch (e2) { setErr(e2 instanceof Error ? e2.message : 'Ошибка'); }
+      } else setErr(msg);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Свойства воронки */}
+      <div className="rounded-xl border border-ink/10 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-xs uppercase tracking-wide text-dark-gray">Воронка</p>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 text-xs text-dark-gray">
+              <input type="checkbox" checked={funnel.active}
+                onChange={(e) => run(() => adminApi.updateFunnel(funnel.id, { name, description: description || undefined, active: e.target.checked, propertyId: funnel.propertyId ?? undefined }))} />
+              Активна
+            </label>
+            {!funnel.isDefault ? (
+              <button type="button" disabled={busy}
+                onClick={() => { if (confirm('Удалить воронку?')) void adminApi.deleteFunnel(funnel.id).then(onDeleted).catch((e) => setErr(e instanceof Error ? e.message : 'Ошибка')); }}
+                className="text-xs text-rose-600 hover:underline">Удалить</button>
+            ) : null}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} className={fieldCls} />
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={fieldCls}
+            placeholder="Как устроено заселение (markdown, видно сотрудникам)…" />
+          {funnel.propertyId ? <p className="text-xs text-dark-gray">Переопределение для: {properties.find((p) => p.id === funnel.propertyId)?.name ?? funnel.propertyId}</p> : null}
+          {name !== funnel.name || description !== (funnel.description ?? '') ? (
+            <button type="button" onClick={saveMeta} disabled={busy} className="rounded-md bg-ink px-3 py-1.5 text-xs text-beige disabled:opacity-40">Сохранить</button>
+          ) : null}
+        </div>
+        {err ? <p className="mt-2 text-sm text-rose-600">{err}</p> : null}
+      </div>
+
+      {/* Этапы */}
+      {funnel.stages.map((s, i) => (
+        <StageCard key={s.id} stage={s} dict={dict} busy={busy}
+          first={i === 0} last={i === funnel.stages.length - 1}
+          onMove={(dir) => move(i, dir)}
+          onPatch={(body) => void patchStage(s.id, body)}
+          onDelete={s.key === 'custom' ? () => { if (confirm('Удалить этап?')) void run(() => adminApi.deleteFunnelStage(funnel.id, s.id)); } : undefined} />
+      ))}
+
+      <button type="button" disabled={busy}
+        onClick={() => void run(() => adminApi.createFunnelStage(funnel.id, { key: 'custom', title: 'Новый этап', required: false, conditions: [], channels: [] }))}
+        className="w-full rounded-xl border border-dashed border-ink/25 p-3 text-sm text-dark-gray hover:border-ink/40 hover:text-ink">
+        + Добавить свой этап
+      </button>
+    </div>
+  );
+}
+
+function StageCard({ stage, dict, busy, first, last, onMove, onPatch, onDelete }: {
+  stage: FunnelStageConfig; dict: FunnelDictionary; busy: boolean; first: boolean; last: boolean;
+  onMove: (dir: -1 | 1) => void; onPatch: (body: FunnelStagePatch) => void; onDelete?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(stage.title);
+  const [guestDescription, setGuestDescription] = useState(stage.guestDescription ?? '');
+  const [staffNote, setStaffNote] = useState(stage.staffNote ?? '');
+  const [reminders, setReminders] = useState((stage.reminderPolicy ?? []).map((r) => r.offsetHours).join(', '));
+  const [pre, setPre] = useState(String((stage.timing?.preCheckinMinutes as number | undefined) ?? 30));
+  const [post, setPost] = useState(String((stage.timing?.postCheckoutMinutes as number | undefined) ?? 30));
+  useEffect(() => {
+    setTitle(stage.title); setGuestDescription(stage.guestDescription ?? ''); setStaffNote(stage.staffNote ?? '');
+    setReminders((stage.reminderPolicy ?? []).map((r) => r.offsetHours).join(', '));
+    setPre(String((stage.timing?.preCheckinMinutes as number | undefined) ?? 30));
+    setPost(String((stage.timing?.postCheckoutMinutes as number | undefined) ?? 30));
+  }, [stage]);
+
+  const stageLabel = dict.stageKeys.find((k) => k.key === stage.key)?.label ?? stage.key;
+  const template = dict.templates.find((t) => t.key === stage.notificationTemplateKey);
+  const isProtected = dict.protectedStageKeys.includes(stage.key) || stage.key === 'key_issue';
+  const hasCondition = (t: string) => stage.conditions.some((c) => c.type === t);
+  const toggleCondition = (t: string) =>
+    onPatch({ conditions: hasCondition(t) ? stage.conditions.filter((c) => c.type !== t) : [...stage.conditions, { type: t }] });
+  const toggleChannel = (k: string) =>
+    onPatch({ channels: stage.channels.includes(k) ? stage.channels.filter((c) => c !== k) : [...stage.channels, k] });
+
+  const saveTexts = () => {
+    const offsets = reminders.split(',').map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n !== 0);
+    onPatch({
+      title,
+      guestDescription: guestDescription || undefined,
+      staffNote: staffNote || undefined,
+      reminderPolicy: offsets.map((offsetHours) => ({ offsetHours })),
+      ...(stage.key === 'key_issue' ? { timing: { preCheckinMinutes: Number(pre) || 30, postCheckoutMinutes: Number(post) || 30 } } : {}),
+    });
+  };
+
+  return (
+    <div className={`rounded-xl border p-4 ${stage.enabled ? 'border-ink/10' : 'border-ink/10 opacity-60'}`}>
+      <div className="flex items-center justify-between gap-3">
+        <button type="button" onClick={() => setOpen(!open)} className="flex min-w-0 items-center gap-2 text-left">
+          <span className={`inline-flex h-5 w-5 flex-none items-center justify-center rounded-full text-[10px] font-bold ${stage.enabled ? 'bg-indigo-100 text-indigo-700' : 'bg-ink/10 text-dark-gray'}`}>{stage.order + 1}</span>
+          <span className="truncate text-sm font-medium text-ink">{stage.title}</span>
+          <span className="flex-none text-xs text-dark-gray">· {stageLabel}{isProtected ? ' 🔒' : ''}{!stage.required ? ' · необязательный' : ''}</span>
+        </button>
+        <div className="flex flex-none items-center gap-1.5">
+          <button type="button" onClick={() => onMove(-1)} disabled={busy || first} className="rounded border border-ink/15 px-1.5 text-xs text-ink disabled:opacity-30">↑</button>
+          <button type="button" onClick={() => onMove(1)} disabled={busy || last} className="rounded border border-ink/15 px-1.5 text-xs text-ink disabled:opacity-30">↓</button>
+          <label className="ml-1 flex items-center gap-1 text-xs text-dark-gray">
+            <input type="checkbox" checked={stage.enabled} disabled={busy} onChange={(e) => onPatch({ enabled: e.target.checked })} /> вкл
+          </label>
+          {onDelete ? <button type="button" onClick={onDelete} disabled={busy} className="text-xs text-rose-600 hover:underline">удалить</button> : null}
+        </div>
+      </div>
+
+      {open ? (
+        <div className="mt-4 space-y-4 border-t border-ink/10 pt-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs text-dark-gray">Название этапа
+              <input value={title} onChange={(e) => setTitle(e.target.value)} className={`mt-1 ${fieldCls}`} />
+            </label>
+            <label className="flex items-end gap-1.5 pb-2 text-xs text-dark-gray">
+              <input type="checkbox" checked={stage.required} disabled={busy} onChange={(e) => onPatch({ required: e.target.checked })} />
+              Блокирующий шлюз (без него ключ не выдаётся)
+            </label>
+          </div>
+
+          {/* Условия из словаря (§2.1) */}
+          <div>
+            <p className="mb-1.5 text-xs uppercase tracking-wide text-dark-gray">Условия этапа</p>
+            <div className="flex flex-wrap gap-1.5">
+              {dict.conditions.map((c) => (
+                <button key={c.type} type="button" disabled={busy} onClick={() => toggleCondition(c.type)}
+                  className={`rounded-full border px-2.5 py-1 text-xs transition ${hasCondition(c.type) ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-ink/15 text-dark-gray hover:border-ink/30'}`}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Каналы коммуникации (§5) */}
+          <div>
+            <p className="mb-1.5 text-xs uppercase tracking-wide text-dark-gray">Каналы уведомлений</p>
+            <div className="flex flex-wrap gap-1.5">
+              {dict.channels.map((c) => (
+                <button key={c.key} type="button" disabled={busy} onClick={() => toggleChannel(c.key)}
+                  className={`rounded-full border px-2.5 py-1 text-xs transition ${stage.channels.includes(c.key) ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-ink/15 text-dark-gray hover:border-ink/30'}`}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Шаблон уведомления этапа + предпросмотр (§5.2) */}
+          <div>
+            <label className="block text-xs text-dark-gray">Шаблон уведомления при входе в этап
+              <select value={stage.notificationTemplateKey ?? ''} disabled={busy}
+                onChange={(e) => onPatch({ notificationTemplateKey: e.target.value || undefined })}
+                className={`mt-1 ${fieldCls}`}>
+                <option value="">— без уведомления —</option>
+                {dict.templates.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+            </label>
+            {template ? (
+              <div className="mt-2 rounded-lg bg-ink/5 p-2.5 text-xs">
+                <p className="font-medium text-ink">{template.preview.title}</p>
+                <p className="text-dark-gray">{template.preview.body}</p>
+                <p className="mt-1 text-[10px] text-dark-gray">Текст редактируется в «Шаблоны уведомлений»</p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs text-dark-gray">Напоминания, часов до заезда (через запятую, напр. -24, -3)
+              <input value={reminders} onChange={(e) => setReminders(e.target.value)} className={`mt-1 ${fieldCls}`} placeholder="-24, -3" />
+            </label>
+            {stage.key === 'key_issue' ? (
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-xs text-dark-gray">Ключ: мин до заезда
+                  <input value={pre} onChange={(e) => setPre(e.target.value)} className={`mt-1 ${fieldCls}`} />
+                </label>
+                <label className="block text-xs text-dark-gray">мин после выезда
+                  <input value={post} onChange={(e) => setPost(e.target.value)} className={`mt-1 ${fieldCls}`} />
+                </label>
+              </div>
+            ) : null}
+          </div>
+
+          <label className="block text-xs text-dark-gray">Текст для гостя — «как это работает» (виден в портале на этом шаге)
+            <textarea value={guestDescription} onChange={(e) => setGuestDescription(e.target.value)} rows={2} className={`mt-1 ${fieldCls}`} />
+          </label>
+          <label className="block text-xs text-dark-gray">Заметка для сотрудника
+            <textarea value={staffNote} onChange={(e) => setStaffNote(e.target.value)} rows={2} className={`mt-1 ${fieldCls}`} />
+          </label>
+
+          <button type="button" onClick={saveTexts} disabled={busy} className="rounded-md bg-ink px-3 py-1.5 text-xs text-beige disabled:opacity-40">
+            Сохранить этап
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}

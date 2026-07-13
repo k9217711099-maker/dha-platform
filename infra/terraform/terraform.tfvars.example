@@ -1,0 +1,6 @@
+# Скопируйте в terraform.tfvars и заполните. tfvars НЕ коммитится.
+cloud_id    = "b1g..."
+folder_id   = "b1g..."
+zone        = "ru-central1-a"
+environment = "dev"
+pg_password = "СГЕНЕРИРУЙТЕ-НАДЁЖНЫЙ-ПАРОЛЬ"

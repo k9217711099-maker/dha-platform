@@ -1,0 +1,49 @@
+# Локальное окружение разработки: PostgreSQL, Redis и MinIO (S3-совместимое
+# хранилище — аналог Yandex Object Storage). Для прод-окружения используется
+# Yandex Cloud (см. infra/terraform).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dha
+      POSTGRES_PASSWORD: dha
+      POSTGRES_DB: dha
+    ports:
+      - '5432:5432'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U dha']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Локальный аналог S3 для сканов документов (онлайн-регистрация, блок 8)
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: dha
+      MINIO_ROOT_PASSWORD: dha-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+
+volumes:
+  pg_data:
+  redis_data:
+  minio_data:

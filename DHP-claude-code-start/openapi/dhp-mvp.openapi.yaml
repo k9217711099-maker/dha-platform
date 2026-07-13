@@ -1,0 +1,82 @@
+openapi: 3.0.3
+info:
+  title: D Hospitality Platform MVP API
+  version: 0.1.0
+  description: Initial OpenAPI skeleton for PMS Core and Channel Manager MVP.
+servers:
+  - url: http://localhost:3000/api/v1
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /properties:
+    get:
+      summary: List properties
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create property
+      responses:
+        '201':
+          description: Created
+  /room-types:
+    get:
+      summary: List room types
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create room type
+      responses:
+        '201':
+          description: Created
+  /rooms:
+    get:
+      summary: List rooms
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create room
+      responses:
+        '201':
+          description: Created
+  /bookings:
+    get:
+      summary: List bookings
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create booking
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Created
+  /availability/search:
+    get:
+      summary: Search availability
+      responses:
+        '200':
+          description: OK
+  /rates/quote:
+    get:
+      summary: Get rate quote
+      responses:
+        '200':
+          description: OK
+  /channel-bookings:
+    post:
+      summary: Ingest channel booking
+      responses:
+        '201':
+          description: Created

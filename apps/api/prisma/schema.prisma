@@ -1,0 +1,3480 @@
+// Prisma-схема backend D H&A.
+// Канонический источник перечислений — packages/domain; здесь значения должны
+// совпадать с доменными enum. Схема расширяется по блокам плана.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LoyaltyTier {
+  MEMBER
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum ConsentType {
+  PERSONAL_DATA
+  MARKETING
+  HOUSE_RULES
+}
+
+enum OtpChannel {
+  PHONE
+  EMAIL
+}
+
+enum OtpPurpose {
+  LOGIN
+  VERIFY_CONTACT
+}
+
+enum PropertyType {
+  STUDIO
+  ONE_BEDROOM
+  TWO_BEDROOM
+  THREE_BEDROOM
+  HOTEL
+  BOUTIQUE_HOTEL
+}
+
+/// Тип объекта размещения (DHP property_type). Отличается от PropertyType,
+/// который у нас описывает категорию юнита (студия/1-спальная/…).
+enum PropertyKind {
+  HOTEL
+  APARTMENT
+  MINI_HOTEL
+}
+
+/// Признак продаваемости конкретного номера/юнита.
+enum RoomSellStatus {
+  SELLABLE
+  NOT_SELLABLE
+}
+
+/// Статус уборки номера (housekeeping).
+enum HousekeepingStatus {
+  CLEAN
+  DIRTY
+  INSPECTED
+  IN_PROGRESS
+}
+
+/// Технический статус номера (maintenance).
+enum MaintenanceStatus {
+  OK
+  /// Мягкий флаг (OOS): есть дефект, но номер ПРОДАЁТСЯ (не выбывает из availability). §7-C.
+  OUT_OF_SERVICE
+  /// Жёсткий (OOO): номер снят с продажи — выбывает из пула доступности.
+  OUT_OF_ORDER
+}
+
+/// Жизненный цикл инвентарного лока (DHP Availability §9): временное удержание
+/// доступности на время оформления/оплаты брони. TTL авто-истекает.
+enum InventoryLockStatus {
+  ACTIVE
+  CONVERTED
+  EXPIRED
+  RELEASED
+}
+
+/// Тип ручной/технической блокировки номера на даты (DHP Availability §11).
+enum RoomBlockType {
+  MAINTENANCE
+  OUT_OF_ORDER
+  OWNER
+  RENOVATION
+  INSPECTION
+  STAFF
+  SALES
+  LEGAL
+}
+
+/// Тип тарифного плана (DHP Rates §4).
+enum RatePlanKind {
+  FLEXIBLE
+  NON_REFUNDABLE
+  BREAKFAST_INCLUDED
+  LONG_STAY
+  CORPORATE
+  LOYALTY_MEMBER
+  MOBILE_ONLY
+  PACKAGE
+  OWNER_RATE
+}
+
+/// Способ корректировки производного тарифа (derived rate): процент или фиксированная сумма ₽/ночь.
+enum RateAdjustmentType {
+  PERCENT
+  FIXED
+}
+
+/// Тип канала продаж (DHP Channel Manager).
+enum ChannelKind {
+  OTA
+  DIRECT
+  PARTNER
+}
+
+/// Статус подключения канала.
+enum ChannelStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+/// Тип задачи синхронизации в канал.
+enum SyncJobType {
+  AVAILABILITY
+  RATES
+  RESTRICTIONS
+}
+
+/// Статус задачи синхронизации (DHP Adapter §7): очередь на БД + ретраи.
+enum SyncJobStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  RETRY_SCHEDULED
+  DEAD_LETTER
+  CANCELLED
+}
+
+/// Статус OTA-брони, принятой из канала.
+enum ChannelBookingStatus {
+  INGESTED
+  CONFLICT
+  CANCELLED
+  DUPLICATE
+}
+
+/// Тип задачи уборки (DHP Operations).
+/// Вид операционной работы (TASKS-HOUSEKEEPING-TZ §3.1): задача или уборка.
+enum OpsTaskKind {
+  TASK
+  CLEANING
+}
+
+/// Статусы задач/уборок по модели TeamJet (TASKS-HOUSEKEEPING-TZ §3.2).
+/// WAITING_CONFIRM — исполнитель отметил «готово», ждёт подтверждения установщика.
+enum OpsTaskStatus {
+  PLAN
+  NEW
+  ACCEPTED
+  IN_PROGRESS
+  PAUSED
+  WAITING_CONFIRM
+  DONE
+  CANCELLED
+}
+
+/// Тип пункта чек-листа (§5.1): заголовок / пункт / подпункт.
+enum ChecklistItemKind {
+  HEADER
+  ITEM
+  SUBITEM
+}
+
+/// Условие правила автосоздания уборок (§6.2) — состояние номера на дату.
+enum CleaningRuleCondition {
+  TODAY_CHECKOUT
+  TODAY_CHECKIN
+  BACK_TO_BACK
+  VACANT
+  OCCUPIED
+}
+
+/// Тип правила автоматизации (§8.1): напоминание или уведомление руководителя.
+enum OpsAutomationType {
+  REMIND
+  ESCALATE
+}
+
+/// Кого уведомляет правило «Уведомить руководителя» (§8.1). Решает проблему
+/// «исполнители из разных отделов»: руководитель берётся из отдела задачи/супервайзера/создателя.
+enum OpsNotifyTarget {
+  USER // конкретный сотрудник (escalateToUserId)
+  GROUP_HEAD // руководитель отдела, на который назначена задача (UserGroup.headUserId)
+  SUPERVISOR // супервайзер задачи (OpsTask.supervisorId)
+  CREATOR // постановщик задачи (OpsTask.createdBy)
+}
+
+/// Частота повторяющихся задач планировщика (§4.7). INTERVAL — каждые N дней.
+enum OpsRecurFreq {
+  DAILY
+  WEEKLY
+  MONTHLY
+  INTERVAL
+}
+
+/// Критичность инженерной заявки.
+enum MaintenanceSeverity {
+  MINOR
+  MAJOR
+  CRITICAL
+}
+
+enum District {
+  GOLDEN_TRIANGLE
+  NEVSKY_PROSPECT
+  MOSCOW_STATION
+  MARIINSKY_NEW_HOLLAND
+  TAVRICHESKY_GARDEN
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  NO_SHOW
+  CANCELLED
+}
+
+enum PaymentStatus {
+  NOT_PAID
+  PENDING
+  AUTHORIZED
+  PAID
+  PARTIALLY_REFUNDED
+  REFUNDED
+  FAILED
+}
+
+enum BookingChannel {
+  WEBSITE
+  MOBILE_APP
+  PHONE
+  MESSENGER
+  MANAGER
+  OTA
+}
+
+enum PointStatus {
+  PENDING
+  AVAILABLE
+  SPENT
+  FROZEN
+  EXPIRED
+  CANCELLED
+}
+
+enum CheckinStatus {
+  NOT_STARTED
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  NEEDS_FIX
+}
+
+/// Вердикт авто-проверки паспорта: действителен / недействителен / нужна ручная проверка.
+enum PassportCheckStatus {
+  VALID
+  INVALID
+  MANUAL
+}
+
+enum KeyType {
+  PIN
+  BLUETOOTH_EKEY
+  GATEWAY
+  ADMIN_BACKUP
+  STAFF
+}
+
+enum KeyStatus {
+  NOT_ISSUED
+  ISSUING
+  ACTIVE
+  REVOKED
+  FAILED
+}
+
+enum LockTarget {
+  ENTRANCE
+  BUILDING_DOOR
+  FLOOR
+  ROOM
+  COWORKING
+  PARKING
+  SPA
+}
+
+/// Зона покрытия замка. ROOM — личная дверь (номера из RoomLock);
+/// PROPERTY — весь объект; FLOOR — все номера этажа coverageFloor;
+/// ROOM_LIST — явный список номеров (RoomLock).
+enum LockCoverage {
+  ROOM
+  PROPERTY
+  FLOOR
+  ROOM_LIST
+}
+
+/// Гость (§5.3). ПДн хранятся в инфраструктуре РФ (152-ФЗ). Чувствительные данные
+/// (паспорт) хранятся ТОЛЬКО в зашифрованном виде в поле passportEncrypted.
+/// Арендатор (мультиарендность DHP): владелец объектов, номерного фонда, броней,
+/// гостей и тарифов. Пока один дефолтный tenant (D H&A); tenantId проставляется
+/// во все ключевые таблицы, все запросы tenant-aware.
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  guests        Guest[]
+  properties    Property[]
+  roomTypes     RoomType[]
+  rooms         Room[]
+  bookings      Booking[]
+  adminUsers    AdminUser[]
+  legalEntities LegalEntity[]
+  counterparties Counterparty[]
+  bookingTags   BookingTag[]
+  financeDocs   FinanceDoc[]
+  deposits      Deposit[]
+
+  @@map("tenants")
+}
+
+model Guest {
+  id                String      @id @default(uuid())
+  tenantId          String
+  phone             String?     @unique
+  email             String?     @unique
+  phoneVerified     Boolean     @default(false)
+  emailVerified     Boolean     @default(false)
+  /// Хэш пароля (bcrypt) — только для входа email+пароль. null, если вход по коду.
+  passwordHash      String?
+  firstName         String?
+  lastName          String?
+  middleName        String?
+  birthDate         DateTime?
+  citizenship       String?
+  /// Зашифрованные паспортные данные (AES-256-GCM), заполняется при онлайн-регистрации.
+  passportEncrypted String?
+  loyaltyTier       LoyaltyTier @default(MEMBER)
+  /// Постоянное примечание, закреплённое за гостем (пожелания, особенности).
+  /// Показывается автоматически при выборе гостя в новой брони (§7).
+  guestNotes        String?
+  /// ID контакта в Bitrix24 (CRM).
+  bitrixContactId   String?
+  /// Telegram chat id, привязанный к аккаунту (deep-link авторизация §13). Уникален.
+  telegramChatId    String?     @unique
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  consents          GuestConsent[]
+  refreshTokens     RefreshToken[]
+  bookings          Booking[]
+  pointTransactions PointTransaction[]
+  chatMessages      ChatMessage[]
+  deviceTokens      DeviceToken[]
+  notifications     Notification[]
+  favorites         Favorite[]
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("guests")
+}
+
+/// Журнал согласий с отметкой времени (152-ФЗ).
+model GuestConsent {
+  id        String      @id @default(uuid())
+  guestId   String
+  type      ConsentType
+  granted   Boolean
+  grantedAt DateTime    @default(now())
+
+  guest Guest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@index([guestId])
+  @@map("guest_consents")
+}
+
+/// Одноразовые коды (SMS/email). Хранится только хэш кода.
+model OtpCode {
+  id         String     @id @default(uuid())
+  channel    OtpChannel
+  /// Телефон или email, на который отправлен код.
+  target     String
+  codeHash   String
+  purpose    OtpPurpose @default(LOGIN)
+  expiresAt  DateTime
+  attempts   Int        @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([channel, target])
+  @@map("otp_codes")
+}
+
+/// Refresh-токены (хранится только хэш) для ротации и отзыва.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  guestId   String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  guest Guest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@index([guestId])
+  @@map("refresh_tokens")
+}
+
+/// Объект размещения. Источник истины — Bnovo (синхронизируется по bnovoId).
+/// Удобства/характеристики хранятся кодами из @dha/domain (AMENITIES / PROPERTY_FEATURES).
+model Property {
+  id           String       @id @default(uuid())
+  tenantId     String
+  /// Внешний ref в Bnovo (легаси/импорт). Под Путь B источник истины — наш PMS, поэтому опционально.
+  bnovoId      String?      @unique
+  name         String
+  type         PropertyType
+  /// Тип объекта размещения (DHP property_type): отель / апартаменты / мини-отель.
+  kind         PropertyKind @default(APARTMENT)
+  district     District?
+  city         String       @default("Санкт-Петербург")
+  address      String
+  description  String?
+  amenities    String[]
+  features     String[]
+  photos       String[]
+  latitude     Float?
+  longitude    Float?
+  /// Практичная информация для проживания (§6.4 / §7.1).
+  checkInTime  String?
+  checkOutTime String?
+  /// Автозаезд (CHECK-IN-TZ §6.3): при выдаче ключа воронка сама переводит
+  /// CONFIRMED → CHECKED_IN. false — заезд подтверждает стойка.
+  autoCheckin  Boolean      @default(false)
+  /// Режим апартаментов: у каждого номера своя инструкция по заселению
+  /// (Room.checkinInstructions приоритетнее общей instructions объекта).
+  perRoomInstructions Boolean @default(false)
+  wifiName     String?
+  wifiPassword String?
+  houseRules   String?
+  instructions String?
+  /// Залог по умолчанию (обеспечительный платёж), ₽. Переопределяется на категории и в брони.
+  securityDeposit Int?
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  roomTypes RoomType[]
+  rooms     Room[]
+  bookings  Booking[]
+  locks     Lock[]
+  ratePlans RatePlan[]
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([type])
+  @@index([district])
+  @@map("properties")
+}
+
+/// Категория номера/апартамента. Источник истины — Bnovo.
+model RoomType {
+  id                  String   @id @default(uuid())
+  tenantId            String
+  /// Внешний ref в Bnovo (легаси/импорт), опционально под Путь B.
+  bnovoId             String?  @unique
+  propertyId          String
+  name                String
+  /// Сокращённое название (строка списка/шахматки).
+  shortName           String?
+  /// Тип категории (справочник ROOM_TYPE_OPTIONS): Апартаменты/Студия/Номер/…
+  typeLabel           String?
+  capacity            Int
+  bedType             String?
+  /// Предпочтение в номере: конфигурации кроватей (мультивыбор, BED_TYPE_OPTIONS).
+  bedPreferences      String[] @default([])
+  areaSqm             Float?
+  /// Режим площади: SAME (areaSqm) или RANGE (areaSqm..areaSqmTo).
+  areaMode            String   @default("SAME")
+  areaSqmTo           Float?
+  /// Комнат в юните (планировка), основные и дополнительные места.
+  roomsInUnit         Int?
+  mainPlaces          Int?
+  extraPlaces         Int      @default(0)
+  /// Залог по умолчанию для категории, ₽ (переопределяет объект). Пусто — брать с объекта.
+  securityDeposit     Int?
+  description         String?
+  amenities           String[]
+  /// Вид из окна (мультивыбор, VIEW_OPTIONS) — часть оснащения (легаси, заменено на viewPreference).
+  views               String[] @default([])
+  /// Предпочтение в номере (§TravelLine): одиночный выбор кроватей и вида из окна.
+  bedPreference       String?
+  viewPreference      String?
+  /// Приоритетные элементы оснащения (до 5, по порядку) — коды из amenities.
+  priorityAmenities   String[] @default([])
+  photos              String[]
+  /// Видео категории (URL загруженных файлов MP4/WebM/MOV).
+  videos              String[] @default([])
+  /// Адрес категории + координаты + как добраться (Путь B: адрес на категории).
+  address             String?
+  latitude            Float?
+  longitude           Float?
+  howToReach          String?
+  /// PDF к подтверждению брони (приветственное письмо/правила проживания).
+  confirmationFileUrl String?
+  /// Порядок в списке (drag-сортировка).
+  sortOrder           Int      @default(0)
+  /// Показывать в модуле «Бронирования» и выгружать на OTA (каналы).
+  showInBooking       Boolean  @default(true)
+  showInOta           Boolean  @default(true)
+  active              Boolean  @default(true)
+
+  property  Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant    Tenant         @relation(fields: [tenantId], references: [id])
+  rooms     Room[]
+  bookings  Booking[]
+  favorites Favorite[]
+
+  @@index([tenantId])
+  @@index([propertyId])
+  @@map("room_types")
+}
+
+/// Конкретный номер/апартамент (юнит) — уровня, которого не было в Bnovo-модели.
+/// Продаётся через RoomType; овербукинг и назначение — на уровне Room (Sprint 3+).
+model Room {
+  id                 String             @id @default(uuid())
+  tenantId           String
+  propertyId         String
+  roomTypeId         String
+  number             String
+  floor              String?
+  /// Адрес юнита (для апартаментов/квартир, разнесённых по адресам).
+  address            String?
+  /// Своя инструкция по заселению юнита (режим апартаментов, CHECK-IN-TZ):
+  /// подъезд, домофон, этаж, парковка. Показывается гостю после прохождения шлюзов.
+  checkinInstructions String?
+  /// Фото-инструкция по заселению (публичные URL): вход, подъезд, расположение сейф-бокса.
+  /// Показывается гостю в портале после прохождения шлюзов (режим апартаментов).
+  checkinPhotos       String[]           @default([])
+  sellStatus         RoomSellStatus     @default(SELLABLE)
+  housekeepingStatus HousekeepingStatus @default(CLEAN)
+  maintenanceStatus  MaintenanceStatus  @default(OK)
+  /// Ref замка TTLock (если есть).
+  lockId             String?
+  /// Комментарий к номеру (для персонала).
+  comment            String?
+  /// Не учитывать в статистике (RevPAR/загрузка).
+  excludeFromStats   Boolean            @default(false)
+  /// «Не беспокоить» до указанного времени (TASKS-HOUSEKEEPING-TZ §3.3).
+  dndUntil           DateTime?
+  /// Гость попросил уборку (поднимает приоритет в плане уборок).
+  cleanRequestedAt   DateTime?
+  /// Секция для распределения уборок (§7).
+  sectionId          String?
+  active             Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  property  Property    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomType  RoomType    @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+  bookings  Booking[]
+  blocks    RoomBlock[]
+  opsTasks  OpsTask[]
+  lockLinks RoomLock[]
+
+  @@index([tenantId])
+  @@index([propertyId])
+  @@index([roomTypeId])
+  @@index([maintenanceStatus])
+  @@map("rooms")
+}
+
+/// Хранилище настроек (ключ-значение), редактируемых в админке (напр. учётка TTLock).
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+/// Web Push подписка сотрудника (браузер/PWA админки). VAPID-ключи — в Setting
+/// (webpush.publicKey/privateKey, генерируются при первом обращении).
+model StaffPushSubscription {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  /// Push-endpoint браузера (уникален на устройство+браузер).
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("staff_push_subscriptions")
+}
+
+/// Реквизиты организации (Настройки → Финансы → Реквизиты). Используются в счетах,
+/// приёме платежей и как «юр. лицо» в гарантии бронирования. Мультиарендно.
+model LegalEntity {
+  id           String   @id @default(uuid())
+  tenantId     String
+  /// Отображаемое название (напр. «D apartments»).
+  name         String
+  /// Полное юридическое наименование.
+  legalName    String?
+  inn          String?
+  kpp          String?
+  ogrn         String?
+  /// Юридический адрес.
+  legalAddress String?
+  director     String?
+  phone        String?
+  email        String?
+  /// Банковские реквизиты.
+  bankName     String?
+  bankAccount  String?
+  corrAccount  String?
+  bik          String?
+  /// Скан/картинка подписи и печати (для счетов), URL в uploads.
+  signatureUrl String?
+  stampUrl     String?
+  /// Ставка НДС по умолчанию для этого юр. лица, % (null — «Без НДС»). Подставляется в счета/акты/платежи.
+  defaultVatRate Int?
+  /// Реквизиты по умолчанию (подставляются в счёт/гарантию).
+  isDefault    Boolean  @default(false)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("legal_entities")
+}
+
+/// Контрагент-покупатель (агентство/компания) — справочник для счетов/актов (§ покупатель-юрлицо).
+/// Отличается от LegalEntity (это НАШИ реквизиты, от кого ведём деятельность).
+model Counterparty {
+  id           String   @id @default(uuid())
+  tenantId     String
+  /// Отображаемое название.
+  name         String
+  /// Тип: company | agency.
+  kind         String   @default("company")
+  /// Полное юридическое наименование.
+  legalName    String?
+  inn          String?
+  kpp          String?
+  ogrn         String?
+  legalAddress String?
+  director     String?
+  phone        String?
+  email        String?
+  bankName     String?
+  bankAccount  String?
+  corrAccount  String?
+  bik          String?
+  /// Комиссия агентства, % (для kind=agency).
+  commission   Int?
+  note         String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@map("counterparties")
+}
+
+/// Единица расчёта доп-услуги.
+enum ExtraUnit {
+  PER_STAY // за всё проживание
+  PER_NIGHT // за каждую ночь
+  PER_PERSON // за каждого гостя (за проживание)
+  PER_PERSON_NIGHT // за гостя за ночь
+}
+
+/// Дополнительная услуга (апселл) — конструктор в админке. Не зависит от Bnovo.
+model Extra {
+  id                    String    @id @default(uuid())
+  name                  String
+  description           String?
+  category              String?
+  imageUrl              String?
+  /// Цена в ₽ за единицу (по unit).
+  price                 Int
+  unit                  ExtraUnit @default(PER_STAY)
+  /// Максимум на бронь (0 — без лимита).
+  maxQty                Int       @default(1)
+  /// Можно выбирать количество (иначе да/нет).
+  quantitySelectable    Boolean   @default(false)
+  /// Периоды действия [{from,until}] (YYYY-MM-DD). Пусто — всегда.
+  periods               Json?
+  /// Категории номеров, к которым применима. Пусто — ко всем.
+  roomTypeIds           String[]  @default([])
+  /// Тарифы (kind), в которые услуга входит бесплатно (показывать как «включено»).
+  includedRatePlanKinds String[]  @default([])
+  sortOrder             Int       @default(0)
+  active                Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  bookingExtras BookingExtra[]
+
+  @@map("extras")
+}
+
+/// Выбранная гостем доп-услуга к брони (снимок цены на момент брони).
+model BookingExtra {
+  id        String   @id @default(uuid())
+  bookingId String
+  extraId   String?
+  name      String
+  unit      String
+  unitPrice Int
+  qty       Int
+  /// Итоговая стоимость позиции, ₽.
+  total     Int
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  extra   Extra?  @relation(fields: [extraId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@map("booking_extras")
+}
+
+/// Словарь удобств (фильтры), управляется в админке. Сидируется из packages/domain.
+model Amenity {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  label     String
+  /// Код категории удобства (AmenityCategory из домена).
+  category  String
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("amenities")
+}
+
+/// Избранные категории гостя (только для авторизованных).
+model Favorite {
+  id         String   @id @default(uuid())
+  guestId    String
+  roomTypeId String
+  createdAt  DateTime @default(now())
+
+  guest    Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  roomType RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([guestId, roomTypeId])
+  @@index([guestId])
+  @@map("favorites")
+}
+
+/// Физический замок TTLock объекта. Личная дверь номера (target=ROOM, coverage=ROOM)
+/// либо общая дверь (подъезд, этаж, паркинг, SPA) с зоной покрытия (coverage):
+/// весь объект / этаж / список номеров.
+model Lock {
+  id            String       @id @default(uuid())
+  propertyId    String
+  /// ID замка в TTLock.
+  ttlockLockId  String       @unique
+  name          String
+  target        LockTarget   @default(ROOM)
+  /// Зона покрытия. Определяет, какие номера открывает замок.
+  coverage      LockCoverage @default(ROOM)
+  /// Этаж покрытия (Room.floor), когда coverage = FLOOR.
+  coverageFloor String?
+  hasGateway    Boolean      @default(false)
+  active        Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+
+  property  Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomLinks RoomLock[]
+
+  @@index([propertyId])
+  @@map("locks")
+}
+
+/// Явная привязка замка к конкретному номеру (юниту). Личная дверь — один номер;
+/// общая дверь с coverage=ROOM_LIST — несколько номеров. Для PROPERTY/FLOOR не нужна.
+model RoomLock {
+  roomId String
+  lockId String
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  lock Lock @relation(fields: [lockId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, lockId])
+  @@index([lockId])
+  @@map("room_locks")
+}
+
+/// Журнал синхронизаций и ошибок интеграций (§14.3).
+model IntegrationSyncLog {
+  id          String    @id @default(uuid())
+  integration String
+  operation   String
+  status      String
+  message     String?
+  itemsSynced Int       @default(0)
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  @@index([integration, operation])
+  @@map("integration_sync_logs")
+}
+
+/// Бронирование. Создаётся в Bnovo (bnovoBookingId), лояльность — наша.
+model Booking {
+  id                 String         @id @default(uuid())
+  tenantId           String
+  /// Человекочитаемый номер брони собственного PMS (Путь B). null у легаси-броней.
+  bookingNumber      String?        @unique
+  guestId            String
+  propertyId         String
+  roomTypeId         String
+  /// Назначенный конкретный номер (юнит). Может назначаться позже (при заезде).
+  roomId             String?
+  /// Запрет переселения: номер зафиксирован, менять нельзя (§ шахматка).
+  roomLocked         Boolean        @default(false)
+  bnovoBookingId     String?        @unique
+  /// Группа броней, оформленных вместе (мульти-номер, общая оплата).
+  groupId            String?
+  status             BookingStatus  @default(PENDING)
+  paymentStatus      PaymentStatus  @default(NOT_PAID)
+  channel            BookingChannel @default(WEBSITE)
+  checkIn            DateTime
+  checkOut           DateTime
+  nights             Int
+  guests             Int
+  /// Количество номеров этой категории в брони (мульти-номер).
+  roomsCount         Int            @default(1)
+  ratePlanId         String
+  ratePlanName       String
+  refundable         Boolean        @default(true)
+  cancellationPolicy String?
+  /// Итоговая стоимость проживания, ₽ (без вычета баллов). Считает Rate Engine (Sprint 4).
+  totalPrice         Int
+  /// Снимок расчёта Rate Engine (посуточная разбивка + суммы) на момент брони (DHP §17).
+  priceBreakdown     Json?
+  currency           String         @default("RUB")
+  promoCode          String?
+  comment            String?
+  /// Взрослых гостей (детализация `guests`; при создании из PMS-формы). null у легаси.
+  adults             Int?
+  /// Детей в брони (учитываются в `guests`, но по тарифу могут не занимать место).
+  children           Int?
+  /// Планируемое время заезда, HH:mm (из формы брони на стойке).
+  arrivalTime        String?
+  /// Планируемое время выезда, HH:mm.
+  departureTime      String?
+  /// Маркетинг: способ бронирования (телефон/сайт/мессенджер/лично…).
+  bookingMethod      String?
+  /// Маркетинг: откуда гость узнал о нас (реклама/рекомендация/OTA…).
+  referralSource     String?
+  /// Маркетинг: обоснование скидки (для отчётности revenue-менеджера).
+  discountReason     String?
+  /// Причина отмены (§7.4).
+  cancelReason       String?
+  /// ID сделки в Bitrix24 (CRM).
+  bitrixDealId       String?
+  /// Отправлено ли напоминание об отзыве (§15.3).
+  reviewReminderSent Boolean        @default(false)
+  /// Стадия воронки заселения (CHECK-IN-TZ §1) — денормализованный кэш для UI/отчётов.
+  /// Истина — шлюзы (computeFunnelStage @dha/domain); обновляется при пересчёте панели.
+  funnelStage        String?
+  /// Зарезервировано к начислению баллов (статус PENDING до завершения проживания).
+  pointsReserved     Int            @default(0)
+  /// Списано баллов при бронировании (1 балл = 1 ₽).
+  pointsRedeemed     Int            @default(0)
+  /// Сумма доп-услуг, ₽ (не входит в базу начисления баллов, §лояльность).
+  extrasTotal        Int            @default(0)
+  /// Данные с OTA/канала (Channel Manager): комиссия, ID объекта, читаемое имя источника,
+  /// комментарий к платежу (детализация суммы/скидок с OTA). Заполняется при импорте OTA-брони.
+  otaCommission      Float?
+  externalObjectId   String?
+  sourceName         String?
+  paymentComment     String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  guest             Guest              @relation(fields: [guestId], references: [id])
+  property          Property           @relation(fields: [propertyId], references: [id])
+  roomType          RoomType           @relation(fields: [roomTypeId], references: [id])
+  room              Room?              @relation(fields: [roomId], references: [id])
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  bookingGuests     BookingGuest[]
+  pointTransactions PointTransaction[]
+  payments          Payment[]
+  checkin           Checkin?
+  checkinLink       GuestCheckinLink?
+  digitalKeys       DigitalKey[]
+  extras            BookingExtra[]
+  tags              BookingTag[]
+  financeDocs       FinanceDoc[]
+  deposits          Deposit[]
+
+  @@index([tenantId])
+  @@index([guestId])
+  @@index([roomId])
+  @@index([status])
+  @@index([groupId])
+  @@index([propertyId, checkIn, checkOut])
+  @@map("bookings")
+}
+
+/// Цветной тег-маркер брони (шахматка). Пользователь заводит названия, выбирая
+/// один из 5 предустановленных цветов палитры (§6). Мультиарендно.
+model BookingTag {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  /// Ключ цвета из предустановленной палитры: red | amber | emerald | blue | violet.
+  color     String   @default("blue")
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  bookings Booking[]
+
+  @@index([tenantId])
+  @@map("booking_tags")
+}
+
+/// Гости брони (несколько на бронь; основной — isPrimary). DHP booking_guests.
+model BookingGuest {
+  id        String  @id @default(uuid())
+  bookingId String
+  guestId   String
+  /// Роль в брони: main | accompanying | child | ...
+  role      String  @default("guest")
+  isPrimary Boolean @default(false)
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, guestId])
+  @@index([bookingId])
+  @@map("booking_guests")
+}
+
+/// Ключи идемпотентности (DHP ADR-003). Повторный POST с тем же ключом возвращает
+/// исходный результат — защита от дублей при ретраях/таймаутах/повторах OTA.
+model IdempotencyKey {
+  id        String   @id @default(uuid())
+  tenantId  String
+  key       String
+  /// Логическая операция (напр. POST /v1/bookings) — ключ уникален в её рамках.
+  endpoint  String
+  bookingId String?
+  response  Json?
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, endpoint, key])
+  @@index([tenantId])
+  @@map("idempotency_keys")
+}
+
+/// Инвентарный лок (DHP Availability §8): временно удерживает доступность категории
+/// (или конкретного номера) на даты, пока идёт оформление/оплата брони. Уменьшает
+/// availability, пока status=ACTIVE и не истёк expiresAt. Без relation-полей (эфемерная
+/// запись, как IdempotencyKey) — ссылочная целостность проверяется в сервисе.
+/// Даты checkIn/checkOut — как у брони: дата выезда ночь не занимает.
+model InventoryLock {
+  id             String              @id @default(uuid())
+  tenantId       String
+  propertyId     String
+  roomTypeId     String
+  /// Конкретный номер, если гость выбрал его (иначе лок на категорию).
+  roomId         String?
+  checkIn        DateTime
+  checkOut       DateTime
+  quantity       Int                 @default(1)
+  status         InventoryLockStatus @default(ACTIVE)
+  expiresAt      DateTime
+  /// Проставляется при конвертации лока в бронь.
+  bookingId      String?
+  idempotencyKey String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([tenantId])
+  @@index([roomTypeId, status])
+  @@index([expiresAt])
+  @@map("inventory_locks")
+}
+
+/// Блокировка номера на даты (DHP Availability §11–12): ручная (owner/sales/legal) или
+/// техническая (maintenance/out_of_order/renovation). Уменьшает доступность на период
+/// [from, to) — как бронь, день `to` не занимает ночь. Отражается в шахматке.
+model RoomBlock {
+  id         String        @id @default(uuid())
+  tenantId   String
+  propertyId String
+  roomId     String
+  type       RoomBlockType @default(MAINTENANCE)
+  from       DateTime
+  to         DateTime
+  reason     String?
+  active     Boolean       @default(true)
+  createdBy  String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([roomId, active])
+  @@index([propertyId])
+  @@map("room_blocks")
+}
+
+/// Тарифный план (DHP Rates §3). Может быть производным (derived): цена наследуется от
+/// `parent` ± `adjustment` (напр. Невозвратный = Гибкий −10%). Ограничения задаются на сам план.
+model RatePlan {
+  id                     String              @id @default(uuid())
+  tenantId               String
+  /// Объект. null — сетевой тариф (применяется ко всем категориям сети).
+  propertyId             String?
+  name                   String
+  code                   String
+  kind                   RatePlanKind        @default(FLEXIBLE)
+  description            String?
+  refundable             Boolean             @default(true)
+  active                 Boolean             @default(true)
+  /// Источники, где тариф доступен (вкл/выкл): стойка, модуль бронирования, OTA.
+  availableFrontDesk     Boolean             @default(true)
+  availableBookingModule Boolean             @default(true)
+  availableOta           Boolean             @default(true)
+  /// Родительский тариф для derived-цены (null — базовый тариф с собственными ценами).
+  parentRatePlanId       String?
+  /// Тип и величина корректировки относительно родителя (проценты или ₽/ночь; может быть отрицательной).
+  adjustmentType         RateAdjustmentType?
+  adjustmentValue        Int?
+  /// Полная конфигурация тарифа (форма создания, эталон Bnovo).
+  priceMode              String? // 'MANUAL' | 'DERIVED'
+  priceRounding          String? // 'NONE' | 'INTEGER' | 'TENS' | 'FIFTIES' | 'HUNDREDS'
+  restrictionMode        String? // 'MANUAL' | 'COPY'
+  defaultRestriction     String?
+  meals                  Json? // [{ type, price }]
+  includedServices       Json? // [{ extraId, note }]
+  earlyLateMode          String? // 'FIXED' | 'PERCENT' | 'HOURLY'
+  earlyLateApplyMain     Boolean             @default(false)
+  freeCancelDays         Int?
+  cancellationComment    String?
+  rulePeriods            Json? // [{ from, to, freeCancelDays }]
+  guaranteeType          String? // 'NONE' | 'PREPAY'
+  releaseOpenDays        Int?
+  releaseOpenHours       Int?
+  releaseCloseDays       Int?
+  releaseCloseHours      Int?
+  /// Ручное ограничение по умолчанию: мин. ночей + категории, на которые действует.
+  defaultMinNights       Int?
+  restrictionCategoryIds Json? // string[] roomTypeId
+  /// Ранний заезд/поздний выезд «процент от суток»: { early:{percent,base}, late:{percent,base} } (base: current|prev|next).
+  earlyLateConfig        Json?
+  /// Гарантия бронирования по аудиториям: { individual, company, agency } (см. форму Bnovo).
+  guaranteeConfig        Json?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  property     Property?     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  parent       RatePlan?     @relation("DerivedRate", fields: [parentRatePlanId], references: [id])
+  children     RatePlan[]    @relation("DerivedRate")
+  prices       RatePrice[]
+  restrictions Restriction[]
+
+  @@unique([propertyId, code])
+  @@index([tenantId])
+  @@index([propertyId])
+  @@map("rate_plans")
+}
+
+/// Цена за ночь по (тариф, категория, дата) — DHP RatePrice. Отсутствие строки у derived-тарифа
+/// означает «взять из родителя ± корректировка»; у базового — «дата не продаётся».
+model RatePrice {
+  id         String   @id @default(uuid())
+  tenantId   String
+  ratePlanId String
+  roomTypeId String
+  /// Дата ночи (UTC-полночь).
+  date       DateTime
+  /// Цена за ночь, ₽.
+  price      Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  ratePlan RatePlan @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+
+  @@unique([ratePlanId, roomTypeId, date])
+  @@index([tenantId])
+  @@index([roomTypeId, date])
+  @@map("rate_prices")
+}
+
+/// Ограничения продаж по (тариф, категория, дата) — DHP Restriction: мин/макс срок,
+/// stop-sell, закрытие заезда/выезда. Проверяются Rate Engine перед подтверждением цены.
+model Restriction {
+  id                String   @id @default(uuid())
+  tenantId          String
+  ratePlanId        String
+  roomTypeId        String
+  /// Дата, к которой применяется ограничение (UTC-полночь).
+  date              DateTime
+  minStay           Int?
+  /// Мин. кол-во ночей на дату заезда (отдельно от общего minStay).
+  minStayArrival    Int?
+  maxStay           Int?
+  stopSell          Boolean  @default(false)
+  closedToArrival   Boolean  @default(false)
+  closedToDeparture Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  ratePlan RatePlan @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+
+  @@unique([ratePlanId, roomTypeId, date])
+  @@index([tenantId])
+  @@index([roomTypeId, date])
+  @@map("restrictions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Channel Manager (DHP §20): синхронизация цен/наличия/ограничений и приём броней
+// с внешними каналами продаж (OTA). Очередь синка — на БД + @nestjs/schedule (без
+// Redis/BullMQ). Адаптеры каналов — моки. Сбой синка не ломает создание брони в PMS.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Канал продаж (Ostrovok/Avito/Суточно/…). MVP: канал = подключение (статус+креды слиты).
+model Channel {
+  id            String        @id @default(uuid())
+  tenantId      String
+  /// Код канала (ostrovok, avito, sutochno, own_site…), уникален в рамках арендатора.
+  code          String
+  name          String
+  kind          ChannelKind   @default(OTA)
+  status        ChannelStatus @default(DISCONNECTED)
+  /// Учётные данные/настройки (mock): { token, mode }. Секреты — не в памяти.
+  credentials   Json?
+  active        Boolean       @default(true)
+  lastSyncAt    DateTime?
+  lastBookingAt DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  propertyMappings ChannelPropertyMapping[]
+  roomTypeMappings ChannelRoomTypeMapping[]
+  ratePlanMappings ChannelRatePlanMapping[]
+  syncJobs         ChannelSyncJob[]
+  bookings         ChannelBooking[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("channels")
+}
+
+/// Маппинг объекта размещения на его id в канале.
+model ChannelPropertyMapping {
+  id               String @id @default(uuid())
+  tenantId         String
+  channelId        String
+  propertyId       String
+  remotePropertyId String
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, propertyId])
+  @@unique([channelId, remotePropertyId])
+  @@index([tenantId])
+  @@map("channel_property_mappings")
+}
+
+/// Маппинг категории номера на её id в канале.
+model ChannelRoomTypeMapping {
+  id               String @id @default(uuid())
+  tenantId         String
+  channelId        String
+  roomTypeId       String
+  remoteRoomTypeId String
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, roomTypeId])
+  @@unique([channelId, remoteRoomTypeId])
+  @@index([tenantId])
+  @@map("channel_room_type_mappings")
+}
+
+/// Маппинг тарифа на его id в канале.
+model ChannelRatePlanMapping {
+  id               String @id @default(uuid())
+  tenantId         String
+  channelId        String
+  ratePlanId       String
+  remoteRatePlanId String
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, ratePlanId])
+  @@unique([channelId, remoteRatePlanId])
+  @@index([tenantId])
+  @@map("channel_rate_plan_mappings")
+}
+
+/// Задача синхронизации в канал (выгрузка availability/rates/restrictions). Ретраи с
+/// экспоненциальной задержкой; исчерпание попыток → DEAD_LETTER. Сбой не влияет на PMS.
+model ChannelSyncJob {
+  id          String        @id @default(uuid())
+  tenantId    String
+  channelId   String
+  propertyId  String?
+  jobType     SyncJobType
+  status      SyncJobStatus @default(PENDING)
+  payload     Json?
+  response    Json?
+  errorCode   String?
+  retryCount  Int           @default(0)
+  maxRetries  Int           @default(5)
+  nextRetryAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  channel Channel          @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  logs    ChannelSyncLog[]
+
+  @@index([tenantId])
+  @@index([status, nextRetryAt])
+  @@index([channelId])
+  @@map("channel_sync_jobs")
+}
+
+/// Журнал операций синхронизации (успех/ошибка) — для мониторинга и разбора.
+model ChannelSyncLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  channelId String
+  jobId     String?
+  operation String
+  status    String
+  message   String?
+  createdAt DateTime @default(now())
+
+  job ChannelSyncJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@index([channelId])
+  @@index([jobId])
+  @@map("channel_sync_logs")
+}
+
+/// Принятая из канала бронь. Дубли ловятся по (channelId, externalBookingId) — DHP §10.
+model ChannelBooking {
+  id                String               @id @default(uuid())
+  tenantId          String
+  channelId         String
+  externalBookingId String
+  /// Ссылка на созданную бронь PMS (null при конфликте доступности).
+  bookingId         String?
+  status            ChannelBookingStatus @default(INGESTED)
+  raw               Json?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, externalBookingId])
+  @@index([tenantId])
+  @@map("channel_bookings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Operations (DHP §15): housekeeping (уборка) и maintenance (обслуживание). Задача
+// уборки создаётся на выезд (check-out → dirty + task). Инженерная заявка может снять
+// номер с продажи (maintenanceStatus=OUT_OF_ORDER → номер выбывает из пула availability).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Задача уборки номера. Создаётся на выезд или вручную; ведёт статус номера (housekeeping).
+/// Операционная задача/уборка (TASKS-HOUSEKEEPING-TZ) — единая модель вместо
+/// HousekeepingTask + MaintenanceTask. Инженерные заявки — kind=TASK с blocksSale.
+model OpsTask {
+  id             String        @id @default(uuid())
+  tenantId       String
+  kind           OpsTaskKind   @default(TASK)
+  status         OpsTaskStatus @default(NEW)
+  title          String
+  description    String?
+  propertyId     String
+  roomId         String?
+  /// Нежилая зона (XOR roomId; оба null — общая задача по объекту).
+  zoneId         String?
+  /// Назначение на отдел (XOR assignees: либо конкретные исполнители, либо отдел).
+  groupId        String?
+  /// Бронь-источник (уборка на выезд).
+  bookingId      String?
+  /// Тип уборки (kind=CLEANING).
+  cleaningTypeId String?
+  important      Boolean       @default(false)
+  severity       MaintenanceSeverity @default(MINOR)
+  /// Инженерное: номер снят с продажи (OUT_OF_ORDER) до завершения.
+  blocksSale     Boolean       @default(false)
+  /// Срок выполнения (просрочка подсвечивается).
+  dueAt          DateTime?
+  /// Срок принятия в работу.
+  acceptBy       DateTime?
+  /// Для статуса PLAN: момент авто-активации (перевода в NEW).
+  scheduledAt    DateTime?
+  /// Дата плана уборок (kind=CLEANING; полночь UTC дня плана).
+  planDate       DateTime?
+  /// Порядок выполнения в колонке исполнителя (план уборок).
+  planOrder      Int?
+  /// Супервайзер-инспектор уборки.
+  supervisorId   String?
+  recurringRuleId String?
+  templateId     String?
+  /// Требовать фото результата при завершении.
+  requirePhotoResult Boolean   @default(false)
+  /// Требовать подтверждение установщика: «готово» ведёт в WAITING_CONFIRM, а не сразу в DONE (§3.2).
+  requireConfirmation Boolean  @default(false)
+  /// Заявка от гостя (LQA-контур): жёстче SLA, callback перед закрытием.
+  guestRequest   Boolean       @default(false)
+  /// Правило ППР-цикла, породившее задачу (профилактика номерного фонда).
+  pmRuleId       String?
+  createdBy      String?
+  acceptedAt     DateTime?
+  startedAt      DateTime?
+  /// Начало текущего интервала IN_PROGRESS (для накопления workSeconds).
+  inProgressSince DateTime?
+  completedAt    DateTime?
+  cancelledBy    String?
+  /// Накопленный факт работы в секундах (сумма интервалов IN_PROGRESS).
+  workSeconds    Int           @default(0)
+  /// Последняя активность (создание/смена статуса/комментарий) — колонка «Активность» и сортировка.
+  lastActivityAt DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  room       Room?              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  zone       Zone?              @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  group      UserGroup?         @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  assignees  OpsTaskAssignee[]
+  watchers   OpsTaskWatcher[]
+  comments   OpsTaskComment[]
+  attachments OpsTaskAttachment[]
+  checklists OpsTaskChecklist[]
+  tags       OpsTaskTag[]
+  statusLog  OpsTaskStatusLog[]
+  reads      OpsTaskRead[]
+
+  @@index([tenantId, kind, status])
+  @@index([propertyId, planDate])
+  @@index([roomId])
+  @@index([zoneId])
+  @@index([groupId])
+  @@index([status, scheduledAt])
+  @@index([pmRuleId])
+  @@map("ops_tasks")
+}
+
+model OpsTaskAssignee {
+  taskId String
+  userId String
+  task   OpsTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
+  @@map("ops_task_assignees")
+}
+
+model OpsTaskWatcher {
+  taskId String
+  userId String
+  task   OpsTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
+  @@map("ops_task_watchers")
+}
+
+/// Отметка «прочитано» задачи сотрудником — счётчик непрочитанных комментариев (§4.3, колонка «Активность»).
+model OpsTaskRead {
+  taskId     String
+  userId     String
+  lastReadAt DateTime @default(now())
+  task       OpsTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
+  @@map("ops_task_reads")
+}
+
+model OpsTaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  authorId  String?
+  body      String
+  createdAt DateTime @default(now())
+  task      OpsTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("ops_task_comments")
+}
+
+model OpsTaskAttachment {
+  id        String   @id @default(uuid())
+  taskId    String
+  /// Ответ на пункт чек-листа (фото-подтверждение) — если вложение из чек-листа.
+  answerId  String?
+  /// URL файла (/uploads/... — UploadsService).
+  fileUrl   String
+  name      String?
+  createdBy String?
+  createdAt DateTime @default(now())
+  task      OpsTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("ops_task_attachments")
+}
+
+/// История переходов статуса (кто/когда/куда) — §4.3.
+model OpsTaskStatusLog {
+  id      String        @id @default(uuid())
+  taskId  String
+  from    OpsTaskStatus
+  to      OpsTaskStatus
+  actorId String?
+  note    String?
+  at      DateTime      @default(now())
+  task    OpsTask       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("ops_task_status_log")
+}
+
+/// Тег задач (§8.2): цветная метка для фильтров и отчётов.
+model OpsTag {
+  id         String    @id @default(uuid())
+  tenantId   String
+  name       String
+  color      String    @default("#6366f1")
+  comment    String?
+  archivedAt DateTime?
+  tasks      OpsTaskTag[]
+
+  @@index([tenantId])
+  @@map("ops_tags")
+}
+
+model OpsTaskTag {
+  taskId String
+  tagId  String
+  task   OpsTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag    OpsTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, tagId])
+  @@index([tagId])
+  @@map("ops_task_tags")
+}
+
+/// Шаблон чек-листа (§5.1). К задаче прикрепляется снапшот (OpsTaskChecklist).
+model Checklist {
+  id         String          @id @default(uuid())
+  tenantId   String
+  name       String
+  archivedAt DateTime?
+  createdAt  DateTime        @default(now())
+  items      ChecklistItem[]
+
+  @@index([tenantId])
+  @@map("ops_checklists")
+}
+
+model ChecklistItem {
+  id               String            @id @default(uuid())
+  checklistId      String
+  parentId         String?
+  order            Int               @default(0)
+  kind             ChecklistItemKind @default(ITEM)
+  text             String
+  /// Текст третьего варианта ответа («N/A»); null — только Да/Нет.
+  thirdOption      String?
+  requirePhoto     Boolean           @default(false)
+  excludeFromScore Boolean           @default(false)
+  checklist        Checklist         @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@index([checklistId])
+  @@map("ops_checklist_items")
+}
+
+/// Прикреплённый к задаче чек-лист — снапшот пунктов на момент прикрепления (§5.1).
+model OpsTaskChecklist {
+  id                  String   @id @default(uuid())
+  taskId              String
+  checklistId         String?
+  name                String
+  /// Пункты-снапшот: [{id, parentId, order, kind, text, thirdOption, requirePhoto, excludeFromScore}]
+  itemsSnapshot       Json
+  /// Требовать прохождение ДО начала работы (IN_PROGRESS).
+  requiredBeforeStart Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  task                OpsTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  answers             OpsChecklistAnswer[]
+
+  @@index([taskId])
+  @@map("ops_task_checklists")
+}
+
+model OpsChecklistAnswer {
+  id              String           @id @default(uuid())
+  taskChecklistId String
+  /// id пункта из itemsSnapshot.
+  itemId          String
+  /// YES | NO | THIRD | AUTO (автозавершение).
+  answer          String
+  comment         String?
+  photoUrl        String?
+  answeredBy      String?
+  answeredAt      DateTime         @default(now())
+  taskChecklist   OpsTaskChecklist @relation(fields: [taskChecklistId], references: [id], onDelete: Cascade)
+
+  @@unique([taskChecklistId, itemId])
+  @@map("ops_checklist_answers")
+}
+
+/// Нежилая зона (§7): лобби, ресторан, коридор — объект задач и нежилых уборок.
+model Zone {
+  id         String    @id @default(uuid())
+  tenantId   String
+  propertyId String
+  name       String
+  floor      String?
+  sectionId  String?
+  active     Boolean   @default(true)
+  opsTasks   OpsTask[]
+
+  @@index([tenantId, propertyId])
+  @@map("ops_zones")
+}
+
+/// Секция (§7): именованная группа номеров/зон для распределения уборок.
+model Section {
+  id         String @id @default(uuid())
+  tenantId   String
+  propertyId String
+  name       String
+
+  @@index([tenantId, propertyId])
+  @@map("ops_sections")
+}
+
+/// Тип уборки (§6.1): справочник (выездная/текущая/жилая + свои).
+model CleaningType {
+  id                  String    @id @default(uuid())
+  tenantId            String
+  name                String
+  forResidential      Boolean   @default(true)
+  color               String    @default("#0ea5e9")
+  checklistId         String?
+  /// Чек-лист обязателен до начала уборки.
+  checklistBeforeStart Boolean  @default(false)
+  /// Ключ пресета (departure/stayover/occupied) — для миграций/правил по умолчанию.
+  presetKey           String?
+  archivedAt          DateTime?
+
+  @@index([tenantId])
+  @@map("ops_cleaning_types")
+}
+
+/// Норматив времени (§6.1): тип уборки × категория номера → минуты.
+model CleaningStandard {
+  id             String  @id @default(uuid())
+  tenantId       String
+  cleaningTypeId String
+  /// null — норматив по умолчанию для всех категорий.
+  roomTypeId     String?
+  minutes        Int
+
+  @@unique([tenantId, cleaningTypeId, roomTypeId])
+  @@map("ops_cleaning_standards")
+}
+
+/// Правило автосоздания уборок (§6.2): состояние номера → тип уборки.
+model CleaningRule {
+  id             String                @id @default(uuid())
+  tenantId       String
+  /// null — для всех объектов.
+  propertyId     String?
+  cleaningTypeId String
+  condition      CleaningRuleCondition
+  /// Доп. специфика: только эта категория номера.
+  roomTypeId     String?
+  /// Для OCCUPIED: уборка каждые N ночей проживания (длительное проживание).
+  minStayNights  Int?
+  /// Спецпредложения (§6.2): только для броней этого тарифа…
+  ratePlanId     String?
+  /// …или с этим промокодом («Регулярная+шампанское»).
+  promoCode      String?
+  enabled        Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+
+  @@index([tenantId])
+  @@map("ops_cleaning_rules")
+}
+
+/// Шаблон задачи (§4.5): payload — поля задачи (title, description, теги, чек-листы...).
+model OpsTaskTemplate {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("ops_task_templates")
+}
+
+/// Правило планировщика (§4.7): повторяющиеся задачи по расписанию.
+/// payload — полный набор полей задачи (как CreateOpsTaskDto): правило создаётся
+/// «как обычная задача» с расписанием повторяемости.
+model OpsRecurringRule {
+  id          String       @id @default(uuid())
+  tenantId    String
+  name        String
+  /// Поля создаваемой задачи (как payload шаблона).
+  payload     Json
+  freq        OpsRecurFreq
+  /// Время суток "HH:mm" (локальное время объекта).
+  time        String
+  /// WEEKLY: дни недели 1–7 (пн=1); MONTHLY: числа месяца 1–31.
+  days        Int[]        @default([])
+  /// INTERVAL: каждые N дней (отсчёт от startDate/createdAt).
+  intervalDays Int?
+  /// Начало действия правила (первое срабатывание не раньше этой даты).
+  startDate   DateTime?
+  enabled     Boolean      @default(true)
+  lastFiredAt DateTime?
+  createdAt   DateTime     @default(now())
+
+  @@index([tenantId])
+  @@map("ops_recurring_rules")
+}
+
+/// SLA-политика (LQA): severity × источник (гость/внутренняя) → нормативы реакции и выполнения.
+/// При создании задачи без явных сроков acceptBy/dueAt проставляются автоматически.
+model OpsSlaPolicy {
+  id            String              @id @default(uuid())
+  tenantId      String
+  severity      MaintenanceSeverity
+  /// true — заявка от гостя (guestRequest), false — внутренняя.
+  guestRequest  Boolean             @default(false)
+  /// Норматив принятия в работу, минут (null — не проставлять acceptBy).
+  acceptMinutes Int?
+  /// Норматив выполнения, минут (null — не проставлять dueAt).
+  dueMinutes    Int?
+  enabled       Boolean             @default(true)
+
+  @@unique([tenantId, severity, guestRequest])
+  @@map("ops_sla_policies")
+}
+
+/// ППР-цикл (LQA preventive maintenance): каждый номер проходит профилактику
+/// по чек-листу раз в periodDays; cron создаёт задачи порциями (perDay),
+/// предпочитая свободные сегодня номера. Давность считается по последней
+/// DONE-задаче этого правила по номеру.
+model OpsPmRule {
+  id           String    @id @default(uuid())
+  tenantId     String
+  name         String
+  /// null — все объекты.
+  propertyId   String?
+  /// Ограничить категорией номера (null — все).
+  roomTypeId   String?
+  /// Период цикла в днях (90 = квартал).
+  periodDays   Int       @default(90)
+  /// Сколько задач создавать в день (порция обхода).
+  perDay       Int       @default(2)
+  /// Чек-лист профилактики (прикрепляется к задаче).
+  checklistId  String?
+  /// Отдел-исполнитель (обычно инженерная служба).
+  groupId      String?
+  /// Теги создаваемых задач.
+  tagIds       String[]  @default([])
+  enabled      Boolean   @default(true)
+  lastRunAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([tenantId])
+  @@map("ops_pm_rules")
+}
+
+/// Правило автоматизации (§8.1): напоминание или эскалация по таймауту статуса.
+model OpsAutomationRule {
+  id               String            @id @default(uuid())
+  tenantId         String
+  type             OpsAutomationType
+  name             String
+  /// Статус-триггер (обычно NEW).
+  status           OpsTaskStatus
+  afterMinutes     Int
+  /// REMIND: повторять каждые N минут (null — однократно).
+  repeatMinutes    Int?
+  /// Условие: только задачи, где исполнитель имеет эту роль (null — все).
+  targetRoleKey    String?
+  /// Условие: только задачи этой критичности (null — любая).
+  severity         MaintenanceSeverity?
+  /// Условие: только задачи с этим тегом (null — любой).
+  tagId            String?
+  /// Условие: только гостевые заявки (guestRequest).
+  guestOnly        Boolean           @default(false)
+  /// ESCALATE: как определить руководителя для уведомления (§8.1).
+  notifyTarget     OpsNotifyTarget   @default(USER)
+  /// ESCALATE + notifyTarget=USER: кого уведомить (конкретный сотрудник).
+  escalateToUserId String?
+  enabled          Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+
+  @@index([tenantId])
+  @@map("ops_automation_rules")
+}
+
+/// Отметка срабатывания автоматизации по задаче (анти-спам).
+model OpsAutomationFire {
+  taskId      String
+  ruleId      String
+  lastFiredAt DateTime @default(now())
+
+  @@id([taskId, ruleId])
+  @@map("ops_automation_fires")
+}
+
+/// Лист списания расходников при уборке (§6.6): позиции склада + кол-во по умолчанию.
+model CleaningWriteoffList {
+  id             String  @id @default(uuid())
+  tenantId       String
+  name           String
+  cleaningTypeId String?
+  roomTypeId     String?
+  /// [{itemId, qty}] — позиции складской номенклатуры.
+  items          Json
+
+  @@index([tenantId])
+  @@map("ops_cleaning_writeoff_lists")
+}
+
+/// Платёж по бронированию (YooKassa, 54-ФЗ). Источник истины статуса — webhook шлюза.
+model Payment {
+  id               String        @id @default(uuid())
+  bookingId        String
+  /// Группа броней (мульти-номер): один платёж на несколько броней.
+  groupId          String?
+  provider         String        @default("yookassa")
+  gatewayPaymentId String?       @unique
+  status           PaymentStatus @default(PENDING)
+  amount           Int
+  currency         String        @default("RUB")
+  refundedAmount   Int           @default(0)
+  /// Двухстадийный платёж (холд + capture) — для депозитов/гарантий.
+  twoStage         Boolean       @default(false)
+  /// Плательщик (вкладка «Счёт» → Платежи): individual | legal.
+  payerType        String?
+  /// ФИО/название плательщика.
+  payerName        String?
+  /// Признак способа расчёта (54-ФЗ): prepay100 | prepay | advance | full | credit.
+  settlementKind   String?
+  /// Ставка НДС платежа, % (null — «Без НДС»).
+  vatRate          Int?
+  /// Дата платежа (может отличаться от createdAt — ручной ввод на стойке).
+  paidAt           DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("payments")
+}
+
+/// Онлайн-регистрация гостя (§8). Паспортные данные шифруются (152-ФЗ).
+model Checkin {
+  id                  String               @id @default(uuid())
+  bookingId           String               @unique
+  guestId             String
+  status              CheckinStatus        @default(DRAFT)
+  arrivalTime         String?
+  departureTime       String?
+  adults              Int                  @default(1)
+  /// Дети: [{ age: number }]
+  children            Json                 @default("[]")
+  /// Паспортные данные (зашифрованный JSON, AES-256-GCM).
+  passportEncrypted   String?
+  /// Результат авто-проверки паспорта (OCR + действительность).
+  passportCheckStatus PassportCheckStatus?
+  passportCheckNote   String?
+  passportCheckAt     DateTime?
+  consentsSigned      Boolean              @default(false)
+  houseRulesAccepted  Boolean              @default(false)
+  rejectionReason     String?
+  instructions        String?
+  submittedAt         DateTime?
+  reviewedAt          DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  booking   Booking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  @@index([guestId])
+  @@map("checkins")
+}
+
+/// Область применения воронки заселения (CHECK-IN-TZ §2.1).
+enum FunnelScope {
+  TENANT
+  PROPERTY
+}
+
+/// Воронка автоматизированного заселения (CHECK-IN-TZ §2) — конфигурация этапов
+/// и условий, редактируется в админке (конструктор). Сетевая (TENANT) с
+/// переопределением на объект (PROPERTY). Стадии брони считает computeFunnelStage.
+model CheckinFunnel {
+  id          String      @id @default(uuid())
+  tenantId    String
+  scope       FunnelScope @default(TENANT)
+  /// Объект, для которого переопределена воронка (scope=PROPERTY).
+  propertyId  String?
+  name        String
+  /// Markdown «как устроено заселение у нас» (видно сотрудникам).
+  description String?
+  active      Boolean     @default(true)
+  /// Применяется, если у объекта нет своей воронки. Одна на тенант.
+  isDefault   Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  stages CheckinFunnelStageConfig[]
+
+  @@index([tenantId])
+  @@map("checkin_funnels")
+}
+
+/// Этап воронки заселения (CHECK-IN-TZ §2.1). Условия — из словаря
+/// предопределённых шлюзов (FUNNEL_CONDITIONS), не произвольный код.
+model CheckinFunnelStageConfig {
+  id                      String  @id @default(uuid())
+  funnelId                String
+  /// Машинный ключ: identification | registration | payment | key_issue | custom.
+  key                     String
+  title                   String
+  order                   Int
+  enabled                 Boolean @default(true)
+  /// Блокирующий ли шлюз (false — информационный, не мешает выдаче ключа).
+  required                Boolean @default(true)
+  /// [{ type: FunnelConditionType, params? }] — словарь условий, §2.1.
+  conditions              Json    @default("[]")
+  /// Подключённые каналы коммуникации этапа: push|sms|email|telegram|whatsapp|ota_messaging|guest_portal.
+  channels                String[] @default([])
+  /// Шаблон уведомления при входе в этап (реестр notifications/scenarios).
+  notificationTemplateKey String?
+  /// [{ offsetHours, channels? }] — напоминания относительно заезда.
+  reminderPolicy          Json?
+  /// Временные смещения этапа (напр. окно ключа { preCheckinMinutes, postCheckoutMinutes }).
+  timing                  Json?
+  /// «Как это работает» для гостя (markdown, показывается в гостевом портале).
+  guestDescription        String?
+  /// Заметка для сотрудника.
+  staffNote               String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  funnel CheckinFunnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+
+  @@index([funnelId, order])
+  @@map("checkin_funnel_stages")
+}
+
+/// Редактируемый шаблон уведомления (CHECK-IN-TZ §5.2): переопределяет встроенный
+/// текст сценария. channel='*' — для всех каналов; конкретный канал приоритетнее.
+/// Переменные вида {property}, {link}, {pending} подставляются из payload.
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  tenantId  String
+  scenario  String
+  channel   String   @default("*")
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, scenario, channel])
+  @@map("notification_templates")
+}
+
+/// Гостевая ссылка заселения (CHECK-IN-TZ §4, magic-link): ограниченная гостевая
+/// сессия только на одну бронь — онлайн-регистрация, оплата, ключ. Для гостей без
+/// аккаунта (OTA, прямые без ЛК). Токен ≥128 бит; после выезда отзывается.
+model GuestCheckinLink {
+  id        String    @id @default(uuid())
+  tenantId  String
+  bookingId String    @unique
+  token     String    @unique
+  expiresAt DateTime?
+  revokedAt DateTime?
+  openCount Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("guest_checkin_links")
+}
+
+/// Журнал действий оркестратора заселения (CHECK-IN-TZ §6) — дедупликация
+/// уведомлений/эскалаций: повторный тик не плодит события (uniq dedupeKey).
+model FunnelEventLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  bookingId String
+  /// invite | reminder | escalation | auto_checkin | checkout_revoke | no_show …
+  kind      String
+  /// Уникальный ключ события: `<bookingId>:<kind>[:детали]`.
+  dedupeKey String   @unique
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([bookingId])
+  @@map("checkin_funnel_events")
+}
+
+/// Документ (скан паспорта). Хранится зашифрованным в Object Storage (§18.2).
+model Document {
+  id             String    @id @default(uuid())
+  guestId        String
+  checkinId      String?
+  kind           String
+  storageKey     String
+  contentType    String
+  encrypted      Boolean   @default(true)
+  retentionUntil DateTime?
+  createdAt      DateTime  @default(now())
+
+  checkin    Checkin?            @relation(fields: [checkinId], references: [id], onDelete: SetNull)
+  accessLogs DocumentAccessLog[]
+
+  @@index([guestId])
+  @@map("documents")
+}
+
+/// Журнал доступа к документам (152-ФЗ: логирование просмотров, §18.2).
+model DocumentAccessLog {
+  id         String   @id @default(uuid())
+  documentId String
+  actor      String
+  action     String
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("document_access_logs")
+}
+
+/// Цифровой ключ TTLock (§9). PIN хранится зашифрованным.
+model DigitalKey {
+  id           String     @id @default(uuid())
+  bookingId    String
+  type         KeyType    @default(PIN)
+  target       LockTarget @default(ROOM)
+  status       KeyStatus  @default(NOT_ISSUED)
+  /// ID замка в TTLock.
+  lockId       String
+  /// ID кода/ключа в TTLock.
+  ttlockKeyId  String?
+  /// Человеческое название двери (из Lock.name) для отображения гостю.
+  doorName     String?
+  /// PIN, зашифрованный AES-256-GCM.
+  pinEncrypted String?
+  validFrom    DateTime
+  validUntil   DateTime
+  issuedAt     DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  booking Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  logs    DigitalKeyLog[]
+
+  @@index([bookingId])
+  @@index([status])
+  @@map("digital_keys")
+}
+
+/// Журнал жизненного цикла цифрового ключа (§9.6).
+model DigitalKeyLog {
+  id        String   @id @default(uuid())
+  keyId     String
+  event     String
+  detail    String?
+  actor     String?
+  createdAt DateTime @default(now())
+
+  key DigitalKey @relation(fields: [keyId], references: [id], onDelete: Cascade)
+
+  @@index([keyId])
+  @@map("digital_key_logs")
+}
+
+enum ChatDirection {
+  GUEST
+  STAFF
+}
+
+enum AdminRole {
+  ADMIN
+  MANAGER
+}
+
+enum PromocodeType {
+  PERCENT
+  FIXED
+}
+
+/// Применение промокода (эталон Bnovo): скидка / повышение категории / бесплатная услуга.
+enum PromocodeApplication {
+  DISCOUNT
+  ROOM_UPGRADE
+  FREE_SERVICE
+}
+
+/// Сотрудник админ-панели (§17). 2FA — TODO (§18.1).
+model AdminUser {
+  id                String    @id @default(uuid())
+  tenantId          String
+  email             String    @unique
+  passwordHash      String
+  name              String?
+  role              AdminRole @default(MANAGER)
+  /// Ключ роли доступа (см. модель Role). null — определяется из enum role.
+  roleKey           String?
+  active            Boolean   @default(true)
+  /// Складской учёт: адреса, доступные сотруднику. Пусто = все (центральные роли).
+  allowedAddressIds String[]  @default([])
+  /// Последняя активность в мессенджере — для presence (онлайн, если недавно). §2.
+  lastSeenAt        DateTime?
+  /// Режим «в смене» (TASKS-HOUSEKEEPING-TZ §10): null — не в смене.
+  onDutySince       DateTime?
+  /// Фото профиля сотрудника (отображается в исполнителях задач).
+  avatarUrl         String?
+  /// Должность сотрудника (оргструктура) — HR-ярлык, отдельно от роли-доступа.
+  positionId        String?
+  /// Карточка сотрудника (§6): личные поля. Часть заполняет сам сотрудник, часть — руководитель.
+  phone             String?
+  birthday          DateTime?
+  hireDate          DateTime?
+  hobby             String?
+  /// «О себе» — свободный текст в карточке/профиле сотрудника.
+  about             String?
+  /// Пользовательские поля карточки: { fieldDefId: "значение" } (определения — EmployeeFieldDef).
+  customFields      Json      @default("{}")
+  createdAt         DateTime  @default(now())
+
+  tenant          Tenant            @relation(fields: [tenantId], references: [id])
+  position        Position?         @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  bonusesReceived StaffBonusAward[] @relation("BonusReceived")
+  bonusesAwarded  StaffBonusAward[] @relation("BonusAwarded")
+
+  @@index([tenantId])
+  @@index([positionId])
+  @@map("admin_users")
+}
+
+/// Кто может заполнять пользовательское поле карточки сотрудника (§6).
+enum EmployeeFieldEditableBy {
+  SELF
+  MANAGER
+  BOTH
+}
+
+/// Определение пользовательского поля карточки сотрудника (§6): напр. «Выданная форма», «Личный инвентарь».
+model EmployeeFieldDef {
+  id         String                  @id @default(uuid())
+  tenantId   String
+  name       String
+  editableBy EmployeeFieldEditableBy @default(MANAGER)
+  order      Int                     @default(0)
+  createdAt  DateTime                @default(now())
+
+  @@index([tenantId])
+  @@map("employee_field_defs")
+}
+
+/// Должность (оргструктура): HR-ярлык + роль-доступ по умолчанию. Отдельная ось от Role (доступы)
+/// и UserGroup (отдел): «кто человек по функции». См. dha-org-structure.
+model Position {
+  id             String      @id @default(uuid())
+  tenantId       String
+  name           String
+  /// Роль доступа по умолчанию (Role.key) — подставляется при заведении сотрудника с этой должностью.
+  defaultRoleKey String?
+  createdAt      DateTime    @default(now())
+
+  users AdminUser[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@map("positions")
+}
+
+/// Бонусная программа сотрудников (§7). Критерий начисления баллов — каталог «за что даём»
+/// (из базы знаний: у каждой роли свои критерии, напр. горничная: балл за чек-лист, помощь гостю).
+/// Начисляет руководитель (право bonus_award); сотрудник видит баланс/историю/рейтинг (bonus_view).
+/// Баллы — НЕматериальное признание (не путать с баллами лояльности гостей «баллы D»).
+model StaffBonusRule {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  /// Баллы по умолчанию за критерий (можно переопределить при начислении).
+  points    Int
+  /// Ограничение по роли-доступу (Role.key): критерий для конкретной функции. null — для всех.
+  roleKey   String?
+  active    Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  awards StaffBonusAward[]
+
+  @@index([tenantId])
+  @@map("staff_bonus_rules")
+}
+
+/// Начисление/корректировка баллов сотруднику (§7). Баланс = сумма points по сотруднику.
+/// points может быть отрицательным (корректировка). Записи неизменяемы — журнал признания.
+model StaffBonusAward {
+  id          String   @id @default(uuid())
+  tenantId    String
+  /// Кому начислено.
+  userId      String
+  /// Кто начислил (руководитель). null — если начисливший удалён.
+  awardedById String?
+  /// Критерий из каталога (опц.); может быть свободное начисление без правила.
+  ruleId      String?
+  points      Int
+  /// Комментарий/обоснование (обязателен при свободном начислении без правила).
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  user      AdminUser       @relation("BonusReceived", fields: [userId], references: [id], onDelete: Cascade)
+  awardedBy AdminUser?      @relation("BonusAwarded", fields: [awardedById], references: [id], onDelete: SetNull)
+  rule      StaffBonusRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, userId])
+  @@index([tenantId, createdAt])
+  @@map("staff_bonus_awards")
+}
+
+/// Внутренний мессенджер сотрудников (§2): чат — 1:1 (DM) или групповой.
+enum StaffChatKind {
+  DM
+  GROUP
+}
+
+model StaffChat {
+  id          String        @id @default(uuid())
+  tenantId    String
+  kind        StaffChatKind
+  /// Название (для GROUP). Для DM формируется на лету из имени собеседника.
+  title       String?
+  /// Ключ дедупликации DM: `tenantId:sorted(userA,userB)`. Уникален — один DM на пару.
+  dmKey       String?       @unique
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  members  StaffChatMember[]
+  messages StaffMessage[]
+
+  @@index([tenantId])
+  @@map("staff_chats")
+}
+
+/// Режим уведомлений участника в чате (§2): все / только упоминания / выключены.
+enum StaffNotifyMode {
+  ALL
+  MENTIONS
+  NONE
+}
+
+model StaffChatMember {
+  id         String    @id @default(uuid())
+  chatId     String
+  userId     String
+  /// До какого момента участник прочитал чат (для непрочитанных и «прочитано»).
+  lastReadAt DateTime?
+  /// Настройки уведомлений участника (§2).
+  notifyMode StaffNotifyMode @default(ALL)
+  mutedUntil DateTime?
+  createdAt  DateTime  @default(now())
+
+  chat StaffChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, userId])
+  @@index([userId])
+  @@map("staff_chat_members")
+}
+
+model StaffMessage {
+  id        String    @id @default(uuid())
+  chatId    String
+  senderId  String
+  text      String
+  /// Ответ-цитата на другое сообщение чата (§2).
+  replyToId String?
+  /// Отметки времени редактирования/удаления (soft-delete — контент не отдаётся).
+  editedAt  DateTime?
+  deletedAt DateTime?
+  /// Закреп сообщения в чате (§2): когда и кем закреплено.
+  pinnedAt   DateTime?
+  pinnedById String?
+  /// Упомянутые (@) участники — id сотрудников (§2).
+  mentionIds String[]  @default([])
+  createdAt DateTime  @default(now())
+
+  chat        StaffChat                @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  replyTo     StaffMessage?            @relation("StaffMessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies     StaffMessage[]           @relation("StaffMessageReply")
+  reactions   StaffMessageReaction[]
+  savedBy     StaffSavedMessage[]
+  attachments StaffMessageAttachment[]
+
+  @@index([chatId, createdAt])
+  @@map("staff_messages")
+}
+
+/// Тип вложения сообщения (§2): изображение/видео/голосовое/файл.
+enum StaffAttachmentKind {
+  IMAGE
+  VIDEO
+  VOICE
+  FILE
+}
+
+/// Вложение сообщения мессенджера (§2). Файл лежит в /uploads (статика), url — путь.
+model StaffMessageAttachment {
+  id        String              @id @default(uuid())
+  messageId String
+  kind      StaffAttachmentKind
+  url       String
+  name      String
+  size      Int
+  mime      String
+  createdAt DateTime            @default(now())
+
+  message StaffMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("staff_message_attachments")
+}
+
+/// Папка-раздел сотрудника (§2): группирует его чаты (chatIds — набор чатов).
+model StaffChatFolder {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  order     Int      @default(0)
+  chatIds   String[] @default([])
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("staff_chat_folders")
+}
+
+/// Избранное (сохранённые сообщения) сотрудника (§2).
+model StaffSavedMessage {
+  id        String   @id @default(uuid())
+  userId    String
+  messageId String
+  createdAt DateTime @default(now())
+
+  message StaffMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@index([userId])
+  @@map("staff_saved_messages")
+}
+
+/// Реакция-эмодзи на сообщение (§2). Один пользователь — одна и та же эмодзи один раз.
+model StaffMessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message StaffMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+  @@map("staff_message_reactions")
+}
+
+/// Роль доступа с настраиваемым набором прав (раздел/функция).
+model Role {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  permissions String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}
+
+/// Промокод (§17). Скидка процентом или фиксированной суммой.
+model Promocode {
+  id                         String               @id @default(uuid())
+  code                       String               @unique
+  /// Внутренний комментарий (гость не видит).
+  comment                    String?
+  type                       PromocodeType        @default(PERCENT)
+  /// Значение: проценты (1..100) или сумма в ₽ (для application=DISCOUNT).
+  value                      Int
+  /// Применение: скидка / повышение категории / бесплатная услуга.
+  application                PromocodeApplication @default(DISCOUNT)
+  active                     Boolean              @default(true)
+  /// Лимит броней (maxUses) и период действия.
+  validFrom                  DateTime?
+  validUntil                 DateTime?
+  maxUses                    Int?
+  usedCount                  Int                  @default(0)
+  /// Категории и тарифы, к которым применим (пусто — ко всем).
+  roomTypeIds                String[]             @default([])
+  ratePlanIds                String[]             @default([])
+  showOnlyMatchingCategories Boolean              @default(false)
+  showOnlyMatchingTariffs    Boolean              @default(false)
+  /// Источник (модуль бронирования и пр.) и маркетинговые поля.
+  source                     String?
+  bookingMethod              String?
+  referralSource             String?
+  discountReason             String?
+  /// Авто-применение при вводе email гостем; игнорировать ограничения (min/max stay).
+  autoApplyOnEmail           Boolean              @default(false)
+  ignoreRestrictions         Boolean              @default(false)
+  /// Повышение категории (application=ROOM_UPGRADE): с какой на какую категорию.
+  upgradeFromRoomTypeId      String?
+  upgradeToRoomTypeId        String?
+  /// Бесплатная услуга (application=FREE_SERVICE): какая доп-услуга (Extra).
+  freeExtraId                String?
+  createdAt                  DateTime             @default(now())
+
+  @@map("promocodes")
+}
+
+/// Маркетинговые словари («Настройки гостиниц → Маркетинг», эталон Bnovo):
+/// способ бронирования, откуда узнали, обоснование скидки, причины скидки/отмены.
+enum MarketingOptionKind {
+  BOOKING_METHOD
+  REFERRAL_SOURCE
+  DISCOUNT_REASON
+  DISCOUNT_CAUSE
+  CANCEL_REASON
+}
+
+/// Настраиваемый пункт маркетингового словаря (используется в бронях и промокодах).
+model MarketingOption {
+  id        String              @id @default(uuid())
+  tenantId  String
+  kind      MarketingOptionKind
+  label     String
+  sortOrder Int                 @default(0)
+  active    Boolean             @default(true)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([tenantId, kind])
+  @@map("marketing_options")
+}
+
+/// Сообщение чата с ресепшен (§10). Зеркалится в открытую линию Bitrix24.
+model ChatMessage {
+  id              String        @id @default(uuid())
+  guestId         String
+  direction       ChatDirection
+  topic           String?
+  text            String
+  bitrixMessageId String?
+  createdAt       DateTime      @default(now())
+
+  guest Guest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@index([guestId])
+  @@map("chat_messages")
+}
+
+/// Токен устройства для push (APNs/FCM/RuStore).
+model DeviceToken {
+  id        String   @id @default(uuid())
+  guestId   String
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+
+  guest Guest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@index([guestId])
+  @@map("device_tokens")
+}
+
+/// Событие аналитики (§19): установки, открытия, шаги воронки.
+model AnalyticsEvent {
+  id          String   @id @default(uuid())
+  type        String
+  guestId     String?
+  anonymousId String?
+  props       Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+  @@map("analytics_events")
+}
+
+/// Журнал отправленных уведомлений (§16) — также для аналитики и in-app списка.
+model Notification {
+  id        String   @id @default(uuid())
+  guestId   String
+  scenario  String
+  channel   String
+  title     String
+  body      String
+  status    String
+  createdAt DateTime @default(now())
+
+  guest Guest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@index([guestId])
+  @@map("notifications")
+}
+
+/// Операции с баллами лояльности (§13.7). Баланс = сумма по статусу AVAILABLE.
+model PointTransaction {
+  id        String      @id @default(uuid())
+  guestId   String
+  bookingId String?
+  /// Сумма: + начисление, − списание.
+  amount    Int
+  status    PointStatus
+  /// Причина: accrual | redemption | manual | refund.
+  reason    String
+  expiresAt DateTime?
+  createdAt DateTime    @default(now())
+
+  guest   Guest    @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([guestId, status])
+  @@map("point_transactions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Складской учёт (мини-ERP управляющей компании). Bounded-context, префикс Wh.
+// Остатки меняются ТОЛЬКО проведением документа: регистр WhMovement — источник
+// истины, WhBalance — агрегат для скорости (§14). Количества/цены — Float
+// (встречаются дробные единицы, напр. 0,5 рулона). План: serene-frolicking-tiger.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum WhAddressType {
+  APARTMENTS
+  MINI_HOTEL
+  HOTEL
+  OFFICE
+  OTHER
+}
+
+enum WhWarehouseType {
+  CENTRAL
+  ADDRESS_LOCAL
+  SUBDIVISION_VIRTUAL
+  WRITE_OFF
+  DEFECT
+}
+
+enum WhDocType {
+  RECEIPT
+  TRANSFER
+  ISSUE
+  WRITE_OFF
+  RETURN
+  INVENTORY
+  CORRECTION
+  DEFECT
+}
+
+enum WhDocStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  IN_PROGRESS
+  SHIPPED
+  RECEIVED
+  POSTED
+  REJECTED
+  CANCELLED
+}
+
+enum WhRequestStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  FULFILLED
+  CANCELLED
+}
+
+enum WhRequestPriority {
+  LOW
+  NORMAL
+  URGENT
+}
+
+enum WhWriteOffReason {
+  USED
+  SPOILAGE
+  BREAKAGE
+  WEAR
+  LOSS
+  THEFT
+  EXPIRED
+  DEFECT
+  GIVEN_TO_GUEST
+  OTHER
+}
+
+enum WhNormUnit {
+  ROOM_NIGHT
+  STAY
+  GUEST
+  CLEANING
+  PLACE
+  MONTH
+}
+
+model WhAddress {
+  id          String        @id @default(uuid())
+  name        String
+  fullAddress String?
+  type        WhAddressType @default(APARTMENTS)
+  roomsCount  Int?
+  responsible String?
+  active      Boolean       @default(true)
+  comment     String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  warehouses WhWarehouse[]
+  parLevels  WhParLevel[]
+
+  @@map("wh_addresses")
+}
+
+model WhWarehouse {
+  id          String          @id @default(uuid())
+  name        String
+  type        WhWarehouseType @default(ADDRESS_LOCAL)
+  addressId   String?
+  responsible String?
+  active      Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  address  WhAddress?  @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  balances WhBalance[]
+
+  @@index([type])
+  @@map("wh_warehouses")
+}
+
+model WhCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  parentId  String?
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  items WhItem[]
+
+  @@map("wh_categories")
+}
+
+model WhItem {
+  id                String   @id @default(uuid())
+  sku               String?  @unique
+  barcode           String?
+  name              String
+  categoryId        String?
+  subcategory       String?
+  unit              String   @default("шт")
+  brand             String?
+  description       String?
+  photoUrl          String?
+  trackBatches      Boolean  @default(false)
+  trackExpiry       Boolean  @default(false)
+  trackSerial       Boolean  @default(false)
+  minStock          Float?
+  maxStock          Float?
+  parStock          Float?
+  lastPurchasePrice Float?
+  avgPrice          Float?
+  vatRate           Int?
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  category       WhCategory?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  balances       WhBalance[]
+  parLevels      WhParLevel[]
+  documentLines  WhDocumentLine[]
+  requestLines   WhRequestLine[]
+  inventoryLines WhInventoryLine[]
+  norms          WhConsumptionNorm[]
+
+  @@index([categoryId])
+  @@map("wh_items")
+}
+
+model WhSupplier {
+  id           String   @id @default(uuid())
+  name         String
+  inn          String?
+  kpp          String?
+  contactName  String?
+  phone        String?
+  email        String?
+  paymentTerms String?
+  comment      String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  documents WhDocument[]
+
+  @@map("wh_suppliers")
+}
+
+model WhDocument {
+  id              String            @id @default(uuid())
+  number          String            @unique
+  type            WhDocType
+  status          WhDocStatus       @default(DRAFT)
+  docDate         DateTime          @default(now())
+  postedAt        DateTime?
+  authorId        String?
+  responsible     String?
+  supplierId      String?
+  fromWarehouseId String?
+  toWarehouseId   String?
+  addressId       String?
+  /// Номер накладной / счёта / УПД поставщика (для прихода).
+  externalRef     String?
+  reason          WhWriteOffReason?
+  comment         String?
+  /// Задача/уборка-источник (списание расходников при уборке, TASKS-HOUSEKEEPING-TZ §6.6).
+  opsTaskId       String?
+  amount          Float             @default(0)
+  /// Перемещение получено с недостачей в пути (есть акт расхождения, §5.3).
+  discrepancy     Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  supplier  WhSupplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  lines     WhDocumentLine[]
+  movements WhMovement[]
+
+  @@index([type, status])
+  @@index([docDate])
+  @@map("wh_documents")
+}
+
+model WhDocumentLine {
+  id            String    @id @default(uuid())
+  documentId    String
+  itemId        String
+  batch         String?
+  expiryDate    DateTime?
+  quantity      Float
+  unit          String?
+  price         Float     @default(0)
+  amount        Float     @default(0)
+  /// Инвентаризация: учётное количество на момент старта.
+  bookQuantity  Float?
+  /// Двухфазное перемещение (§5.3): отгружено / получено по факту + себестоимость и партия отгрузки.
+  shippedQty    Float?
+  shippedCost   Float?
+  shippedBatch  String?
+  shippedExpiry DateTime?
+  receivedQty   Float?
+  comment       String?
+
+  document WhDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  item     WhItem     @relation(fields: [itemId], references: [id])
+
+  @@index([documentId])
+  @@map("wh_document_lines")
+}
+
+model WhMovement {
+  id           String    @id @default(uuid())
+  date         DateTime  @default(now())
+  documentId   String
+  documentType WhDocType
+  itemId       String
+  warehouseId  String
+  addressId    String?
+  batch        String?
+  expiryDate   DateTime?
+  quantityIn   Float     @default(0)
+  quantityOut  Float     @default(0)
+  price        Float     @default(0)
+  amount       Float     @default(0)
+  createdById  String?
+  createdAt    DateTime  @default(now())
+
+  document WhDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([warehouseId, itemId])
+  @@index([itemId])
+  @@index([date])
+  @@map("wh_movements")
+}
+
+model WhBalance {
+  id          String    @id @default(uuid())
+  warehouseId String
+  itemId      String
+  /// Партия и срок входят в ключ остатка; expiryKey — непустой ключ для @@unique
+  /// (Postgres считает NULL разными, поэтому ключом служит строка, не дата).
+  batch       String    @default("")
+  expiryKey   String    @default("")
+  expiryDate  DateTime?
+  quantity    Float     @default(0)
+  reserved    Float     @default(0)
+  avgCost     Float     @default(0)
+  updatedAt   DateTime  @updatedAt
+
+  warehouse WhWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  item      WhItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseId, itemId, batch, expiryKey])
+  @@index([itemId])
+  @@map("wh_balances")
+}
+
+model WhReplenishmentRequest {
+  id          String            @id @default(uuid())
+  number      String            @unique
+  addressId   String?
+  subdivision String?
+  authorId    String?
+  status      WhRequestStatus   @default(DRAFT)
+  priority    WhRequestPriority @default(NORMAL)
+  desiredDate DateTime?
+  comment     String?
+  approverId  String?
+  approvedAt  DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  lines WhRequestLine[]
+
+  @@index([status])
+  @@map("wh_replenishment_requests")
+}
+
+model WhRequestLine {
+  id        String  @id @default(uuid())
+  requestId String
+  itemId    String
+  quantity  Float
+  comment   String?
+
+  request WhReplenishmentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  item    WhItem                 @relation(fields: [itemId], references: [id])
+
+  @@index([requestId])
+  @@map("wh_request_lines")
+}
+
+model WhInventory {
+  id          String      @id @default(uuid())
+  number      String      @unique
+  warehouseId String?
+  addressId   String?
+  status      WhDocStatus @default(DRAFT)
+  startedAt   DateTime    @default(now())
+  finishedAt  DateTime?
+  authorId    String?
+  comment     String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  lines WhInventoryLine[]
+
+  @@map("wh_inventories")
+}
+
+model WhInventoryLine {
+  id           String    @id @default(uuid())
+  inventoryId  String
+  itemId       String
+  batch        String?
+  expiryKey    String?
+  expiryDate   DateTime?
+  bookQuantity Float     @default(0)
+  factQuantity Float?
+  price        Float     @default(0)
+  reason       String?
+
+  inventory WhInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  item      WhItem      @relation(fields: [itemId], references: [id])
+
+  @@index([inventoryId])
+  @@map("wh_inventory_lines")
+}
+
+model WhParLevel {
+  id        String @id @default(uuid())
+  addressId String
+  itemId    String
+  minStock  Float?
+  parStock  Float?
+
+  address WhAddress @relation(fields: [addressId], references: [id], onDelete: Cascade)
+  item    WhItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([addressId, itemId])
+  @@map("wh_par_levels")
+}
+
+model WhConsumptionNorm {
+  id           String     @id @default(uuid())
+  addressId    String?
+  roomCategory String?
+  itemId       String
+  unit         WhNormUnit @default(ROOM_NIGHT)
+  normQuantity Float
+  validFrom    DateTime?
+  validUntil   DateTime?
+  comment      String?
+  createdAt    DateTime   @default(now())
+
+  item WhItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("wh_consumption_norms")
+}
+
+model WhAttachment {
+  id         String   @id @default(uuid())
+  documentId String?
+  fileName   String
+  url        String
+  mimeType   String?
+  size       Int?
+  uploadedBy String?
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
+  @@map("wh_attachments")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  /// Арендатор (мультиарендность). Nullable — для системных/кросс-tenant записей.
+  tenantId  String?
+  actorId   String?
+  actorName String?
+  /// Действие: posted | cancelled | created | updated | deleted | corrected | ...
+  action    String
+  entity    String
+  entityId  String?
+  payload   Json?
+  at        DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([tenantId])
+  @@index([at])
+  @@map("audit_logs")
+}
+
+// === AI-агенты и коммуникации (AI-COMMUNICATIONS-TZ.md) ===
+
+enum AiChannel {
+  WEB
+  APP
+  TELEGRAM
+  ADMIN
+}
+
+enum AiConversationStatus {
+  BOT
+  ESCALATED
+  CLOSED
+}
+
+enum AiActorKind {
+  GUEST
+  STAFF
+}
+
+enum AiMessageRole {
+  USER
+  ASSISTANT
+  STAFF
+  TOOL
+  SYSTEM
+}
+
+/// Диалог гостя/сотрудника с AI-агентом. История хранится у нас (API модели
+/// stateless). tenantId — мультиарендность; guestId/employeeId — участник.
+model AiConversation {
+  id         String               @id @default(uuid())
+  tenantId   String
+  channel    AiChannel
+  actorKind  AiActorKind
+  status     AiConversationStatus @default(BOT)
+  guestId    String?
+  employeeId String?
+  /// Оператор, взявший эскалированный диалог (лента эскалаций §4.7).
+  operatorId String?
+  /// Внешний ID чата (напр. Telegram chat id) — для канала TELEGRAM.
+  externalId String?
+  model      String?
+  /// Вехи для QA-метрик (§5.7): когда AI передал человеку / оператор взял / закрыт.
+  escalatedAt DateTime?
+  assignedAt  DateTime?
+  closedAt    DateTime?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  messages   AiMessage[]
+  toolAudits AiToolAudit[]
+  qaReview   AiQaReview?
+
+  @@index([tenantId])
+  @@index([guestId])
+  @@index([status])
+  @@index([channel, externalId])
+  @@map("ai_conversations")
+}
+
+/// Сообщение диалога. Роли повторяют формат LLM. toolCalls — вызовы инструментов
+/// (для assistant); toolCallId/toolName — для сообщений роли tool.
+model AiMessage {
+  id             String        @id @default(uuid())
+  conversationId String
+  role           AiMessageRole
+  content        String
+  toolName       String?
+  toolCallId     String?
+  toolCalls      Json?
+  tokensIn       Int           @default(0)
+  tokensOut      Int           @default(0)
+  model          String?
+  createdAt      DateTime      @default(now())
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("ai_messages")
+}
+
+/// Журнал вызовов инструментов AI (аудит + ПДн + метрики, §5/§8 ТЗ).
+model AiToolAudit {
+  id             String      @id @default(uuid())
+  tenantId       String?
+  conversationId String?
+  actorKind      AiActorKind
+  guestId        String?
+  employeeId     String?
+  toolName       String
+  argsRedacted   Json?
+  allowed        Boolean     @default(true)
+  isError        Boolean     @default(false)
+  result         String?
+  createdAt      DateTime    @default(now())
+
+  conversation AiConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([toolName])
+  @@map("ai_tool_audits")
+}
+
+/// QA-разбор диалога (§5.7): детерминированные метрики из таймлайна +
+/// LLM-скоринг по стандартам общения. Один разбор на диалог (пере-прогон обновляет).
+model AiQaReview {
+  id             String @id @default(uuid())
+  tenantId       String
+  conversationId String @unique
+  operatorId     String?
+
+  /// Метрики (секунды); null, если у диалога не было операторской фазы.
+  timeToPickupSec  Int?
+  firstResponseSec Int?
+  avgResponseSec   Int?
+  maxResponseSec   Int?
+  resolutionSec    Int?
+  guestMsgCount    Int      @default(0)
+  staffMsgCount    Int      @default(0)
+  withinSla        Boolean?
+
+  /// LLM-скоринг: overall 0..100, criteria — балл 0..10 по критериям, flags — нарушения.
+  overallScore Int?
+  criteria     Json?
+  flags        Json?
+  sentiment    String? // POSITIVE | NEUTRAL | NEGATIVE
+  summary      String?
+  model        String?
+  createdAt    DateTime @default(now())
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([operatorId])
+  @@map("ai_qa_reviews")
+}
+
+// ─── База знаний (KB-DRIVE-TZ.md §3, §6) ───
+
+enum KbPageStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KbImportStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model KbBase {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  slug      String
+  icon      String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pages KbPage[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@map("kb_bases")
+}
+
+model KbPage {
+  id       String  @id @default(uuid())
+  tenantId String
+  baseId   String
+  base     KbBase  @relation(fields: [baseId], references: [id], onDelete: Cascade)
+  /// Дерево страниц: страница может быть и разделом (как в Notion/Outline).
+  parentId String?
+  parent   KbPage? @relation("KbPageTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children KbPage[] @relation("KbPageTree")
+
+  title String
+  slug  String
+  /// Неизменяемый короткий код — постоянные ссылки переживают переименование (ТЗ §3.3).
+  shortId String  @unique
+  icon    String?
+  status  KbPageStatus @default(PUBLISHED)
+  tags    String[]
+
+  /// Контент — наш блочный JSON: { blocks: [{type: heading|text|image|video|button|divider|raw, ...}] }
+  content Json
+  /// Плоский текст без разметки — для полнотекстового поиска (russian FTS).
+  searchText String @default("")
+
+  /// ID лендинга из импорта Bitrix24 — идемпотентность повторного импорта.
+  externalId String?
+  sortOrder  Int     @default(0)
+  /// Доступна гостевому AI-администратору (RAG) — ТЗ §4.3.
+  guestAgentVisible Boolean @default(false)
+
+  createdById String?
+  updatedById String?
+  /// Мягкая блокировка редактирования (§3.2): кто и когда открыл редактор (TTL 90 c).
+  editingById String?
+  editingAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions KbPageVersion[]
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, baseId])
+  @@index([parentId])
+  @@map("kb_pages")
+}
+
+model KbPageVersion {
+  id     String @id @default(uuid())
+  pageId String
+  page   KbPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  /// Порядковый номер версии страницы (1, 2, …).
+  n          Int
+  title      String
+  content    Json
+  authorId   String?
+  /// Черновик подготовлен AI-агентом (атрибуция, ТЗ §3.5).
+  aiAssisted Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@unique([pageId, n])
+  @@map("kb_page_versions")
+}
+
+model KbImportJob {
+  id       String         @id @default(uuid())
+  tenantId String
+  type     String         @default("bitrix24_kb")
+  status   KbImportStatus @default(PENDING)
+  /// Режим повторного импорта: skip — пропускать существующие, update — обновлять.
+  mode   String  @default("skip")
+  report Json?
+  error  String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@map("kb_import_jobs")
+}
+
+// ─── Диск (KB-DRIVE-TZ.md §5) ───
+
+enum DriveNodeKind {
+  FOLDER
+  FILE
+}
+
+model DriveNode {
+  id       String        @id @default(uuid())
+  tenantId String
+  parentId String?
+  parent   DriveNode?    @relation("DriveTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children DriveNode[]   @relation("DriveTree")
+  kind     DriveNodeKind
+  name     String
+  /// Неизменяемый короткий код — внутренние ссылки /drive?d=<shortId> (§5.4).
+  shortId String @unique
+
+  /// Файловые атрибуты (kind=FILE): актуальная версия.
+  mime           String?
+  size           Int?
+  sha256         String?
+  currentVersion Int     @default(0)
+
+  ownerId   String?
+  /// Извлечённый текст содержимого (docx/pdf/xlsx/txt) — поиск по содержимому (§4.1).
+  searchText String @default("")
+  /// Мягкое удаление — корзина (§5.1): восстановление, автоочистка через 30 дней.
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  versions DriveFileVersion[]
+
+  @@index([tenantId, parentId])
+  @@index([tenantId, deletedAt])
+  @@map("drive_nodes")
+}
+
+model DriveFileVersion {
+  id     String    @id @default(uuid())
+  nodeId String
+  node   DriveNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  /// Порядковый номер версии (1, 2, …) — новая загрузка файла с тем же именем.
+  n          Int
+  storageKey String
+  size       Int
+  sha256     String
+  mime       String
+  authorId   String?
+  createdAt  DateTime @default(now())
+
+  @@unique([nodeId, n])
+  @@map("drive_file_versions")
+}
+
+/// Публичная ссылка (единый механизм для страниц БЗ и файлов Диска, §5.4).
+model PublicLink {
+  id           String    @id @default(uuid())
+  tenantId     String
+  resourceType String // kb_page | drive_file
+  resourceId   String
+  /// ≥128 бит энтропии, отдаётся как /api/s/<token>.
+  token       String    @unique
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  openCount   Int       @default(0)
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([resourceType, resourceId])
+  @@map("public_links")
+}
+
+// ─── Группы и точечные доступы ACL (KB-DRIVE-TZ.md §2) ───
+
+/// Группа сотрудников («Ресепшен Босфор», «Горничные») — субъект ACL-грантов.
+model UserGroup {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  /// Цвет отдела (для отображения в интерфейсе).
+  color     String   @default("#6366f1")
+  /// Руководитель отдела (AdminUser.id) — получатель уведомлений «Уведомить руководителя».
+  headUserId String?
+  /// Родительский отдел (подотделы) — для древовидной оргструктуры.
+  parentId  String?
+  createdAt DateTime @default(now())
+
+  parent    UserGroup?        @relation("UserGroupTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  UserGroup[]       @relation("UserGroupTree")
+  members   UserGroupMember[]
+  /// Задачи, назначенные на этот отдел (ops_tasks).
+  tasks     OpsTask[]
+
+  @@unique([tenantId, name])
+  @@index([parentId])
+  @@map("user_groups")
+}
+
+model UserGroupMember {
+  groupId     String
+  group       UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  adminUserId String
+
+  @@id([groupId, adminUserId])
+  @@index([adminUserId])
+  @@map("user_group_members")
+}
+
+enum AclLevel {
+  VIEWER
+  EDITOR
+  MANAGER
+}
+
+/// Грант на объект. Наследуется вниз по дереву; «ближайший узел с грантами» решает.
+model AclEntry {
+  id       String @id @default(uuid())
+  tenantId String
+  /// kb_base | kb_page | drive_node
+  resourceType String
+  resourceId   String
+  /// user | role | group
+  subjectType String
+  /// adminUserId | roleKey | groupId
+  subjectId String
+  level     AclLevel
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, resourceType, resourceId, subjectType, subjectId])
+  @@index([tenantId, resourceType, resourceId])
+  @@map("acl_entries")
+}
+
+/// Блокировка WOPI-редактирования (Collabora, §5.2): один лок на файл.
+model WopiLock {
+  nodeId    String   @id
+  lockId    String
+  userId    String?
+  expiresAt DateTime
+
+  @@map("wopi_locks")
+}
+
+// ─── Модуль «Секреты» (KB-DRIVE-TZ.md §8, решение владельца 2026-07-09) ───
+
+/// Секрет (пароль/ключ внешнего кабинета). Пароль — только шифротекстом (AES-256-GCM,
+/// ключ вне БД). В страницах БЗ пароли запрещены — для них этот модуль.
+model Secret {
+  id       String  @id @default(uuid())
+  tenantId String
+  name     String
+  login    String?
+  url      String?
+  comment  String?
+  tags     String[]
+  /// base64(iv|tag|ciphertext) — см. CryptoService.encryptPii.
+  cipher String
+  /// Ответственный за ротацию (AdminUser.id) — ему падают задачи офбординга.
+  responsibleId String?
+  /// Когда пароль меняли последний раз.
+  rotatedAt DateTime?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  views SecretView[]
+  tasks SecretRotationTask[]
+
+  @@index([tenantId])
+  @@map("secrets")
+}
+
+/// Журнал раскрытий пароля («Показать») — основа офбординга (§8).
+model SecretView {
+  id       String   @id @default(uuid())
+  secretId String
+  secret   Secret   @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  userId   String
+  at       DateTime @default(now())
+
+  @@index([secretId])
+  @@index([userId])
+  @@map("secret_views")
+}
+
+enum SecretTaskStatus {
+  OPEN
+  DONE
+  DISMISSED
+}
+
+/// Задача на ротацию секрета (создаётся автоматически при увольнении сотрудника).
+model SecretRotationTask {
+  id       String @id @default(uuid())
+  tenantId String
+  secretId String
+  secret   Secret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  /// offboarding | manual
+  reason           String
+  offboardedUserId String?
+  assigneeId       String?
+  status           SecretTaskStatus @default(OPEN)
+  createdAt        DateTime         @default(now())
+  closedAt         DateTime?
+  closedById       String?
+
+  @@index([tenantId, status])
+  @@map("secret_rotation_tasks")
+}
+
+// ─── Финансовые документы брони (вкладка «Счёт»): счета/квитанции/акты + залоги ───
+
+/// Тип финансового документа. INVOICE — счёт, RECEIPT — квитанция, ONLINE — онлайн-оплата,
+/// ACT — акт выполненных работ.
+enum FinanceDocType {
+  INVOICE
+  RECEIPT
+  ONLINE
+  ACT
+}
+
+enum FinanceDocStatus {
+  DRAFT
+  ISSUED
+  PAID
+  CANCELLED
+}
+
+/// Счёт / квитанция / акт по брони (эталон Bnovo, привязан к нашей брони и реквизитам).
+model FinanceDoc {
+  id           String           @id @default(uuid())
+  tenantId     String
+  bookingId    String
+  docType      FinanceDocType
+  /// Человекочитаемый номер документа.
+  number       String
+  /// Дата документа (акт/счёт).
+  docDate      DateTime         @default(now())
+  /// Покупатель: individual | legal.
+  buyerType    String           @default("individual")
+  buyerName    String?
+  /// Юр. лицо покупателя (если выбрано из справочника) — на будущее.
+  buyerLegalEntityId String?
+  /// Наше юр. лицо (реквизиты) из Настройки → Финансы.
+  ourLegalEntityId   String?
+  message      String?
+  /// Позиции: [{ name, qty, unit, price, vatRate, vatAmount, amount }].
+  lines        Json
+  total        Int
+  vatTotal     Int              @default(0)
+  dueDate      DateTime?
+  status       FinanceDocStatus @default(ISSUED)
+  createdById  String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([bookingId])
+  @@map("finance_docs")
+}
+
+enum DepositType {
+  CARD_HOLD
+  MANUAL
+}
+
+enum DepositStatus {
+  HELD
+  CAPTURED
+  RELEASED
+  REFUNDED
+}
+
+/// Залог (обеспечительный платёж) по брони. Международный стандарт: hold по карте
+/// (двухстадийно) либо ручной приём; при выезде — снятие/возврат или списание при ущербе.
+model Deposit {
+  id          String        @id @default(uuid())
+  tenantId    String
+  bookingId   String
+  /// CARD_HOLD — преавторизация карты; MANUAL — наличные/карта/перевод на стойке.
+  type        DepositType
+  /// Способ для MANUAL: cash | card | transfer.
+  method      String?
+  amount      Int
+  status      DepositStatus @default(HELD)
+  /// Сколько удержано при списании (CAPTURED), ₽.
+  capturedAmount Int        @default(0)
+  note        String?
+  createdById String?
+  createdAt   DateTime      @default(now())
+  resolvedAt  DateTime?
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([bookingId])
+  @@map("deposits")
+}

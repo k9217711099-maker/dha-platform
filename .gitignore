@@ -1,0 +1,53 @@
+# Зависимости
+node_modules/
+.pnp.*
+
+# Сборка
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Окружение и секреты (НИКОГДА не коммитим — ПДн/152-ФЗ, ключи интеграций)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Терраформ-стейт
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/*.tfvars
+!infra/**/*.tfvars.example
+
+# Локальная встроенная БД для разработки (не переносить на сервер)
+apps/api/.pgdata/
+
+# Загруженные файлы (runtime, могут содержать ПДн — на сервере живут вне git)
+apps/api/uploads/
+apps/api/drive-files/
+
+# Python-кэш скиллов
+__pycache__/
+*.pyc
+
+# Логи и кэш
+*.log
+coverage/
+.DS_Store
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Expo / React Native
+.expo/
+apps/mobile/ios/
+apps/mobile/android/

@@ -1,0 +1,5 @@
+packages:
+  - "apps/*"
+  # mobile — отдельный Expo-проект со своим node_modules (npm), вне pnpm-workspace
+  - "!apps/mobile"
+  - "packages/*"

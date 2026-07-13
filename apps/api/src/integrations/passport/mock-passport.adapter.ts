@@ -1,0 +1,47 @@
+import { Injectable } from '@nestjs/common';
+import { PassportPort, type RecognizeResult, type VerifyInput, type VerifyResult } from './passport.port.js';
+
+/**
+ * Демо-реализация: распознавание возвращает образец, проверка действительности —
+ * по формату (без обращения к внешним сервисам). Позволяет прокликать весь сценарий
+ * без ключей и затрат. Реальная точность — в HttpPassportAdapter (OCR-сайдкар + Dadata).
+ */
+@Injectable()
+export class MockPassportAdapter extends PassportPort {
+  async recognize(_scan: Buffer, _contentType: string): Promise<RecognizeResult> {
+    return {
+      fields: {
+        series: '4017',
+        number: '123456',
+        lastName: 'ИВАНОВ',
+        firstName: 'ИВАН',
+        middleName: 'ИВАНОВИЧ',
+        birthDate: '1990-05-12',
+        issuedBy: 'ГУ МВД России по г. Санкт-Петербургу',
+        issuedDate: '2017-06-20',
+      },
+      confidence: 0.62,
+      source: 'mock',
+      note: 'Демо-распознавание (mock). Для реальных данных подключите OCR-сервис (PASSPORT_PROVIDER=http).',
+    };
+  }
+
+  async verify(input: VerifyInput): Promise<VerifyResult> {
+    const series = (input.series ?? '').replace(/\s/g, '');
+    const number = (input.number ?? '').replace(/\s/g, '');
+    if (!series || !number) {
+      return { verdict: 'MANUAL', note: 'Недостаточно данных для проверки — нужна ручная проверка.' };
+    }
+    if (!/^\d{4}$/.test(series) || !/^\d{6}$/.test(number)) {
+      return { verdict: 'MANUAL', note: 'Неверный формат серии/номера — нужна ручная проверка.' };
+    }
+    // Демо-триггер «недействителен»
+    if (series === '0000' || number === '000000') {
+      return { verdict: 'INVALID', note: 'Числится в списке недействительных паспортов МВД (демо).' };
+    }
+    return {
+      verdict: 'VALID',
+      note: 'Формат корректен; в списке недействительных МВД не значится (демо-проверка).',
+    };
+  }
+}

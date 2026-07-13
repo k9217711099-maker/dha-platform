@@ -1,0 +1,31 @@
+name: Deploy
+
+# push в develop → staging-сервер (превью), push в main → production-сервер.
+on:
+  push:
+    branches: [main, develop]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Выбрать сервер по ветке
+        id: target
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "host=${{ secrets.PROD_HOST }}" >> "$GITHUB_OUTPUT"
+            echo "env_name=PRODUCTION" >> "$GITHUB_OUTPUT"
+          else
+            echo "host=${{ secrets.STAGING_HOST }}" >> "$GITHUB_OUTPUT"
+            echo "env_name=STAGING" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Деплой по SSH (${{ steps.target.outputs.env_name }})
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ steps.target.outputs.host }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/dha
+            bash infra/deploy/deploy.sh ${{ github.ref_name }}
