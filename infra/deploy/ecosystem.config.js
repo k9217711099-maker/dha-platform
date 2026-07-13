@@ -16,9 +16,7 @@ module.exports = {
     {
       name: 'dha-web',
       cwd: path.join(root, 'apps/web'),
-      // .bin/next — node-скрипт, PM2 запустит его интерпретатором node.
-      // Порт берётся из env PORT (флаг -p в package.json тут не участвует).
-      script: 'node_modules/.bin/next',
+      script: 'node_modules/next/dist/bin/next',
       args: 'start',
       env: { NODE_ENV: 'production', PORT: 3000 },
       max_memory_restart: '600M',
@@ -26,7 +24,7 @@ module.exports = {
     {
       name: 'dha-admin',
       cwd: path.join(root, 'apps/admin'),
-      script: 'node_modules/.bin/next',
+      script: 'node_modules/next/dist/bin/next',
       args: 'start',
       env: { NODE_ENV: 'production', PORT: 3002 },
       max_memory_restart: '600M',

@@ -19,9 +19,9 @@ git reset --hard "origin/$BRANCH"
 corepack enable
 pnpm install --frozen-lockfile
 
-# 3. Prisma: клиент + миграции БД (deploy — безопасный прод-режим, без потери данных)
+# 3. Prisma: генерируем клиент и синхронизируем схему с БД
 pnpm --filter @dha/api prisma:generate
-pnpm --filter @dha/api prisma:deploy
+pnpm --filter @dha/api exec prisma db push --accept-data-loss
 
 # 4. Сборка (turbo соблюдает порядок: пакеты → apps)
 pnpm build
