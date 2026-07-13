@@ -1,0 +1,73 @@
+# Nginx для D H&A — reverse proxy на процессы PM2.
+# Скопировать на сервер в /etc/nginx/sites-available/dha, заменить домены,
+# затем: ln -s /etc/nginx/sites-available/dha /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx
+# HTTPS-сертификаты выдаст certbot (см. комментарий внизу) — блоки 443 он допишет сам.
+#
+# Раскладка процессов (из ecosystem.config.js):
+#   web (ЛК гостя) :3000 · admin :3002 · api :3001
+#
+# Замени dhotels.ru на свой домен. На staging-сервере ставь поддомены вида
+#   stage.dhotels.ru / admin.stage.dhotels.ru / api.stage.dhotels.ru
+
+# --- Личный кабинет гостя ---
+server {
+    listen 80;
+    server_name dhotels.ru www.dhotels.ru;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+# --- Админ-панель ---
+server {
+    listen 80;
+    server_name admin.dhotels.ru;
+
+    location / {
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+# --- API (backend D H&A) ---
+server {
+    listen 80;
+    server_name api.dhotels.ru;
+
+    # Загрузка сканов документов — поднять лимит тела запроса
+    client_max_body_size 25m;
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# HTTPS:
+#   apt install -y certbot python3-certbot-nginx
+#   certbot --nginx -d dhotels.ru -d www.dhotels.ru -d admin.dhotels.ru -d api.dhotels.ru
+# certbot сам добавит редирект на 443 и продлевает сертификаты автоматически.
+#
+# После включения HTTPS-домена не забудь обновить в apps/api/.env:
+#   CORS_ORIGINS=https://dhotels.ru,https://admin.dhotels.ru
+# и адрес API, на который смотрят web/admin.
