@@ -45,6 +45,9 @@ upsert_env() { # <файл> <КЛЮЧ> <значение>
 }
 upsert_env apps/web/.env.local   NEXT_PUBLIC_API_URL "$API_URL"
 upsert_env apps/admin/.env.local NEXT_PUBLIC_API_URL "$API_URL"
+# Экспортируем в окружение сборки: turbo включает значение в ключ кэша (объявлено в
+# turbo.json → env), Next встраивает его в бандл. Иначе turbo отдаёт старую сборку.
+export NEXT_PUBLIC_API_URL="$API_URL"
 echo "==> NEXT_PUBLIC_API_URL=$API_URL (web + admin)"
 
 # 4. Сборка (turbo соблюдает порядок: пакеты → apps)
