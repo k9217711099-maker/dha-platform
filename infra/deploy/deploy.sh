@@ -50,7 +50,12 @@ upsert_env apps/admin/.env.local NEXT_PUBLIC_API_URL "$API_URL"
 export NEXT_PUBLIC_API_URL="$API_URL"
 echo "==> NEXT_PUBLIC_API_URL=$API_URL (web + admin)"
 
-# 4. Сборка (turbo соблюдает порядок: пакеты → apps)
+# 4. Сборка (turbo соблюдает порядок: пакеты → apps).
+# TURBO_FORCE + чистка .next: гарантируем пересборку фронта на деплое (не полагаемся
+# на кэш turbo — при смене адреса API кэш мог отдать старый бандл). Для деплоя
+# корректность важнее скорости.
+export TURBO_FORCE=true
+rm -rf apps/web/.next apps/admin/.next
 pnpm build
 
 # 5. Перезапуск процессов (startOrReload — поднимет, если ещё не запущены)
