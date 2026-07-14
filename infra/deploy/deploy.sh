@@ -10,10 +10,15 @@ cd "$REPO_ROOT"
 
 echo "==> Деплой ветки '$BRANCH' в $REPO_ROOT"
 
-# 1. Свежий код из репозитория (жёстко под удалённую ветку)
-git fetch --all --prune
-git checkout "$BRANCH"
+# 1. Свежий код из репозитория (жёстко под удалённую ветку).
+# ВАЖНО: fetch ИМЕННО из origin по ветке — падает non-zero, если GitHub недоступен
+# (в отличие от `git fetch --all`, который глотает ошибку remote и возвращает 0 →
+# деплой раньше «успешно» пересобирал старый код). checkout -B форс-переводит
+# локальную ветку на origin (устойчиво к detached HEAD / разошедшейся ветке).
+git fetch origin "$BRANCH" --prune
+git checkout -B "$BRANCH" "origin/$BRANCH"
 git reset --hard "origin/$BRANCH"
+echo "==> Код на коммите: $(git rev-parse --short HEAD) $(git log -1 --pretty=%s)"
 
 # 2. Зависимости строго по lock-файлу
 corepack enable
