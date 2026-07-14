@@ -263,7 +263,7 @@ export function BookingCreateModal({ rooms, prefill, onClose, onCreated }: {
           discountReason: discountReason || undefined,
           extras: s.extras.length ? s.extras.map((x) => ({ extraId: x.extraId, qty: x.qty })) : undefined,
           comment: comment || undefined,
-        }, crypto.randomUUID());
+        }, (crypto.randomUUID ?? (() => Math.random().toString(36).slice(2) + Date.now().toString(36)))());
       }
       // Сохранить отредактированное примечание гостя (§3) — за существующим гостем из базы.
       if (guestId && guestNotes !== guestNotesBase) {
