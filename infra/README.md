@@ -32,3 +32,20 @@ terraform init && terraform plan
 ```bash
 docker build -f infra/docker/api.Dockerfile -t dha-api .
 ```
+
+## Автодеплой (GitHub Actions → SSH)
+
+`push` в `main` → production-сервер, в `develop` → staging. Пайплайн: `.github/
+workflows/deploy.yml` → `infra/deploy/deploy.sh <ветка>` (git reset, pnpm install,
+prisma db push, сборка, pm2 reload).
+
+**Адрес API для фронта.** `NEXT_PUBLIC_API_URL` запекается в бандл web/admin на этапе
+`build` (не в рантайме pm2). Если собрать с дефолтом, браузер гостя стучится в
+`localhost:3001` → «Load failed». `deploy.sh` сам прописывает адрес перед сборкой:
+для `main` — публичный адрес сервера, переопределяется переменной `PUBLIC_API_URL`
+на сервере (например, когда появится домен/HTTPS):
+
+```bash
+# на сервере, разово (переживёт деплои)
+echo 'export PUBLIC_API_URL=https://api.dhotels.ru/api' >> ~/.bashrc
+```
