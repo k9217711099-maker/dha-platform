@@ -24,7 +24,22 @@ import type {
   UpdateProfileInput,
 } from './api-types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+/**
+ * База API. Приоритет — NEXT_PUBLIC_API_URL (домен/HTTPS в проде). Если не задан на
+ * этапе сборки, в браузере выводим адрес из текущего хоста + порт API (:3001) — тогда
+ * прод (83.166.247.226:3001) и localhost работают без build-time переменной. На сервере
+ * (SSR/сборка) фолбэк — localhost.
+ */
+function resolveApiBase(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_API_URL;
+  if (fromEnv) return fromEnv;
+  if (typeof window !== 'undefined') {
+    return `${window.location.protocol}//${window.location.hostname}:3001/api`;
+  }
+  return 'http://localhost:3001/api';
+}
+
+const API_BASE = resolveApiBase();
 
 const ACCESS_KEY = 'dha_access';
 const REFRESH_KEY = 'dha_refresh';
