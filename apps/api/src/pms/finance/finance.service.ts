@@ -11,6 +11,7 @@ import type { PaykeeperPingResult } from '../../integrations/paykeeper/http-payk
 import { YooKassaConfigService } from '../../integrations/yookassa/yookassa-config.service.js';
 import { HttpYooKassaAdapter } from '../../integrations/yookassa/http-yookassa.adapter.js';
 import type { YooKassaPingResult } from '../../integrations/yookassa/http-yookassa.adapter.js';
+import { PaymentProviderService } from '../../integrations/yookassa/payment-provider.service.js';
 import type { Env } from '../../config/env.schema.js';
 import {
   ALL_PAYMENT_METHODS,
@@ -76,6 +77,8 @@ export interface FinanceIntegration {
   enabled: boolean;
   /** Доступна к настройке (false у будущих заготовок). */
   available: boolean;
+  /** Это активный эквайер — платежи идут через него (только для online). */
+  active?: boolean;
 }
 
 /**
@@ -95,6 +98,7 @@ export class FinanceService {
     private readonly paykeeperAdapter: HttpPaykeeperAdapter,
     private readonly yookassa: YooKassaConfigService,
     private readonly yookassaAdapter: HttpYooKassaAdapter,
+    private readonly providers: PaymentProviderService,
   ) {}
 
   // ─── Реквизиты ───
@@ -134,20 +138,18 @@ export class FinanceService {
     return entity;
   }
 
-  /** Активный эквайер (PAYMENT_PROVIDER с фолбэком на YOOKASSA_PROVIDER). */
-  private paymentProvider(): string {
-    return (
-      this.config.get('PAYMENT_PROVIDER', { infer: true }) ??
-      (this.config.get('YOOKASSA_PROVIDER', { infer: true }) === 'yookassa' ? 'yookassa' : 'mock')
-    );
+  /** Активный эквайер: админка → Setting, env как запас. */
+  private paymentProvider(): Promise<string> {
+    return this.providers.resolve();
   }
 
   // ─── Интеграции (приём онлайн-оплаты / фискализация / 1С) ───
   async listIntegrations(): Promise<FinanceIntegration[]> {
-    const [yookassaConnected, bspbConnected, paykeeperConnected] = await Promise.all([
+    const [yookassaConnected, bspbConnected, paykeeperConnected, activeProvider] = await Promise.all([
       this.yookassa.getPublicConfig().then((c) => c.connected),
       this.bspb.getPublicConfig().then((c) => c.connected),
       this.paykeeper.getPublicConfig().then((c) => c.connected),
+      this.paymentProvider(),
     ]);
     const fiscal = this.getFiscalStatus();
     const base: Omit<FinanceIntegration, 'enabled'>[] = [
@@ -162,6 +164,7 @@ export class FinanceService {
     return base.map((b) => ({
       ...b,
       enabled: byKey.has(enabledKey(b.id)) ? byKey.get(enabledKey(b.id)) === 'true' : b.connected,
+      active: b.category === 'online' ? b.id === activeProvider : undefined,
     }));
   }
 
@@ -198,6 +201,7 @@ export class FinanceService {
     if (methods.length === 0) throw new BadRequestException('Нужно оставить хотя бы один способ оплаты');
 
     await this.bspb.save({ apiBase: dto.apiBase, merchantId: dto.merchantId, username: dto.username, password: dto.password });
+    await this.providers.set('bspb');
     await this.prisma.setting.upsert({
       where: { key: PAYMENT_METHODS_KEY },
       create: { key: PAYMENT_METHODS_KEY, value: serializePaymentMethods(methods) },
@@ -233,6 +237,7 @@ export class FinanceService {
     if (methods.length === 0) throw new BadRequestException('Нужно оставить хотя бы один способ оплаты');
 
     await this.paykeeper.save({ server: dto.server, user: dto.user, password: dto.password, secret: dto.secret });
+    await this.providers.set('paykeeper');
     await this.prisma.setting.upsert({
       where: { key: PAYMENT_METHODS_KEY },
       create: { key: PAYMENT_METHODS_KEY, value: serializePaymentMethods(methods) },
@@ -267,6 +272,7 @@ export class FinanceService {
     if (methods.length === 0) throw new BadRequestException('Нужно оставить хотя бы один способ оплаты');
 
     await this.yookassa.save({ shopId: dto.shopId, secretKey: dto.secretKey });
+    await this.providers.set('yookassa');
     await this.prisma.setting.upsert({
       where: { key: PAYMENT_METHODS_KEY },
       create: { key: PAYMENT_METHODS_KEY, value: serializePaymentMethods(methods) },
@@ -293,8 +299,7 @@ export class FinanceService {
    * Включённые интеграции категории online + отметка активного эквайера и способы оплаты.
    */
   async listPaymentSystems(): Promise<{ id: string; name: string; active: boolean; methods: PaymentMethodsConfig }[]> {
-    const [integrations, methods] = await Promise.all([this.listIntegrations(), this.getPaymentMethods()]);
-    const active = this.paymentProvider();
+    const [integrations, methods, active] = await Promise.all([this.listIntegrations(), this.getPaymentMethods(), this.paymentProvider()]);
     return integrations
       .filter((i) => i.category === 'online' && i.enabled)
       .map((i) => ({ id: i.id, name: i.name, active: i.id === active, methods }));

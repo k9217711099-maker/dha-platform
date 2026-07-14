@@ -1073,6 +1073,8 @@ export interface FinanceIntegration {
   connected: boolean;
   enabled: boolean;
   available: boolean;
+  /** Активный эквайер — платежи идут через него (только для online). */
+  active?: boolean;
 }
 export interface FinanceAuditEntry {
   id: string;

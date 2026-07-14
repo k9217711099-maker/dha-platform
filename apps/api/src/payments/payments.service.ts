@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { Booking, BookingStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { PaymentGatewayPort } from '../integrations/yookassa/payment-gateway.port.js';
+import { PaymentProviderService } from '../integrations/yookassa/payment-provider.service.js';
 import { FiscalPort } from '../integrations/fiscal/fiscal.port.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { buildReceipt } from './receipt.builder.js';
@@ -57,14 +58,12 @@ export class PaymentsService {
     private readonly fiscal: FiscalPort,
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService<Env, true>,
+    private readonly providers: PaymentProviderService,
   ) {}
 
-  /** Активный эквайер (для поля Payment.provider). */
-  private activeProvider(): string {
-    return (
-      this.config.get('PAYMENT_PROVIDER', { infer: true }) ??
-      (this.config.get('YOOKASSA_PROVIDER', { infer: true }) === 'yookassa' ? 'yookassa' : 'mock')
-    );
+  /** Активный эквайер (для поля Payment.provider): админка → Setting, env как запас. */
+  private activeProvider(): Promise<string> {
+    return this.providers.resolve();
   }
 
   /** Разрешённые способы оплаты из настроек (Настройки → Финансы). */
@@ -112,7 +111,7 @@ export class PaymentsService {
       const created = await tx.payment.create({
         data: {
           bookingId: booking.id,
-          provider: this.activeProvider(),
+          provider: await this.activeProvider(),
           gatewayPaymentId: result.gatewayPaymentId,
           status: PaymentStatus.PENDING,
           amount,
@@ -170,7 +169,7 @@ export class PaymentsService {
 
     const payment = await this.prisma.$transaction(async (tx) => {
       const created = await tx.payment.create({
-        data: { bookingId: booking.id, provider: this.activeProvider(), gatewayPaymentId: result.gatewayPaymentId, status: PaymentStatus.PENDING, amount },
+        data: { bookingId: booking.id, provider: await this.activeProvider(), gatewayPaymentId: result.gatewayPaymentId, status: PaymentStatus.PENDING, amount },
       });
       await tx.booking.update({ where: { id: booking.id }, data: { paymentStatus: PaymentStatus.PENDING } });
       return created;
@@ -267,7 +266,7 @@ export class PaymentsService {
         data: {
           bookingId: first.id,
           groupId,
-          provider: this.activeProvider(),
+          provider: await this.activeProvider(),
           gatewayPaymentId: result.gatewayPaymentId,
           status: PaymentStatus.PENDING,
           amount,

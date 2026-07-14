@@ -246,6 +246,7 @@ function IntegrationsTab({ category }: { category: FinanceIntegration['category'
                 {i.available
                   ? <span className={`rounded-full px-2 py-0.5 text-xs ${i.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{i.connected ? 'Подключено' : 'Не настроено'}</span>
                   : <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs text-dark-gray">Заготовка</span>}
+                {i.active ? <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary">Активный</span> : null}
               </div>
               <p className="mt-1 text-sm text-dark-gray">{i.description}</p>
               {i.id === 'bspb' || i.id === 'paykeeper' || i.id === 'yookassa' ? (
