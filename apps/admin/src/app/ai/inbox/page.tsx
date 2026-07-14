@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card } from '@dha/ui';
 import {
   adminApi,
-  type InboxConversationRow,
+  type GuestConversationRow,
   type InboxOperator,
   type InboxThread,
 } from '../../../lib/api';
@@ -15,6 +15,11 @@ const CHANNEL_RU: Record<string, string> = {
   APP: 'Приложение',
   TELEGRAM: 'Telegram',
   ADMIN: 'Админка',
+};
+const STATUS_RU: Record<string, { label: string; cls: string }> = {
+  BOT: { label: 'AI ведёт', cls: 'bg-sky-50 text-sky-700' },
+  ESCALATED: { label: 'эскалация', cls: 'bg-amber-50 text-amber-700' },
+  CLOSED: { label: 'закрыт', cls: 'bg-slate-100 text-slate-500' },
 };
 const shortId = (id: string) => id.slice(0, 8);
 const guestLabel = (name: string | null, id: string | null) =>
@@ -33,7 +38,8 @@ function timeAgo(iso: string): string {
 export default function InboxPage() {
   const ready = useRequireAdmin();
   const me = useAdminMe();
-  const [list, setList] = useState<InboxConversationRow[]>([]);
+  const [mode, setMode] = useState<'escalated' | 'all'>('escalated');
+  const [list, setList] = useState<GuestConversationRow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [thread, setThread] = useState<InboxThread | null>(null);
   const [reply, setReply] = useState('');
@@ -47,13 +53,13 @@ export default function InboxPage() {
 
   const loadList = useCallback(async () => {
     try {
-      const rows = await adminApi.inboxList();
+      const rows = mode === 'all' ? await adminApi.inboxAll() : await adminApi.inboxList();
       setList(rows);
       setSelected((cur) => cur ?? rows[0]?.id ?? null); // авто-выбор первого, если ничего не выбрано
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Не удалось загрузить очередь');
     }
-  }, []);
+  }, [mode]);
 
   const loadThread = useCallback(async (id: string) => {
     try {
@@ -164,11 +170,41 @@ export default function InboxPage() {
 
   return (
     <main className="px-8 py-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-light text-ink">Лента эскалаций</h1>
-        <p className="mt-1 text-sm text-dark-gray">
-          Диалоги, переданные AI-администратором человеку. Ответ уходит гостю в его канал (§4.7).
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-light text-ink">
+            {mode === 'all' ? 'Все диалоги гостей' : 'Лента эскалаций'}
+          </h1>
+          <p className="mt-1 text-sm text-dark-gray">
+            {mode === 'all'
+              ? 'Все переписки гостей с AI-администратором — для наблюдения. Можно вмешаться: «Взять себе» и ответить.'
+              : 'Диалоги, переданные AI-администратором человеку. Ответ уходит гостю в его канал (§4.7).'}
+          </p>
+        </div>
+        <div className="flex shrink-0 rounded-lg border border-ink/10 p-0.5 text-sm">
+          <button
+            onClick={() => {
+              setMode('escalated');
+              setSelected(null);
+            }}
+            className={`rounded-md px-3 py-1.5 transition ${
+              mode === 'escalated' ? 'bg-primary text-white' : 'text-slate-500 hover:text-ink'
+            }`}
+          >
+            Эскалированные
+          </button>
+          <button
+            onClick={() => {
+              setMode('all');
+              setSelected(null);
+            }}
+            className={`rounded-md px-3 py-1.5 transition ${
+              mode === 'all' ? 'bg-primary text-white' : 'text-slate-500 hover:text-ink'
+            }`}
+          >
+            Все диалоги
+          </button>
+        </div>
       </div>
 
       {note && (
@@ -181,10 +217,12 @@ export default function InboxPage() {
         {/* Очередь */}
         <Card className="p-2">
           <p className="px-2 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Очередь · {list.length}
+            {mode === 'all' ? 'Диалоги' : 'Очередь'} · {list.length}
           </p>
           {list.length === 0 ? (
-            <p className="px-2 py-6 text-center text-sm text-slate-400">Нет открытых эскалаций 🎉</p>
+            <p className="px-2 py-6 text-center text-sm text-slate-400">
+              {mode === 'all' ? 'Диалогов пока нет' : 'Нет открытых эскалаций 🎉'}
+            </p>
           ) : (
             <div className="space-y-1">
               {list.map((c) => (
@@ -201,15 +239,31 @@ export default function InboxPage() {
                       {CHANNEL_RU[c.channel] ?? c.channel}
                     </span>
                   </div>
+                  {mode === 'all' && c.lastMessage && (
+                    <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                      {c.lastRole === 'user' ? '👤 ' : c.lastRole === 'staff' ? '🧑‍💼 ' : '🤖 '}
+                      {c.lastMessage}
+                    </p>
+                  )}
                   <div className="mt-0.5 flex items-center justify-between text-[11px] text-slate-400">
                     <span>{guestLabel(c.guestName, c.guestId)}</span>
-                    <span>{timeAgo(c.updatedAt)}</span>
+                    <span>{timeAgo(c.lastAt ?? c.updatedAt)}</span>
                   </div>
-                  {c.operatorId && (
-                    <span className="mt-1 inline-block rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
-                      взят
-                    </span>
-                  )}
+                  <div className="mt-1 flex items-center gap-1">
+                    {(() => {
+                      const st = mode === 'all' && c.status ? STATUS_RU[c.status] : undefined;
+                      return st ? (
+                        <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] ${st.cls}`}>
+                          {st.label}
+                        </span>
+                      ) : null;
+                    })()}
+                    {c.operatorId && (
+                      <span className="inline-block rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+                        взят
+                      </span>
+                    )}
+                  </div>
                 </button>
               ))}
             </div>

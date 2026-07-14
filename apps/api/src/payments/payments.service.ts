@@ -286,7 +286,15 @@ export class PaymentsService {
     };
   }
 
-  /** Обработать webhook шлюза: обновить платёж и статус оплаты брони. */
+  /**
+   * Обработать webhook шлюза: обновить платёж и статус оплаты брони.
+   *
+   * БЕЗОПАСНОСТЬ: тело webhook НЕ является доверенным источником статуса — эндпоинт
+   * публичный, злоумышленник, знающий gatewayPaymentId, мог бы прислать
+   * поддельное «succeeded». Поэтому webhook используем лишь как СИГНАЛ «проверь этот
+   * платёж», а фактический статус перечитываем у шлюза (getPayment) — источник истины
+   * только он. Тот же приём, что в фолбэк-поллинге (syncStatus).
+   */
   async handleWebhook(payload: unknown): Promise<void> {
     const event = this.gateway.parseWebhook(payload);
     const payment = await this.prisma.payment.findUnique({
@@ -296,7 +304,16 @@ export class PaymentsService {
       this.logger.warn(`Webhook: платёж ${event.gatewayPaymentId} не найден`);
       return;
     }
-    await this.applyStatus(payment.id, event.status);
+    if (!payment.gatewayPaymentId) return;
+    // Перечитываем статус напрямую у шлюза — тело webhook не доверяем.
+    const verified = await this.gateway
+      .getPayment(payment.gatewayPaymentId)
+      .catch((err: unknown) => {
+        this.logger.error(`Webhook: не удалось сверить статус у шлюза (${payment.gatewayPaymentId}): ${String(err)}`);
+        return null;
+      });
+    if (!verified) return; // не смогли подтвердить — поллинг досинхронизирует позже
+    await this.applyStatus(payment.id, verified.status);
   }
 
   /** Демо-оплата (только mock-шлюз — YooKassa или БСПБ): помечает платёж успешным. */

@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { validateEnv } from './config/env.schema.js';
+import { RateLimitGuard } from './common/rate-limit/rate-limit.guard.js';
 import { PrismaModule } from './common/prisma/prisma.module.js';
 import { CryptoModule } from './common/crypto/crypto.module.js';
 import { SettingsModule } from './common/settings/settings.module.js';
@@ -99,6 +101,10 @@ import { HealthModule } from './health/health.module.js';
     OpsModule,
     BonusModule,
     HealthModule,
+  ],
+  providers: [
+    // Глобальный rate-limit: активен только на эндпоинтах с декоратором @RateLimit.
+    { provide: APP_GUARD, useClass: RateLimitGuard },
   ],
 })
 export class AppModule {}

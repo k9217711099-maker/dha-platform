@@ -1,5 +1,6 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { RateLimit, RateLimitGuard } from '../common/rate-limit/rate-limit.guard.js';
 import { AuthService } from './auth.service.js';
 import {
   LoginEmailDto,
@@ -13,11 +14,13 @@ import {
 
 @ApiTags('auth')
 @Controller('auth')
+@UseGuards(RateLimitGuard)
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('otp/phone/request')
   @HttpCode(204)
+  @RateLimit({ limit: 5, windowMs: 60_000 })
   @ApiOperation({ summary: 'Запросить SMS-код на телефон' })
   async requestPhoneOtp(@Body() dto: RequestPhoneOtpDto): Promise<void> {
     await this.auth.requestPhoneOtp(dto.phone);
@@ -31,6 +34,7 @@ export class AuthController {
 
   @Post('otp/email/request')
   @HttpCode(204)
+  @RateLimit({ limit: 5, windowMs: 60_000 })
   @ApiOperation({ summary: 'Запросить код на email' })
   async requestEmailOtp(@Body() dto: RequestEmailOtpDto): Promise<void> {
     await this.auth.requestEmailOtp(dto.email);
@@ -49,6 +53,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
   @ApiOperation({ summary: 'Вход по email и паролю' })
   login(@Body() dto: LoginEmailDto) {
     return this.auth.loginEmail(dto);

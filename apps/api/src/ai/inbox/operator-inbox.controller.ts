@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { AiChannel, AiConversationStatus } from '@prisma/client';
 import { AdminAuthGuard, type AdminRequest } from '../../admin/admin-auth.guard.js';
 import { RequirePermission } from '../../admin/require-permission.decorator.js';
 import { TenantService } from '../../pms/tenant/tenant.service.js';
@@ -31,6 +32,21 @@ export class OperatorInboxController {
   async operators() {
     const tenantId = await this.tenant.getDefaultTenantId();
     return this.inbox.operators(tenantId);
+  }
+
+  @Get('all')
+  @ApiOperation({ summary: 'Все гостевые диалоги (мониторинг), не только эскалированные' })
+  @ApiQuery({ name: 'status', required: false, enum: AiConversationStatus })
+  @ApiQuery({ name: 'channel', required: false, enum: AiChannel })
+  async all(
+    @Query('status') status?: AiConversationStatus,
+    @Query('channel') channel?: AiChannel,
+  ) {
+    const tenantId = await this.tenant.getDefaultTenantId();
+    return this.inbox.listAll(tenantId, {
+      status: status && status in AiConversationStatus ? status : undefined,
+      channel: channel && channel in AiChannel ? channel : undefined,
+    });
   }
 
   @Get(':id')

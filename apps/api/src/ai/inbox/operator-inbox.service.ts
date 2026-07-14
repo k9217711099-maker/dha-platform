@@ -32,6 +32,27 @@ export class OperatorInboxService {
     }));
   }
 
+  /**
+   * Все гостевые диалоги (мониторинг), не только эскалированные. Фильтры по
+   * статусу/каналу опциональны; каждая строка — с превью последнего сообщения и
+   * именами гостя/оператора.
+   */
+  async listAll(
+    tenantId: string,
+    opts: { status?: AiConversationStatus; channel?: AiChannel } = {},
+  ) {
+    const rows = await this.conversations.listGuestConversations(tenantId, opts);
+    const [guests, operators] = await Promise.all([
+      this.directory.guests(rows.map((r) => r.guestId)),
+      this.directory.operators(rows.map((r) => r.operatorId)),
+    ]);
+    return rows.map((r) => ({
+      ...r,
+      guestName: (r.guestId && guests.get(r.guestId)) || null,
+      operatorName: (r.operatorId && operators.get(r.operatorId)) || null,
+    }));
+  }
+
   async thread(id: string) {
     const convo = await this.conversations.get(id);
     if (!convo) throw new NotFoundException('Диалог не найден');
@@ -62,6 +83,11 @@ export class OperatorInboxService {
   async reply(id: string, operatorId: string, text: string): Promise<{ ok: true }> {
     const convo = await this.conversations.get(id);
     if (!convo) throw new NotFoundException('Диалог не найден');
+    // Человек вмешался в диалог, который вёл бот → переводим в ESCALATED, чтобы агент
+    // замолчал и не отвечал параллельно с оператором (guest-agent молчит при ESCALATED).
+    if (convo.status === AiConversationStatus.BOT) {
+      await this.conversations.setStatus(id, AiConversationStatus.ESCALATED);
+    }
     await this.conversations.assignOperator(id, operatorId);
     await this.conversations.addMessage(id, { role: AiMessageRole.STAFF, content: text });
     if (convo.channel === AiChannel.TELEGRAM && convo.externalId) {

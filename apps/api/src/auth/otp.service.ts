@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OtpChannel, OtpPurpose } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
@@ -9,6 +9,9 @@ import { EmailSender } from '../notifications/email/email.port.js';
 import type { Env } from '../config/env.schema.js';
 
 const MAX_ATTEMPTS = 5;
+/** Анти-флуд отправки кодов: не чаще 1 раза в COOLDOWN и не более MAX_PER_HOUR в час на цель. */
+const RESEND_COOLDOWN_MS = 60_000;
+const MAX_PER_HOUR = 5;
 
 /** Генерация, отправка и проверка одноразовых кодов (SMS/email). */
 @Injectable()
@@ -23,6 +26,8 @@ export class OtpService {
 
   /** Сгенерировать код, сохранить хэш и отправить по каналу. */
   async request(channel: OtpChannel, target: string, purpose: OtpPurpose): Promise<void> {
+    await this.assertNotFlooding(channel, target);
+
     const length = this.config.get('OTP_LENGTH', { infer: true });
     const ttl = this.config.get('OTP_TTL', { infer: true });
     const code = this.generateCode(length);
@@ -70,6 +75,31 @@ export class OtpService {
       data: matches ? { consumedAt: new Date() } : { attempts: { increment: 1 } },
     });
     return matches;
+  }
+
+  /**
+   * Защита от флуда отправки кодов (иначе публичный эндпоинт запроса кода = SMS-спам и
+   * расход бюджета SMSC). Смотрим на историю OtpCode по цели: слишком частый повтор
+   * или превышение часового лимита → 429.
+   */
+  private async assertNotFlooding(channel: OtpChannel, target: string): Promise<void> {
+    const now = Date.now();
+    const last = await this.prisma.otpCode.findFirst({
+      where: { channel, target },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    if (last && now - last.createdAt.getTime() < RESEND_COOLDOWN_MS) {
+      const wait = Math.ceil((RESEND_COOLDOWN_MS - (now - last.createdAt.getTime())) / 1000);
+      throw new HttpException(`Код уже отправлен. Повторите через ${wait} с.`, HttpStatus.TOO_MANY_REQUESTS);
+    }
+    const hourAgo = new Date(now - 3_600_000);
+    const recent = await this.prisma.otpCode.count({
+      where: { channel, target, createdAt: { gte: hourAgo } },
+    });
+    if (recent >= MAX_PER_HOUR) {
+      throw new HttpException('Слишком много запросов кода. Попробуйте позже.', HttpStatus.TOO_MANY_REQUESTS);
+    }
   }
 
   private generateCode(length: number): string {

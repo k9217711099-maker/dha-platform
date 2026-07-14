@@ -140,6 +140,53 @@ export class ConversationService {
     });
   }
 
+  /**
+   * Все ГОСТЕВЫЕ диалоги (actorKind=GUEST) для мониторинга в админке — не только
+   * эскалированные. Возвращает превью последнего содержательного сообщения (без
+   * tool-строк). Фильтры по статусу/каналу опциональны.
+   */
+  async listGuestConversations(
+    tenantId: string,
+    opts: { status?: AiConversationStatus; channel?: AiChannel } = {},
+  ) {
+    const rows = await this.prisma.aiConversation.findMany({
+      where: {
+        tenantId,
+        actorKind: AiActorKind.GUEST,
+        ...(opts.status ? { status: opts.status } : {}),
+        ...(opts.channel ? { channel: opts.channel } : {}),
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 200,
+      select: {
+        id: true,
+        channel: true,
+        status: true,
+        guestId: true,
+        operatorId: true,
+        externalId: true,
+        createdAt: true,
+        updatedAt: true,
+        messages: {
+          where: { role: { in: [AiMessageRole.USER, AiMessageRole.ASSISTANT, AiMessageRole.STAFF] } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { role: true, content: true, createdAt: true },
+        },
+      },
+    });
+    const roleMap = { USER: 'user', ASSISTANT: 'ai', STAFF: 'staff' } as const;
+    return rows.map(({ messages, ...rest }) => {
+      const last = messages[0];
+      return {
+        ...rest,
+        lastRole: last ? roleMap[last.role as 'USER' | 'ASSISTANT' | 'STAFF'] : null,
+        lastMessage: last?.content ?? null,
+        lastAt: last?.createdAt ?? rest.updatedAt,
+      };
+    });
+  }
+
   /** Диалоги по статусу (лента эскалаций: status = ESCALATED). */
   listByStatus(tenantId: string, status: AiConversationStatus) {
     return this.prisma.aiConversation.findMany({

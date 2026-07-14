@@ -1,5 +1,15 @@
 # Аудит платформы D H&A — итоговый отчёт
 
+> **Обновление 2026-07-14 (после деплоя).** Часть P0/P1-рисков закрыта в коде:
+> 1. ✅ Webhook платежей больше не доверяет телу — статус перечитывается у шлюза
+>    (`payments.service.handleWebhook`). 2. ✅ Анти-флуд OTP: cooldown 60 с + лимит
+>    5/час на цель (`otp.service`), + rate-limit по IP на `/auth/otp/*`, `/auth/login`,
+>    `/ai/guest/message` (новый `RateLimitGuard`, без внешних зависимостей). 3. ✅
+>    Security-заголовки в `main.ts` (nosniff/frame-deny/referrer/CORP) + `trust proxy`.
+>    4. ✅ Построен UI AI-копилота сотрудника (`/ai/copilot`, право `ai_copilot`) —
+>    раньше был только бэкенд. Тесты: 307/307 (добавлены 4 на анти-флуд OTP). Остаётся
+>    открытым: Prisma-миграции (baseline), 2FA админов, приватная раздача `/uploads`.
+
 Дата: 2026-07-13. Объём: весь монорепозиторий (api / admin / web / mobile / domain / ui).
 Методика: статические проверки (tsc, vitest), ручной разбор рискованных мест кода,
 сверка Ops/инженерного контура со стандартами LQA (Leading Quality Assurance),

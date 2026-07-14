@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { AiChannel } from '@prisma/client';
 import { TenantService } from '../../pms/tenant/tenant.service.js';
 import type { JwtPayload } from '../../auth/tokens.service.js';
+import { RateLimit, RateLimitGuard } from '../../common/rate-limit/rate-limit.guard.js';
 import { GuestAgentService } from './guest-agent.service.js';
 import { ConversationService } from '../conversations/conversation.service.js';
 import { GuestMessageDto } from './dto/guest-message.dto.js';
@@ -14,10 +15,11 @@ import { GuestMessageDto } from './dto/guest-message.dto.js';
  * получает поиск/справку/эскалацию; при валидном Bearer — привязывается guestId и
  * становятся доступны расчёт цены и оформление брони. TenantService — из @Global
  * PmsModule; JwtService — из глобального JwtModule.
- * TODO(прод): rate-limit и антифрод на публичном эндпоинте.
+ * Публичный эндпоинт (дорогие вызовы LLM) защищён rate-limit по IP.
  */
 @ApiTags('ai')
 @Controller('ai/guest')
+@UseGuards(RateLimitGuard)
 export class GuestAgentController {
   constructor(
     private readonly agent: GuestAgentService,
@@ -27,6 +29,7 @@ export class GuestAgentController {
   ) {}
 
   @Post('message')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   @ApiOperation({ summary: 'Сообщение гостя AI-администратору (авторизация опциональна)' })
   async message(@Body() dto: GuestMessageDto, @Req() req: Request) {
     const tenantId = await this.tenant.getDefaultTenantId();

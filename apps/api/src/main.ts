@@ -23,6 +23,20 @@ async function bootstrap(): Promise<void> {
   // WOPI PutFile (Collabora) шлёт бинарное тело — принимаем raw независимо от Content-Type
   app.use('/api/wopi/files/:id/contents', raw({ type: () => true, limit: '210mb' }));
 
+  // Базовые security-заголовки (без пакета helmet). API отдаёт JSON и статику
+  // загрузок; строгий CSP навешивают reverse-proxy/фронт, здесь — разумный минимум.
+  app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-DNS-Prefetch-Control', 'off');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+    next();
+  });
+
+  // Доверяем заголовкам reverse-proxy (X-Forwarded-For) — для корректного IP в rate-limit.
+  app.set('trust proxy', 1);
+
   // Структурное логирование через pino
   app.useLogger(app.get(Logger));
 
