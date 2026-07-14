@@ -8,6 +8,9 @@ import type { BspbPingResult } from '../../integrations/bspb/http-bspb.adapter.j
 import { PaykeeperConfigService } from '../../integrations/paykeeper/paykeeper-config.service.js';
 import { HttpPaykeeperAdapter } from '../../integrations/paykeeper/http-paykeeper.adapter.js';
 import type { PaykeeperPingResult } from '../../integrations/paykeeper/http-paykeeper.adapter.js';
+import { YooKassaConfigService } from '../../integrations/yookassa/yookassa-config.service.js';
+import { HttpYooKassaAdapter } from '../../integrations/yookassa/http-yookassa.adapter.js';
+import type { YooKassaPingResult } from '../../integrations/yookassa/http-yookassa.adapter.js';
 import type { Env } from '../../config/env.schema.js';
 import {
   ALL_PAYMENT_METHODS,
@@ -15,7 +18,7 @@ import {
   parsePaymentMethods,
   serializePaymentMethods,
 } from '../../common/payments/payment-methods.js';
-import type { SaveBspbConfigDto, SavePaykeeperConfigDto, TestBspbConnectionDto, TestPaykeeperConnectionDto, ToggleIntegrationDto, UpsertLegalEntityDto } from './dto/legal-entity.dto.js';
+import type { SaveBspbConfigDto, SavePaykeeperConfigDto, SaveYookassaConfigDto, TestBspbConnectionDto, TestPaykeeperConnectionDto, TestYookassaConnectionDto, ToggleIntegrationDto, UpsertLegalEntityDto } from './dto/legal-entity.dto.js';
 
 /** Полная конфигурация эквайринга БСПБ для админки (подключение + способы оплаты). */
 export interface BspbAdminConfig {
@@ -33,6 +36,14 @@ export interface PaykeeperAdminConfig {
   user: string;
   passwordSet: boolean;
   secretSet: boolean;
+  connected: boolean;
+  methods: PaymentMethodsConfig;
+}
+
+/** Полная конфигурация ЮKassa для админки (подключение + способы оплаты). */
+export interface YookassaAdminConfig {
+  shopId: string;
+  secretKeySet: boolean;
   connected: boolean;
   methods: PaymentMethodsConfig;
 }
@@ -82,6 +93,8 @@ export class FinanceService {
     private readonly bspbAdapter: HttpBspbAdapter,
     private readonly paykeeper: PaykeeperConfigService,
     private readonly paykeeperAdapter: HttpPaykeeperAdapter,
+    private readonly yookassa: YooKassaConfigService,
+    private readonly yookassaAdapter: HttpYooKassaAdapter,
   ) {}
 
   // ─── Реквизиты ───
@@ -131,15 +144,14 @@ export class FinanceService {
 
   // ─── Интеграции (приём онлайн-оплаты / фискализация / 1С) ───
   async listIntegrations(): Promise<FinanceIntegration[]> {
-    const provider = this.paymentProvider();
-    const yookassaConnected = provider === 'yookassa' && !!this.config.get('YOOKASSA_SHOP_ID', { infer: true });
-    const [bspbConnected, paykeeperConnected] = await Promise.all([
+    const [yookassaConnected, bspbConnected, paykeeperConnected] = await Promise.all([
+      this.yookassa.getPublicConfig().then((c) => c.connected),
       this.bspb.getPublicConfig().then((c) => c.connected),
       this.paykeeper.getPublicConfig().then((c) => c.connected),
     ]);
     const fiscal = this.getFiscalStatus();
     const base: Omit<FinanceIntegration, 'enabled'>[] = [
-      { id: 'yookassa', name: 'ЮKassa', description: 'Приём онлайн-оплаты банковскими картами и СБП. Фискализация чеков — на стороне ЮKassa.', category: 'online', connected: yookassaConnected, available: true },
+      { id: 'yookassa', name: 'ЮKassa', description: 'Приём онлайн-оплаты банковскими картами и СБП. Нажмите «Настроить» — введите shopId и секретный ключ из личного кабинета ЮKassa и выберите способы оплаты. Фискализация чеков (54-ФЗ) — на стороне ЮKassa.', category: 'online', connected: yookassaConnected, available: true },
       { id: 'bspb', name: 'Банк «Санкт-Петербург»', description: 'Интернет-эквайринг БСПБ: банковские карты (МИР/Visa/MC/UnionPay) и СБП. Нажмите «Настроить» — введите реквизиты подключения и выберите способы оплаты (можно оставить только СБП). Чек в ОФД эквайер не бьёт — включите фискализацию.', category: 'online', connected: bspbConnected, available: true },
       { id: 'paykeeper', name: 'PayKeeper', description: 'Приём онлайн-оплаты через PayKeeper: банковские карты и СБП. Нажмите «Настроить» — введите адрес ЛК, логин, пароль и секретное слово. PayKeeper формирует чек (54-ФЗ) сам. Способы оплаты также настраиваются в личном кабинете PayKeeper.', category: 'online', connected: paykeeperConnected, available: true },
       { id: 'fiscal', name: 'Онлайн-касса (54-ФЗ)', description: `Фискализация чеков через онлайн-кассу. Активный провайдер: ${fiscal.provider}. Нужна для эквайринга БСПБ, который сам чеки не формирует.`, category: 'fiscal', connected: fiscal.enabled, available: true },
@@ -240,6 +252,40 @@ export class FinanceService {
   /** Проверить связь с PayKeeper. overrides — значения из формы (до сохранения). */
   testPaykeeperConnection(dto: TestPaykeeperConnectionDto): Promise<PaykeeperPingResult> {
     return this.paykeeperAdapter.ping(dto);
+  }
+
+  // ─── Эквайринг ЮKassa (подключение + способы оплаты) ───
+  /** Полная конфигурация ЮKassa для окна «Настроить» (без секретного ключа). */
+  async getYookassaConfig(): Promise<YookassaAdminConfig> {
+    const [pub, methods] = await Promise.all([this.yookassa.getPublicConfig(), this.getPaymentMethods()]);
+    return { ...pub, methods };
+  }
+
+  /** Сохранить реквизиты ЮKassa и способы оплаты одним действием. */
+  async saveYookassaConfig(tenantId: string, dto: SaveYookassaConfigDto, actorId?: string): Promise<YookassaAdminConfig> {
+    const methods = ALL_PAYMENT_METHODS.filter((m) => (m === 'card' && dto.card) || (m === 'sbp' && dto.sbp));
+    if (methods.length === 0) throw new BadRequestException('Нужно оставить хотя бы один способ оплаты');
+
+    await this.yookassa.save({ shopId: dto.shopId, secretKey: dto.secretKey });
+    await this.prisma.setting.upsert({
+      where: { key: PAYMENT_METHODS_KEY },
+      create: { key: PAYMENT_METHODS_KEY, value: serializePaymentMethods(methods) },
+      update: { value: serializePaymentMethods(methods) },
+    });
+    await this.audit.record({
+      tenantId,
+      actorId,
+      action: 'updated',
+      entity: 'FinanceIntegration',
+      entityId: 'yookassa',
+      payload: { methods: methods.join(','), shopId: dto.shopId ?? '(без изменений)', secretKeyChanged: !!dto.secretKey },
+    });
+    return this.getYookassaConfig();
+  }
+
+  /** Проверить связь с ЮKassa. overrides — значения из формы (до сохранения). */
+  testYookassaConnection(dto: TestYookassaConnectionDto): Promise<YooKassaPingResult> {
+    return this.yookassaAdapter.ping(dto);
   }
 
   /**

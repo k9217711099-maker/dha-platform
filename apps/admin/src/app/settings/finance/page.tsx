@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useState } from 'react';
 import { Button, Card } from '@dha/ui';
-import { adminApi, fileUrl, type BspbAdminConfig, type Counterparty, type CounterpartyInput, type FinanceAuditEntry, type FinanceIntegration, type FiscalStatus, type LegalEntity, type LegalEntityInput, type PaykeeperAdminConfig } from '../../../lib/api';
+import { adminApi, fileUrl, type BspbAdminConfig, type Counterparty, type CounterpartyInput, type FinanceAuditEntry, type FinanceIntegration, type FiscalStatus, type LegalEntity, type LegalEntityInput, type PaykeeperAdminConfig, type YookassaAdminConfig } from '../../../lib/api';
 import { useRequireAdmin } from '../../../lib/use-admin';
 import { useEsc } from '../../../lib/use-esc';
 
@@ -248,7 +248,7 @@ function IntegrationsTab({ category }: { category: FinanceIntegration['category'
                   : <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs text-dark-gray">Заготовка</span>}
               </div>
               <p className="mt-1 text-sm text-dark-gray">{i.description}</p>
-              {i.id === 'bspb' || i.id === 'paykeeper' ? (
+              {i.id === 'bspb' || i.id === 'paykeeper' || i.id === 'yookassa' ? (
                 <Button variant="secondary" className="mt-3" onClick={() => setConfiguring(i.id)}>Настроить</Button>
               ) : null}
             </div>
@@ -265,6 +265,7 @@ function IntegrationsTab({ category }: { category: FinanceIntegration['category'
       {shown.length === 0 ? <Card className="p-6 text-sm text-dark-gray">Нет доступных интеграций в этом разделе.</Card> : null}
       {configuring === 'bspb' ? <BspbSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
       {configuring === 'paykeeper' ? <PaykeeperSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
+      {configuring === 'yookassa' ? <YookassaSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
     </div>
   );
 }
@@ -484,6 +485,102 @@ function PaykeeperSettingsModal({ onClose, onSaved }: { onClose: () => void; onS
               <Button variant="secondary" onClick={onClose} disabled={busy || testing}>Отмена</Button>
             </div>
             <p className="mt-2 text-xs text-dark-gray">Проверка запрашивает токен PayKeeper с указанными логином/паролем (пароль — введённый здесь или сохранённый).</p>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Настройка эквайринга ЮKassa (подключение + способы оплаты) ───
+function YookassaSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  useEsc(onClose);
+  const [cfg, setCfg] = useState<YookassaAdminConfig | null>(null);
+  const [secretKey, setSecretKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  useEffect(() => { void adminApi.financeYookassa().then(setCfg).catch(() => setErr('Не удалось загрузить настройки')); }, []);
+
+  const set = (patch: Partial<YookassaAdminConfig>) => setCfg((p) => (p ? { ...p, ...patch } : p));
+  const methodsCount = cfg ? Number(cfg.methods.card) + Number(cfg.methods.sbp) : 0;
+  const toggleMethod = (id: 'card' | 'sbp') => {
+    if (!cfg) return;
+    if (cfg.methods[id] && methodsCount <= 1) { setErr('Оставьте хотя бы один способ оплаты'); return; }
+    setErr('');
+    set({ methods: { ...cfg.methods, [id]: !cfg.methods[id] } });
+  };
+
+  const save = async () => {
+    if (!cfg) return;
+    setBusy(true); setErr('');
+    try {
+      await adminApi.financeSaveYookassa({
+        shopId: cfg.shopId,
+        secretKey: secretKey || undefined,
+        card: cfg.methods.card,
+        sbp: cfg.methods.sbp,
+      });
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка сохранения'); } finally { setBusy(false); }
+  };
+
+  const test = async () => {
+    if (!cfg) return;
+    setTesting(true); setErr(''); setTestResult(null);
+    try {
+      const r = await adminApi.financeTestYookassa({ shopId: cfg.shopId, secretKey: secretKey || undefined });
+      setTestResult(r);
+    } catch (e) { setTestResult({ ok: false, message: e instanceof Error ? e.message : 'Ошибка проверки' }); } finally { setTesting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <Card className="max-h-[90vh] w-full max-w-lg overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-xl font-light text-ink">ЮKassa</p>
+          {cfg ? <span className={`rounded-full px-2 py-0.5 text-xs ${cfg.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{cfg.connected ? 'Подключено' : 'Не настроено'}</span> : null}
+        </div>
+        <p className="mb-5 text-sm text-dark-gray">Приём онлайн-оплаты через ЮKassa. Реквизиты — в личном кабинете ЮKassa (Настройки → Магазин): идентификатор магазина (shopId) и секретный ключ API. ЮKassa сама формирует чек (54-ФЗ).</p>
+
+        {!cfg ? <p className="text-sm text-dark-gray">Загрузка…</p> : (
+          <>
+            <p className="mb-2 text-sm font-medium text-ink">Данные для подключения</p>
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>Идентификатор магазина (shopId)</label>
+                <input value={cfg.shopId} onChange={(e) => set({ shopId: e.target.value })} className={fieldCls} placeholder="напр. 123456" autoComplete="off" />
+              </div>
+              <div>
+                <label className={labelCls}>Секретный ключ API</label>
+                <input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} className={fieldCls} autoComplete="new-password" placeholder={cfg.secretKeySet ? '•••••••• (задан — оставьте пустым, чтобы не менять)' : 'live_… или test_…'} />
+                <p className="mt-1 text-xs text-dark-gray">Хранится в зашифрованном виде и обратно не показывается.</p>
+              </div>
+            </div>
+
+            <p className="mb-2 mt-6 text-sm font-medium text-ink">Способы оплаты</p>
+            <div className="space-y-2">
+              {PAY_METHODS.map((m) => (
+                <label key={m.id} className="flex items-start gap-3 rounded-md border border-ink/10 px-3 py-2.5">
+                  <input type="checkbox" className="mt-1" checked={cfg.methods[m.id]} onChange={() => toggleMethod(m.id)} />
+                  <span>
+                    <span className="block text-sm font-medium text-ink">{m.label}</span>
+                    <span className="block text-xs text-dark-gray">{m.hint}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-dark-gray">Итоговый набор способов на странице оплаты зависит также от подключённых методов в личном кабинете ЮKassa.</p>
+
+            {testResult ? <p className={`mt-3 rounded-md px-3 py-2 text-sm ${testResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{testResult.ok ? '✓ ' : '✕ '}{testResult.message}</p> : null}
+            {err ? <p className="mt-3 text-sm text-red-600">{err}</p> : null}
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              <Button onClick={save} disabled={busy || testing}>{busy ? 'Сохранение…' : 'Сохранить'}</Button>
+              <Button variant="secondary" onClick={test} disabled={busy || testing}>{testing ? 'Проверка…' : 'Проверить подключение'}</Button>
+              <Button variant="secondary" onClick={onClose} disabled={busy || testing}>Отмена</Button>
+            </div>
+            <p className="mt-2 text-xs text-dark-gray">Проверка делает запрос к API ЮKassa с указанными shopId и ключом (ключ — введённый здесь или ранее сохранённый).</p>
           </>
         )}
       </Card>

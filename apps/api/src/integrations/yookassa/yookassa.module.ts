@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PaymentGatewayPort } from './payment-gateway.port.js';
 import { MockYooKassaAdapter } from './mock-yookassa.adapter.js';
 import { HttpYooKassaAdapter } from './http-yookassa.adapter.js';
+import { YooKassaConfigService } from './yookassa-config.service.js';
 import { HttpBspbAdapter } from '../bspb/http-bspb.adapter.js';
 import { BspbConfigService } from '../bspb/bspb-config.service.js';
 import { HttpPaykeeperAdapter } from '../paykeeper/http-paykeeper.adapter.js';
@@ -20,6 +21,7 @@ import type { Env } from '../../config/env.schema.js';
 @Module({
   providers: [
     MockYooKassaAdapter,
+    YooKassaConfigService,
     HttpYooKassaAdapter,
     BspbConfigService,
     HttpBspbAdapter,
@@ -45,6 +47,6 @@ import type { Env } from '../../config/env.schema.js';
       },
     },
   ],
-  exports: [PaymentGatewayPort, MockYooKassaAdapter, BspbConfigService, HttpBspbAdapter, PaykeeperConfigService, HttpPaykeeperAdapter],
+  exports: [PaymentGatewayPort, MockYooKassaAdapter, YooKassaConfigService, HttpYooKassaAdapter, BspbConfigService, HttpBspbAdapter, PaykeeperConfigService, HttpPaykeeperAdapter],
 })
 export class YooKassaModule {}

@@ -1124,6 +1124,20 @@ export interface SavePaykeeperConfigInput {
   card: boolean;
   sbp: boolean;
 }
+/** Конфигурация ЮKassa (подключение + способы оплаты), без секретов. */
+export interface YookassaAdminConfig {
+  shopId: string;
+  secretKeySet: boolean;
+  connected: boolean;
+  methods: PaymentMethodsConfig;
+}
+/** Вход сохранения конфигурации ЮKassa (секретный ключ: пусто — не менять). */
+export interface SaveYookassaConfigInput {
+  shopId?: string;
+  secretKey?: string;
+  card: boolean;
+  sbp: boolean;
+}
 /** Статус фискализации чеков (54-ФЗ). */
 export interface FiscalStatus {
   provider: string;
@@ -1629,6 +1643,13 @@ export interface InboxThreadMessage {
   text: string;
   createdAt: string;
 }
+/** Строка списка «все гостевые диалоги» (мониторинг): базовые поля + статус и превью. */
+export interface GuestConversationRow extends InboxConversationRow {
+  status?: string;
+  lastRole?: 'user' | 'ai' | 'staff' | null;
+  lastMessage?: string | null;
+  lastAt?: string;
+}
 export interface InboxOperator {
   id: string;
   name: string;
@@ -1646,6 +1667,21 @@ export interface InboxThread {
     createdAt: string;
   };
   messages: InboxThreadMessage[];
+}
+export interface CopilotPendingAction {
+  toolCallId: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+export interface CopilotResult {
+  conversationId: string;
+  reply: string;
+  pending: CopilotPendingAction[];
+}
+export interface CopilotDecision {
+  toolCallId: string;
+  allow: boolean;
+  denyReason?: string;
 }
 
 // --- Мессенджер сотрудников (§2) ---
@@ -1974,6 +2010,9 @@ export const adminApi = {
   financePaykeeper: () => request<PaykeeperAdminConfig>('/v1/finance/paykeeper'),
   financeSavePaykeeper: (body: SavePaykeeperConfigInput) => request<PaykeeperAdminConfig>('/v1/finance/paykeeper', { method: 'PUT', body }),
   financeTestPaykeeper: (body: Omit<SavePaykeeperConfigInput, 'card' | 'sbp' | 'secret'>) => request<{ ok: boolean; message: string }>('/v1/finance/paykeeper/test', { method: 'POST', body }),
+  financeYookassa: () => request<YookassaAdminConfig>('/v1/finance/yookassa'),
+  financeSaveYookassa: (body: SaveYookassaConfigInput) => request<YookassaAdminConfig>('/v1/finance/yookassa', { method: 'PUT', body }),
+  financeTestYookassa: (body: Omit<SaveYookassaConfigInput, 'card' | 'sbp'>) => request<{ ok: boolean; message: string }>('/v1/finance/yookassa/test', { method: 'POST', body }),
   financeFiscal: () => request<FiscalStatus>('/v1/finance/fiscal'),
   financeAudit: () => request<FinanceAuditEntry[]>('/v1/finance/audit'),
 
@@ -2583,6 +2622,13 @@ export const adminApi = {
 
   // AI · Лента эскалаций (operator inbox §4.7)
   inboxList: () => request<InboxConversationRow[]>('/ai/inbox'),
+  inboxAll: (opts: { status?: string; channel?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.status) q.set('status', opts.status);
+    if (opts.channel) q.set('channel', opts.channel);
+    const qs = q.toString();
+    return request<GuestConversationRow[]>(`/ai/inbox/all${qs ? `?${qs}` : ''}`);
+  },
   inboxThread: (id: string) => request<InboxThread>(`/ai/inbox/${id}`),
   inboxAssign: (id: string) => request<unknown>(`/ai/inbox/${id}/assign`, { method: 'POST' }),
   inboxReply: (id: string, text: string) =>
@@ -2591,6 +2637,12 @@ export const adminApi = {
   inboxOperators: () => request<InboxOperator[]>('/ai/inbox/operators'),
   inboxDelegate: (id: string, operatorId: string, note?: string) =>
     request<{ ok: true }>(`/ai/inbox/${id}/delegate`, { method: 'POST', body: { operatorId, note } }),
+
+  // AI · Копилот сотрудника (§3): чат с DeepSeek в пределах прав роли
+  copilotMessage: (text: string, conversationId?: string) =>
+    request<CopilotResult>('/ai/copilot/message', { method: 'POST', body: { text, conversationId } }),
+  copilotConfirm: (conversationId: string, decisions: CopilotDecision[]) =>
+    request<CopilotResult>('/ai/copilot/confirm', { method: 'POST', body: { conversationId, decisions } }),
 
   // Мессенджер сотрудников (§2)
   staffColleagues: () => request<StaffColleague[]>('/staff-chat/colleagues'),

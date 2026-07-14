@@ -5,7 +5,7 @@ import { RequirePermission } from '../../admin/require-permission.decorator.js';
 import { CurrentAdminId } from '../../admin/current-admin.decorator.js';
 import { TenantService } from '../tenant/tenant.service.js';
 import { FinanceService } from './finance.service.js';
-import { SaveBspbConfigDto, SavePaykeeperConfigDto, TestBspbConnectionDto, TestPaykeeperConnectionDto, ToggleIntegrationDto, UpsertLegalEntityDto } from './dto/legal-entity.dto.js';
+import { SaveBspbConfigDto, SavePaykeeperConfigDto, SaveYookassaConfigDto, TestBspbConnectionDto, TestPaykeeperConnectionDto, TestYookassaConnectionDto, ToggleIntegrationDto, UpsertLegalEntityDto } from './dto/legal-entity.dto.js';
 
 /** Финансы гостиницы (реквизиты, приём оплаты, фискализация, 1С). RBAC — pms_finance. */
 @ApiTags('pms-finance')
@@ -94,6 +94,26 @@ export class FinanceController {
   @RequirePermission('pms_finance')
   testPaykeeper(@Body() dto: TestPaykeeperConnectionDto) {
     return this.finance.testPaykeeperConnection(dto);
+  }
+
+  // ─── Эквайринг ЮKassa (подключение + способы оплаты) ───
+  @Get('yookassa')
+  @RequirePermission('pms_finance')
+  yookassaConfig() {
+    return this.finance.getYookassaConfig();
+  }
+
+  @Put('yookassa')
+  @RequirePermission('pms_finance')
+  async saveYookassaConfig(@Body() dto: SaveYookassaConfigDto, @CurrentAdminId() adminId: string) {
+    return this.finance.saveYookassaConfig(await this.tenant.getDefaultTenantId(), dto, adminId);
+  }
+
+  @Post('yookassa/test')
+  @HttpCode(200)
+  @RequirePermission('pms_finance')
+  testYookassa(@Body() dto: TestYookassaConnectionDto) {
+    return this.finance.testYookassaConnection(dto);
   }
 
   /** Доступные платёжные системы для онлайн-ссылки (вкладка «Счёт»). Доступно операторам броней. */

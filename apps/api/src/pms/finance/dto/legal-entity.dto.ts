@@ -71,3 +71,21 @@ export class TestPaykeeperConnectionDto {
   @ApiPropertyOptional() @IsOptional() @IsString() user?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() password?: string;
 }
+
+/**
+ * Конфигурация ЮKassa из окна «Настроить»: shopId и секретный ключ (ключ — только
+ * на запись; пусто = оставить прежний) + способы оплаты.
+ */
+export class SaveYookassaConfigDto {
+  @ApiPropertyOptional({ description: 'Идентификатор магазина (shopId) из ЛК ЮKassa' })
+  @IsOptional() @IsString() shopId?: string;
+  @ApiPropertyOptional({ description: 'Секретный ключ API (пусто — не менять)' }) @IsOptional() @IsString() secretKey?: string;
+  @ApiProperty({ description: 'Банковские карты' }) @IsBoolean() card!: boolean;
+  @ApiProperty({ description: 'Система быстрых платежей (СБП)' }) @IsBoolean() sbp!: boolean;
+}
+
+/** Проверка подключения ЮKassa значениями из формы (пусто → сохранённые). */
+export class TestYookassaConnectionDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() shopId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() secretKey?: string;
+}
