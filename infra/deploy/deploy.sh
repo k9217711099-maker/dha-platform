@@ -23,6 +23,30 @@ pnpm install --frozen-lockfile
 pnpm --filter @dha/api prisma:generate
 pnpm --filter @dha/api exec prisma db push --accept-data-loss
 
+# 3b. Публичный адрес API для сборки фронта.
+# ВАЖНО: NEXT_PUBLIC_* запекается в бандл на этапе build (а не в рантайме pm2),
+# поэтому web/admin надо собирать с реальным адресом API. Иначе браузер гостя
+# стучится в дефолтный localhost:3001 → "Load failed". Переопределяется на сервере
+# переменной PUBLIC_API_URL (напр. когда появится домен/https).
+if [ "$BRANCH" = "main" ]; then
+  API_URL="${PUBLIC_API_URL:-http://83.166.247.226:3001/api}"
+else
+  API_URL="${PUBLIC_API_URL:-http://localhost:3001/api}"
+fi
+# Обновляем ТОЛЬКО ключ NEXT_PUBLIC_API_URL, не трогая прочие (Яндекс.Карты/Метрика).
+upsert_env() { # <файл> <КЛЮЧ> <значение>
+  local file="$1" key="$2" val="$3"
+  touch "$file"
+  if grep -q "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$val" >> "$file"
+  fi
+}
+upsert_env apps/web/.env.local   NEXT_PUBLIC_API_URL "$API_URL"
+upsert_env apps/admin/.env.local NEXT_PUBLIC_API_URL "$API_URL"
+echo "==> NEXT_PUBLIC_API_URL=$API_URL (web + admin)"
+
 # 4. Сборка (turbo соблюдает порядок: пакеты → apps)
 pnpm build
 
