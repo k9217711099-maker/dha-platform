@@ -33,3 +33,6 @@ jobs:
             # пересоберётся с актуальным исходником, а не из кэша turbo/Next.
             rm -rf .turbo apps/web/.next apps/web/.turbo apps/admin/.next apps/admin/.turbo node_modules/.cache || true
             bash infra/deploy/deploy.sh ${{ github.ref_name }}
+            # Жёсткий перезапуск фронта: pm2 reload (graceful) в fork-режиме мог держать
+            # старую пререндеренную страницу в памяти → отдавались старые чанки.
+            pm2 restart dha-web dha-admin --update-env || pm2 restart all --update-env || true
