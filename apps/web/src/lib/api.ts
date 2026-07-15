@@ -34,7 +34,14 @@ function resolveApiBase(): string {
   const fromEnv = process.env.NEXT_PUBLIC_API_URL;
   if (fromEnv) return fromEnv;
   if (typeof window !== 'undefined') {
-    return `${window.location.protocol}//${window.location.hostname}:3001/api`;
+    const { protocol, hostname } = window.location;
+    // Локальная разработка или доступ по IP — API на том же хосте, порт 3001.
+    if (hostname === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+      return `${protocol}//${hostname}:3001/api`;
+    }
+    // Прод по домену: API на поддомене api.<основной-домен> (за nginx+HTTPS).
+    const base = hostname.replace(/^(www|admin)\./, '');
+    return `${protocol}//api.${base}/api`;
   }
   return 'http://localhost:3001/api';
 }
