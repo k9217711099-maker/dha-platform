@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button } from '@dha/ui';
 import { useAuth } from '../lib/auth-context';
+
+const navLink =
+  'text-[13px] uppercase tracking-overline text-dark-gray transition-colors hover:text-ink';
 
 export function Header() {
   const { guest, loading, logout } = useAuth();
@@ -15,43 +17,52 @@ export function Header() {
   }
 
   return (
-    <header className="border-b border-ink/10">
-      <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-        <Link href="/" className="text-sm uppercase tracking-[0.3em] text-ink">
-          D Hotels &amp; Apartments
+    <header className="sticky top-0 z-50 border-b border-ink/15 bg-beige/90 backdrop-blur">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+        <Link href="/" className="font-serif text-2xl font-medium tracking-wide text-ink">
+          D <span className="text-bronze">H&amp;A</span>
         </Link>
-        <nav className="flex items-center gap-3">
-          <Link href="/search" className="text-sm text-dark-gray hover:text-ink">
+        <nav className="flex items-center gap-6">
+          <Link href="/search" className={navLink}>
             Поиск
           </Link>
           {loading ? null : guest ? (
             <>
-              <Link href="/bookings" className="text-sm text-dark-gray hover:text-ink">
+              <Link href="/bookings" className={navLink}>
                 Мои брони
               </Link>
-              <Link href="/loyalty" className="text-sm text-dark-gray hover:text-ink">
+              <Link href="/loyalty" className={navLink}>
                 Баллы
               </Link>
-              <Link href="/favorites" className="text-sm text-dark-gray hover:text-ink">
+              <Link href="/favorites" className={navLink}>
                 Избранное
               </Link>
-              <Link href="/notifications" className="text-sm text-dark-gray hover:text-ink">
+              <Link href="/notifications" className={navLink}>
                 Уведомления
               </Link>
-              <Link href="/profile" className="text-sm text-dark-gray hover:text-ink">
+              <Link href="/profile" className={navLink}>
                 Профиль
               </Link>
-              <Button variant="secondary" onClick={handleLogout}>
+              <button
+                onClick={handleLogout}
+                className="border border-ink/15 px-5 py-2 text-[13px] uppercase tracking-overline text-ink transition-colors hover:bg-ink hover:text-beige"
+              >
                 Выйти
-              </Button>
+              </button>
             </>
           ) : (
             <>
-              <Link href="/login">
-                <Button variant="secondary">Войти</Button>
+              <Link
+                href="/login"
+                className="border border-ink/15 px-5 py-2 text-[13px] uppercase tracking-overline text-ink transition-colors hover:bg-ink hover:text-beige"
+              >
+                Войти
               </Link>
-              <Link href="/register">
-                <Button>Регистрация</Button>
+              <Link
+                href="/register"
+                className="bg-ink px-5 py-2 text-[13px] uppercase tracking-overline text-beige transition-colors hover:bg-bronze"
+              >
+                Регистрация
               </Link>
             </>
           )}

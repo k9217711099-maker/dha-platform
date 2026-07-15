@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D Hotels &amp; Apartments — Свежий апп-стиль</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;500;600&family=Onest:wght@300;400;500;600&display=swap');
+
+:root {
+  --porcelain: #F3F5F4;
+  --white: #FFFFFF;
+  --teal: #0B5D57;
+  --teal-deep: #073F3B;
+  --teal-tint: #DCEBE7;
+  --sand: #E8D9BF;
+  --ink: #14201E;
+  --gray: #5C6B68;
+  --line: #DCE3E1;
+  --r: 20px;
+  --r-lg: 28px;
+  --display: 'Unbounded', sans-serif;
+  --sans: 'Onest', 'Helvetica Neue', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--porcelain);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 32px; }
+
+a { color: inherit; text-decoration: none; }
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ---------- floating pill nav ---------- */
+header {
+  position: fixed;
+  top: 16px; left: 16px; right: 16px;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+.navbar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 8px 8px 24px;
+  box-shadow: 0 8px 32px rgba(20,32,30,.08);
+  max-width: 1200px;
+  width: 100%;
+  justify-content: space-between;
+}
+.logo {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: .02em;
+}
+.logo span { color: var(--teal); }
+nav ul { display: flex; gap: 4px; list-style: none; }
+nav a {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 16px;
+  border-radius: 999px;
+  transition: background .2s ease, color .2s ease;
+  color: var(--gray);
+}
+nav a:hover { background: var(--teal-tint); color: var(--teal-deep); }
+.nav-cta {
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 14px;
+  padding: 12px 24px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .2s ease, box-shadow .2s ease;
+}
+.nav-cta:hover { background: var(--teal-deep); box-shadow: 0 6px 20px rgba(11,93,87,.3); }
+
+/* ---------- hero ---------- */
+.hero {
+  position: relative;
+  padding: 168px 0 72px;
+  overflow: hidden;
+}
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+}
+.blob-1 { width: 520px; height: 520px; background: rgba(11,93,87,.16); top: -140px; right: -80px; }
+.blob-2 { width: 420px; height: 420px; background: rgba(232,217,191,.85); top: 220px; left: -140px; }
+.blob-3 { width: 300px; height: 300px; background: rgba(11,93,87,.1); bottom: -100px; right: 25%; }
+
+.hero-inner { position: relative; z-index: 2; }
+
+.hero .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--teal-deep);
+  margin-bottom: 28px;
+}
+.hero .chip i {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--teal);
+  display: inline-block;
+}
+
+.hero h1 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: clamp(34px, 4.6vw, 60px);
+  line-height: 1.14;
+  letter-spacing: -.01em;
+  max-width: 820px;
+  margin-bottom: 22px;
+}
+.hero h1 .accent { color: var(--teal); }
+.hero p.lead {
+  font-size: 18px;
+  color: var(--gray);
+  max-width: 560px;
+  margin-bottom: 40px;
+}
+
+.fade-up { opacity: 0; transform: translateY(24px); animation: fadeUp .8s cubic-bezier(.2,.7,.3,1) forwards; }
+.d1 { animation-delay: .05s; } .d2 { animation-delay: .18s; } .d3 { animation-delay: .32s; } .d4 { animation-delay: .46s; }
+@keyframes fadeUp { to { opacity: 1; transform: none; } }
+
+/* ---------- booking panel ---------- */
+.booking {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: 0 24px 64px rgba(20,32,30,.1);
+  padding: 12px;
+}
+.booking form {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr .95fr auto;
+  gap: 8px;
+}
+.booking .field {
+  padding: 14px 20px;
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: background .2s ease;
+  border: 1px solid transparent;
+}
+.booking .field:hover { background: var(--porcelain); }
+.booking label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--teal);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+.booking label svg { flex: none; }
+.booking .value {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 17px;
+  color: var(--ink);
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.booking .submit {
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  border-radius: var(--r);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 16px;
+  padding: 0 40px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  transition: background .2s ease, box-shadow .2s ease;
+}
+.booking .submit:hover { background: var(--teal-deep); box-shadow: 0 10px 28px rgba(11,93,87,.35); }
+
+.quick-chips { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+.quick-chips span { font-size: 13px; color: var(--gray); align-self: center; }
+.quick-chips button {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--white);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: border-color .2s ease, background .2s ease;
+}
+.quick-chips button:hover { border-color: var(--teal); background: var(--teal-tint); }
+
+/* ---------- sections ---------- */
+section { padding: 84px 0; }
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  margin-bottom: 40px;
+  gap: 24px;
+}
+.section-head h2 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: clamp(26px, 3.2vw, 38px);
+  line-height: 1.2;
+}
+.section-head p { color: var(--gray); max-width: 420px; }
+.link-btn {
+  flex: none;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--teal);
+  border: 1px solid var(--line);
+  background: var(--white);
+  border-radius: 999px;
+  padding: 12px 22px;
+  cursor: pointer;
+  transition: border-color .2s ease, background .2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.link-btn:hover { border-color: var(--teal); background: var(--teal-tint); }
+
+/* ---------- bento properties ---------- */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 300px 300px;
+  gap: 20px;
+}
+.b-card {
+  position: relative;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  transition: transform .3s cubic-bezier(.2,.7,.3,1), box-shadow .3s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.b-card:hover { transform: translateY(-6px); box-shadow: 0 24px 56px rgba(20,32,30,.16); }
+.b-card.tall { grid-row: span 2; }
+
+.b-bg { position: absolute; inset: 0; transition: transform .5s ease; }
+.b-card:hover .b-bg { transform: scale(1.04); }
+.bg-a { background: radial-gradient(480px 420px at 70% 18%, rgba(232,217,191,.9), transparent 60%), linear-gradient(165deg, #2E6E63, #0B5D57 55%, #073F3B); }
+.bg-b { background: radial-gradient(360px 280px at 30% 20%, rgba(255,255,255,.5), transparent 60%), linear-gradient(160deg, #D9CBB0, #BCA57E); }
+.bg-c { background: radial-gradient(360px 280px at 65% 25%, rgba(232,217,191,.6), transparent 55%), linear-gradient(160deg, #486B66, #29504B); }
+.bg-d { background: radial-gradient(360px 280px at 45% 15%, rgba(255,255,255,.35), transparent 60%), linear-gradient(160deg, #97ADA8, #63807B); }
+
+.b-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 45%, rgba(7,63,59,.72));
+}
+.b-top {
+  position: absolute;
+  top: 18px; left: 18px; right: 18px;
+  display: flex;
+  justify-content: space-between;
+  z-index: 2;
+}
+.b-tag {
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255,255,255,.92);
+  color: var(--teal-deep);
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+.b-rating {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(7,63,59,.5);
+  backdrop-filter: blur(6px);
+  border-radius: 999px;
+  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.b-info { position: relative; z-index: 2; padding: 22px 24px; color: #fff; }
+.b-info h3 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 21px;
+  margin-bottom: 6px;
+}
+.b-card.tall .b-info h3 { font-size: 26px; }
+.b-info .loc { font-size: 14px; opacity: .85; margin-bottom: 12px; }
+.b-info .price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  background: rgba(255,255,255,.14);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 16px;
+}
+.b-info .price small { font-weight: 400; font-size: 12px; opacity: .8; }
+
+/* ---------- benefits ---------- */
+.benefits-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+.ben {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 30px 28px;
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+.ben:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(20,32,30,.1); }
+.ben .icon {
+  width: 52px; height: 52px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 20px;
+  color: var(--teal-deep);
+}
+.ic-1 { background: var(--teal-tint); }
+.ic-2 { background: var(--sand); }
+.ic-3 { background: #E3EBE9; }
+.ic-4 { background: #F0E9DC; }
+.ben h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+.ben p { font-size: 14px; color: var(--gray); }
+
+/* ---------- app CTA banner ---------- */
+.cta-banner {
+  background: linear-gradient(120deg, var(--teal-deep), var(--teal) 60%, #2E6E63);
+  border-radius: var(--r-lg);
+  padding: 56px 60px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 40px;
+  position: relative;
+  overflow: hidden;
+}
+.cta-banner::before {
+  content: "";
+  position: absolute;
+  width: 420px; height: 420px;
+  border-radius: 50%;
+  background: rgba(232,217,191,.14);
+  right: -120px; top: -180px;
+}
+.cta-banner h2 {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.2;
+  margin-bottom: 12px;
+  position: relative;
+}
+.cta-banner p { opacity: .85; max-width: 460px; position: relative; }
+.cta-actions { display: flex; gap: 12px; flex: none; position: relative; }
+.cta-actions .btn {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 15px;
+  border-radius: 999px;
+  padding: 14px 28px;
+  cursor: pointer;
+  transition: transform .2s ease, background .2s ease;
+  border: none;
+}
+.cta-actions .btn:hover { transform: translateY(-2px); }
+.btn-light { background: #fff; color: var(--teal-deep); }
+.btn-ghost { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.4); }
+.btn-ghost:hover { background: rgba(255,255,255,.12); }
+
+/* ---------- footer ---------- */
+footer { padding: 64px 0 40px; }
+.footer-card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 48px 52px 36px;
+}
+.footer-inner {
+  display: flex;
+  justify-content: space-between;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+.footer-cols { display: flex; gap: 64px; flex-wrap: wrap; }
+.footer-cols h4 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--teal);
+  margin-bottom: 14px;
+}
+.footer-cols ul { list-style: none; }
+.footer-cols li { margin-bottom: 8px; font-size: 14px; color: var(--gray); }
+.footer-cols a:hover { color: var(--teal-deep); }
+.footer-note {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--gray);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.reveal { opacity: 0; transform: translateY(24px); transition: opacity .6s ease, transform .6s ease; }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+  .reveal, .fade-up { opacity: 1; transform: none; }
+}
+
+@media (max-width: 1000px) {
+  .bento { grid-template-columns: 1fr 1fr; grid-template-rows: auto; }
+  .b-card { min-height: 260px; }
+  .b-card.tall { grid-row: auto; min-height: 320px; }
+  .benefits-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 820px) {
+  nav { display: none; }
+  .hero { padding-top: 130px; }
+  .booking form { grid-template-columns: 1fr 1fr; }
+  .booking .field:first-child { grid-column: 1 / 3; }
+  .booking .submit { grid-column: 1 / 3; padding: 16px; }
+  .cta-banner { flex-direction: column; align-items: flex-start; padding: 40px 32px; }
+}
+@media (max-width: 560px) {
+  .wrap { padding: 0 18px; }
+  .bento { grid-template-columns: 1fr; }
+  .benefits-grid { grid-template-columns: 1fr; }
+  .booking form { grid-template-columns: 1fr; }
+  .booking .field:first-child, .booking .submit { grid-column: auto; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="navbar">
+    <a class="logo" href="#">D<span>H&amp;A</span></a>
+    <nav aria-label="Основная навигация">
+      <ul>
+        <li><a href="#objects">Объекты</a></li>
+        <li><a href="#benefits">Преимущества</a></li>
+        <li><a href="#app">Приложение</a></li>
+        <li><a href="#contacts">Контакты</a></li>
+      </ul>
+    </nav>
+    <button class="nav-cta" type="button">Войти</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+    <div class="wrap hero-inner">
+      <span class="chip fade-up d1"><i aria-hidden="true"></i>Онлайн-заселение и цифровой ключ — уже работают</span>
+      <h1 class="fade-up d2">Отель, который живёт<br>у вас <span class="accent">в телефоне</span></h1>
+      <p class="lead fade-up d3">Бронируйте напрямую в пару касаний: лучшая цена без посредников,
+      баллы за каждую ночь и дверь, которая открывается со смартфона.</p>
+
+      <div class="booking fade-up d4">
+        <form aria-label="Поиск номера" onsubmit="return false">
+          <div class="field">
+            <label for="q-place">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Куда
+            </label>
+            <button class="value" type="button" id="q-place">Санкт-Петербург, все объекты</button>
+          </div>
+          <div class="field">
+            <label for="q-in">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              Заезд
+            </label>
+            <button class="value" type="button" id="q-in">12 авг</button>
+          </div>
+          <div class="field">
+            <label for="q-out">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              Выезд
+            </label>
+            <button class="value" type="button" id="q-out">15 авг</button>
+          </div>
+          <div class="field">
+            <label for="q-guests">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2M19 8v6M22 11h-6"/></svg>
+              Гости
+            </label>
+            <button class="value" type="button" id="q-guests">2 взрослых</button>
+          </div>
+          <button class="submit" type="submit">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            Найти
+          </button>
+        </form>
+      </div>
+
+      <div class="quick-chips fade-up d4">
+        <span>Популярно:</span>
+        <button type="button">Выходные вдвоём</button>
+        <button type="button">С кухней на неделю</button>
+        <button type="button">Рядом с центром</button>
+        <button type="button">Поздний выезд</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="objects" style="padding-top: 24px;">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <div>
+          <h2>Выбирайте настроение поездки</h2>
+          <p>Четыре объекта в Петербурге — от классического отеля до апартаментов с кухней.</p>
+        </div>
+        <button class="link-btn" type="button">Все объекты
+          <svg width="14" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true"><path d="M0 5h14M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.5"/></svg>
+        </button>
+      </div>
+
+      <div class="bento reveal">
+        <article class="b-card tall">
+          <div class="b-bg bg-a" role="img" aria-label="Фотография отеля D Hotel Невский"></div>
+          <div class="b-top">
+            <span class="b-tag">Отель · Центр</span>
+            <span class="b-rating">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8L12 2z"/></svg>
+              4.9
+            </span>
+          </div>
+          <div class="b-info">
+            <h3>D Hotel Невский</h3>
+            <p class="loc">2 минуты до Невского проспекта</p>
+            <span class="price">от 8 900 ₽ <small>/ ночь</small></span>
+          </div>
+        </article>
+
+        <article class="b-card">
+          <div class="b-bg bg-b" role="img" aria-label="Фотография апартаментов D Apartments Мойка 8"></div>
+          <div class="b-top">
+            <span class="b-tag">Апартаменты</span>
+            <span class="b-rating">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8L12 2z"/></svg>
+              4.8
+            </span>
+          </div>
+          <div class="b-info">
+            <h3>D Apartments Мойка 8</h3>
+            <p class="loc">Вид на воду · кухня</p>
+            <span class="price">от 6 400 ₽ <small>/ ночь</small></span>
+          </div>
+        </article>
+
+        <article class="b-card">
+          <div class="b-bg bg-c" role="img" aria-label="Фотография отеля D Hotel Каменный остров"></div>
+          <div class="b-top">
+            <span class="b-tag">Отель · Спа</span>
+            <span class="b-rating">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8L12 2z"/></svg>
+              4.9
+            </span>
+          </div>
+          <div class="b-info">
+            <h3>D Hotel Каменный остров</h3>
+            <p class="loc">Парк · завтраки до 12:00</p>
+            <span class="price">от 12 500 ₽ <small>/ ночь</small></span>
+          </div>
+        </article>
+
+        <article class="b-card" style="grid-column: span 2;">
+          <div class="b-bg bg-d" role="img" aria-label="Фотография апартаментов D Apartments Лиговский"></div>
+          <div class="b-top">
+            <span class="b-tag">Апартаменты · Бизнес</span>
+            <span class="b-rating">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8L12 2z"/></svg>
+              4.7
+            </span>
+          </div>
+          <div class="b-info">
+            <h3>D Apartments Лиговский</h3>
+            <p class="loc">У вокзала · для деловых поездок</p>
+            <span class="price">от 5 800 ₽ <small>/ ночь</small></span>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="benefits">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <div>
+          <h2>Напрямую — выгоднее</h2>
+          <p>Четыре причины бронировать на сайте и в приложении, а не на сторонних площадках.</p>
+        </div>
+      </div>
+      <div class="benefits-grid reveal">
+        <div class="ben">
+          <div class="icon ic-1">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M19 5L5 19M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 20a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/></svg>
+          </div>
+          <h3>Лучшая цена</h3>
+          <p>Прямое бронирование всегда не дороже площадок. Нашли дешевле — сравняем.</p>
+        </div>
+        <div class="ben">
+          <div class="icon ic-2">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.3 2.3 4.7-5.6"/></svg>
+          </div>
+          <h3>Баллы D</h3>
+          <p>1 балл = 1 ₽. До 10% возврата и оплата баллами до 15% следующей брони.</p>
+        </div>
+        <div class="ben">
+          <div class="icon ic-3">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg>
+          </div>
+          <h3>Онлайн-заселение</h3>
+          <p>Анкета и документы — до приезда. На месте — сразу в номер, без очереди у стойки.</p>
+        </div>
+        <div class="ben">
+          <div class="icon ic-4">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+          </div>
+          <h3>Ключ в телефоне</h3>
+          <p>PIN-код или Bluetooth — дверь открывается со смартфона на время проживания.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="app" style="padding-top: 12px;">
+    <div class="wrap">
+      <div class="cta-banner reveal">
+        <div>
+          <h2>Скачайте приложение —<br>путешествуйте налегке</h2>
+          <p>Бронирования, баллы, заселение и цифровой ключ — всё в одном месте, офлайн и без очередей.</p>
+        </div>
+        <div class="cta-actions">
+          <button class="btn btn-light" type="button">App Store</button>
+          <button class="btn btn-ghost" type="button">Google Play</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer id="contacts">
+  <div class="wrap">
+    <div class="footer-card">
+      <div class="footer-inner">
+        <div>
+          <a class="logo" href="#" style="font-size: 20px;">D<span>H&amp;A</span></a>
+          <p style="margin-top: 14px; color: var(--gray); font-size: 14px; max-width: 260px;">
+            Сеть отелей и апартаментов. Санкт-Петербург.
+          </p>
+        </div>
+        <div class="footer-cols">
+          <div>
+            <h4>Гостям</h4>
+            <ul>
+              <li><a href="#">Мои бронирования</a></li>
+              <li><a href="#">Программа лояльности</a></li>
+              <li><a href="#">Онлайн-заселение</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4>Сеть</h4>
+            <ul>
+              <li><a href="#">Отели</a></li>
+              <li><a href="#">Апартаменты</a></li>
+              <li><a href="#">Тарифы</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4>Связаться</h4>
+            <ul>
+              <li><a href="tel:+78120000000">+7 (812) 000-00-00</a></li>
+              <li><a href="mailto:stay@dhotels.ru">stay@dhotels.ru</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-note">
+        <span>© 2026 D Hotels &amp; Apartments</span>
+        <span>Политика конфиденциальности · Договор оферты</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  } else {
+    document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+  }
+</script>
+
+</body>
+</html>

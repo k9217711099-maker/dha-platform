@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D Hotels &amp; Apartments — Ночной портье</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Prata&family=Golos+Text:wght@300;400;500;600&display=swap');
+
+:root {
+  --night: #0D0F13;
+  --night-2: #14171D;
+  --night-3: #1C2028;
+  --gold: #C9A96A;
+  --gold-soft: rgba(201, 169, 106, .35);
+  --fog: #E9E6DF;
+  --fog-dim: #9A968D;
+  --serif: 'Prata', 'Georgia', serif;
+  --sans: 'Golos Text', 'Helvetica Neue', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--night);
+  color: var(--fog);
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1200px; margin: 0 auto; padding: 0 40px; }
+
+a { color: inherit; text-decoration: none; }
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.overline {
+  font-size: 11px;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: var(--gold);
+  font-weight: 400;
+}
+
+/* ---------- header ---------- */
+header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 50;
+  background: linear-gradient(rgba(13,15,19,.85), rgba(13,15,19,.55) 70%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(201,169,106,.14);
+}
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 80px;
+}
+.logo {
+  font-family: var(--serif);
+  font-size: 24px;
+  letter-spacing: .06em;
+  color: var(--fog);
+}
+.logo span { color: var(--gold); }
+
+nav ul { display: flex; gap: 40px; list-style: none; }
+nav a {
+  font-size: 12px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--fog-dim);
+  transition: color .2s ease;
+  padding: 6px 0;
+}
+nav a:hover { color: var(--gold); }
+
+.header-cta {
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: none;
+  border: 1px solid var(--gold-soft);
+  padding: 11px 28px;
+  cursor: pointer;
+  transition: background .25s ease, color .25s ease;
+}
+.header-cta:hover { background: var(--gold); color: var(--night); }
+
+/* ---------- hero ---------- */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  padding: 140px 0 60px;
+  background:
+    radial-gradient(1200px 600px at 75% -10%, rgba(201,169,106,.14), transparent 60%),
+    radial-gradient(900px 500px at 15% 110%, rgba(60,80,120,.18), transparent 60%),
+    linear-gradient(180deg, #0D0F13 0%, #10131A 60%, #0D0F13 100%);
+}
+/* окна ночного города */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(2px 3px at 82% 30%, rgba(201,169,106,.8), transparent),
+    radial-gradient(2px 3px at 86% 34%, rgba(201,169,106,.5), transparent),
+    radial-gradient(2px 3px at 84% 42%, rgba(233,230,223,.4), transparent),
+    radial-gradient(2px 3px at 90% 38%, rgba(201,169,106,.6), transparent),
+    radial-gradient(2px 3px at 88% 26%, rgba(233,230,223,.35), transparent),
+    radial-gradient(2px 3px at 92% 46%, rgba(201,169,106,.45), transparent),
+    radial-gradient(2px 3px at 80% 50%, rgba(233,230,223,.3), transparent),
+    radial-gradient(2px 3px at 94% 30%, rgba(201,169,106,.5), transparent);
+  pointer-events: none;
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  pointer-events: none;
+}
+
+.hero-content { position: relative; z-index: 2; max-width: 780px; }
+.hero h1 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(42px, 5.6vw, 76px);
+  line-height: 1.12;
+  margin: 26px 0 24px;
+  color: var(--fog);
+}
+.hero h1 .gold { color: var(--gold); }
+.hero p.lead {
+  color: var(--fog-dim);
+  font-size: 18px;
+  max-width: 520px;
+  margin-bottom: 12px;
+}
+
+.fade-up { opacity: 0; transform: translateY(28px); animation: fadeUp .9s ease forwards; }
+.d1 { animation-delay: .1s; } .d2 { animation-delay: .25s; } .d3 { animation-delay: .4s; } .d4 { animation-delay: .55s; }
+@keyframes fadeUp { to { opacity: 1; transform: none; } }
+
+/* ---------- booking glass card ---------- */
+.booking {
+  position: relative;
+  z-index: 3;
+  margin-top: 56px;
+  background: rgba(20, 23, 29, .72);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(201,169,106,.25);
+  box-shadow: 0 30px 80px rgba(0,0,0,.5);
+}
+.booking::before {
+  content: "";
+  position: absolute;
+  top: -1px; left: 32px; right: 32px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+}
+.booking form {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 1fr .95fr auto;
+}
+.booking .field {
+  padding: 22px 26px 18px;
+  border-right: 1px solid rgba(201,169,106,.14);
+  cursor: pointer;
+  transition: background .2s ease;
+}
+.booking .field:hover { background: rgba(201,169,106,.06); }
+.booking label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.booking .value {
+  font-family: var(--serif);
+  font-size: 19px;
+  color: var(--fog);
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.booking .submit {
+  background: var(--gold);
+  color: var(--night);
+  border: none;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  padding: 0 46px;
+  cursor: pointer;
+  transition: background .25s ease, box-shadow .25s ease;
+}
+.booking .submit:hover { background: #DBBE82; box-shadow: 0 0 40px rgba(201,169,106,.35); }
+
+.hero-foot {
+  position: relative;
+  z-index: 2;
+  margin-top: 40px;
+  display: flex;
+  gap: 40px;
+  color: var(--fog-dim);
+  font-size: 13px;
+  letter-spacing: .08em;
+}
+.hero-foot b { color: var(--gold); font-weight: 500; }
+
+/* ---------- sections ---------- */
+section { padding: 110px 0; }
+.section-head { margin-bottom: 60px; }
+.section-head h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(32px, 3.8vw, 48px);
+  margin-top: 18px;
+  color: var(--fog);
+}
+
+/* ---------- properties: horizontal scroll ---------- */
+.props-scroller {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(320px, 380px);
+  gap: 28px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold-soft) transparent;
+}
+.props-scroller::-webkit-scrollbar { height: 4px; }
+.props-scroller::-webkit-scrollbar-thumb { background: var(--gold-soft); }
+
+.prop-card {
+  scroll-snap-align: start;
+  background: var(--night-2);
+  border: 1px solid rgba(201,169,106,.14);
+  transition: border-color .3s ease, transform .3s ease, box-shadow .3s ease;
+  cursor: pointer;
+}
+.prop-card:hover {
+  border-color: var(--gold);
+  transform: translateY(-6px);
+  box-shadow: 0 24px 60px rgba(0,0,0,.45);
+}
+.prop-visual {
+  aspect-ratio: 4 / 3;
+  position: relative;
+  overflow: hidden;
+}
+.prop-visual::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 40%, rgba(13,15,19,.75));
+}
+.pv-a { background: radial-gradient(400px 260px at 70% 20%, rgba(201,169,106,.35), transparent 65%), linear-gradient(160deg, #232837, #14171D); }
+.pv-b { background: radial-gradient(400px 260px at 30% 25%, rgba(90,110,150,.4), transparent 65%), linear-gradient(160deg, #1E2430, #12151B); }
+.pv-c { background: radial-gradient(400px 260px at 60% 30%, rgba(160,120,90,.35), transparent 65%), linear-gradient(160deg, #262231, #14121B); }
+.pv-d { background: radial-gradient(400px 260px at 45% 20%, rgba(120,140,120,.3), transparent 65%), linear-gradient(160deg, #1E2726, #121717); }
+.prop-visual .tag {
+  position: absolute;
+  top: 18px; left: 18px;
+  z-index: 2;
+  font-size: 10px;
+  letter-spacing: .26em;
+  text-transform: uppercase;
+  color: var(--gold);
+  border: 1px solid var(--gold-soft);
+  padding: 6px 14px;
+  background: rgba(13,15,19,.6);
+  backdrop-filter: blur(6px);
+}
+.prop-visual .mono {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-size: 120px;
+  color: rgba(233,230,223,.12);
+  user-select: none;
+}
+.prop-body { padding: 26px 26px 28px; }
+.prop-body h3 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 24px;
+  margin-bottom: 8px;
+  color: var(--fog);
+}
+.prop-body .loc { font-size: 13px; color: var(--fog-dim); margin-bottom: 20px; }
+.prop-body .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-top: 1px solid rgba(201,169,106,.14);
+  padding-top: 18px;
+}
+.prop-body .price { font-family: var(--serif); font-size: 22px; color: var(--gold); }
+.prop-body .price small { font-family: var(--sans); font-size: 12px; color: var(--fog-dim); margin-left: 6px; }
+.prop-body .go {
+  font-size: 11px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--fog);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: color .2s ease;
+}
+.prop-card:hover .go { color: var(--gold); }
+
+/* ---------- benefits ---------- */
+.benefits { background: var(--night-2); border-top: 1px solid rgba(201,169,106,.12); border-bottom: 1px solid rgba(201,169,106,.12); }
+.benefit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: rgba(201,169,106,.14);
+  border: 1px solid rgba(201,169,106,.14);
+}
+.benefit {
+  background: var(--night-2);
+  padding: 44px 46px;
+  transition: background .25s ease;
+}
+.benefit:hover { background: var(--night-3); }
+.benefit svg { color: var(--gold); margin-bottom: 22px; }
+.benefit h3 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 22px;
+  margin-bottom: 12px;
+  color: var(--fog);
+}
+.benefit p { color: var(--fog-dim); font-size: 15px; max-width: 400px; }
+
+/* ---------- loyalty ---------- */
+.loyalty { text-align: center; }
+.loyalty h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(30px, 3.4vw, 44px);
+  margin: 18px 0 56px;
+}
+.tiers {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.tier {
+  border: 1px solid rgba(201,169,106,.2);
+  padding: 34px 20px 30px;
+  position: relative;
+  transition: border-color .25s ease, transform .25s ease;
+}
+.tier:hover { border-color: var(--gold); transform: translateY(-4px); }
+.tier strong {
+  font-family: var(--serif);
+  font-size: 38px;
+  color: var(--gold);
+  display: block;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+.tier span { font-size: 11px; letter-spacing: .26em; text-transform: uppercase; color: var(--fog-dim); }
+.tier .cond { display: block; margin-top: 14px; font-size: 12px; color: var(--fog-dim); letter-spacing: 0; text-transform: none; }
+
+/* ---------- footer ---------- */
+footer {
+  border-top: 1px solid rgba(201,169,106,.16);
+  padding: 60px 0 48px;
+  background: #0A0C0F;
+}
+.footer-inner {
+  display: flex;
+  justify-content: space-between;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+.footer-cols { display: flex; gap: 72px; flex-wrap: wrap; }
+.footer-cols h4 {
+  font-size: 10px;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 18px;
+  font-weight: 400;
+}
+.footer-cols ul { list-style: none; }
+.footer-cols li { margin-bottom: 10px; font-size: 14px; color: var(--fog-dim); }
+.footer-cols a { transition: color .2s ease; }
+.footer-cols a:hover { color: var(--gold); }
+.footer-note {
+  margin-top: 52px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(201,169,106,.1);
+  font-size: 12px;
+  color: var(--fog-dim);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+  .reveal, .fade-up { opacity: 1; transform: none; }
+}
+
+@media (max-width: 960px) {
+  .benefit-grid { grid-template-columns: 1fr; }
+  .tiers { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 820px) {
+  .wrap { padding: 0 22px; }
+  nav { display: none; }
+  .hero { padding-top: 120px; min-height: auto; }
+  .booking form { grid-template-columns: 1fr 1fr; }
+  .booking .field:first-child { grid-column: 1 / 3; }
+  .booking .submit { grid-column: 1 / 3; padding: 20px; }
+}
+@media (max-width: 540px) {
+  .booking form { grid-template-columns: 1fr; }
+  .booking .field:first-child, .booking .submit { grid-column: auto; }
+  .tiers { grid-template-columns: 1fr; }
+  .hero-foot { flex-direction: column; gap: 10px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap header-inner">
+    <a class="logo" href="#">D <span>H&amp;A</span></a>
+    <nav aria-label="Основная навигация">
+      <ul>
+        <li><a href="#objects">Объекты</a></li>
+        <li><a href="#benefits">Сервис</a></li>
+        <li><a href="#loyalty">Лояльность</a></li>
+        <li><a href="#contacts">Контакты</a></li>
+      </ul>
+    </nav>
+    <button class="header-cta" type="button">Личный кабинет</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-content">
+        <span class="overline fade-up d1">D Hotels &amp; Apartments · Санкт-Петербург</span>
+        <h1 class="fade-up d2">Город засыпает.<br><span class="gold">Ваш номер — ждёт.</span></h1>
+        <p class="lead fade-up d3">Отели и апартаменты для тех, кто ценит поздние заезды,
+        тихие этажи и сервис, который не нужно ждать. Прямое бронирование — всегда лучшая цена.</p>
+      </div>
+
+      <div class="booking fade-up d4">
+        <form aria-label="Поиск номера" onsubmit="return false">
+          <div class="field">
+            <label for="b-place">Объект или город</label>
+            <button class="value" type="button" id="b-place">Все объекты сети</button>
+          </div>
+          <div class="field">
+            <label for="b-in">Заезд</label>
+            <button class="value" type="button" id="b-in">12 августа</button>
+          </div>
+          <div class="field">
+            <label for="b-out">Выезд</label>
+            <button class="value" type="button" id="b-out">15 августа</button>
+          </div>
+          <div class="field">
+            <label for="b-guests">Гости</label>
+            <button class="value" type="button" id="b-guests">2 взрослых</button>
+          </div>
+          <button class="submit" type="submit">Подобрать</button>
+        </form>
+      </div>
+
+      <div class="hero-foot fade-up d4">
+        <span>Заселение онлайн — <b>без стойки регистрации</b></span>
+        <span>Цифровой ключ — <b>дверь откроет телефон</b></span>
+        <span>Баллы D — <b>до 10% с каждой ночи</b></span>
+      </div>
+    </div>
+  </section>
+
+  <section id="objects">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="overline">Коллекция</span>
+        <h2>Объекты сети</h2>
+      </div>
+      <div class="props-scroller" role="list">
+        <article class="prop-card reveal" role="listitem">
+          <div class="prop-visual pv-a" role="img" aria-label="Фотография отеля D Hotel Невский">
+            <span class="tag">Отель</span>
+            <span class="mono" aria-hidden="true">N</span>
+          </div>
+          <div class="prop-body">
+            <h3>D Hotel Невский</h3>
+            <p class="loc">Центр · 2 мин до Невского проспекта</p>
+            <div class="row">
+              <span class="price">8 900 ₽<small>/ ночь</small></span>
+              <a class="go" href="#">Открыть
+                <svg width="14" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true"><path d="M0 5h14M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.2"/></svg>
+              </a>
+            </div>
+          </div>
+        </article>
+
+        <article class="prop-card reveal" role="listitem">
+          <div class="prop-visual pv-b" role="img" aria-label="Фотография апартаментов D Apartments Мойка 8">
+            <span class="tag">Апартаменты</span>
+            <span class="mono" aria-hidden="true">M</span>
+          </div>
+          <div class="prop-body">
+            <h3>D Apartments Мойка 8</h3>
+            <p class="loc">Набережная · вид на воду · кухня</p>
+            <div class="row">
+              <span class="price">6 400 ₽<small>/ ночь</small></span>
+              <a class="go" href="#">Открыть
+                <svg width="14" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true"><path d="M0 5h14M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.2"/></svg>
+              </a>
+            </div>
+          </div>
+        </article>
+
+        <article class="prop-card reveal" role="listitem">
+          <div class="prop-visual pv-c" role="img" aria-label="Фотография отеля D Hotel Каменный остров">
+            <span class="tag">Отель · Спа</span>
+            <span class="mono" aria-hidden="true">K</span>
+          </div>
+          <div class="prop-body">
+            <h3>D Hotel Каменный остров</h3>
+            <p class="loc">Острова · парк · завтраки до 12:00</p>
+            <div class="row">
+              <span class="price">12 500 ₽<small>/ ночь</small></span>
+              <a class="go" href="#">Открыть
+                <svg width="14" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true"><path d="M0 5h14M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.2"/></svg>
+              </a>
+            </div>
+          </div>
+        </article>
+
+        <article class="prop-card reveal" role="listitem">
+          <div class="prop-visual pv-d" role="img" aria-label="Фотография апартаментов D Apartments Лиговский">
+            <span class="tag">Апартаменты</span>
+            <span class="mono" aria-hidden="true">L</span>
+          </div>
+          <div class="prop-body">
+            <h3>D Apartments Лиговский</h3>
+            <p class="loc">Центр · у вокзала · для деловых поездок</p>
+            <div class="row">
+              <span class="price">5 800 ₽<small>/ ночь</small></span>
+              <a class="go" href="#">Открыть
+                <svg width="14" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true"><path d="M0 5h14M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.2"/></svg>
+              </a>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="benefits" id="benefits">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="overline">Прямое бронирование</span>
+        <h2>Почему у нас, а не на площадках</h2>
+      </div>
+      <div class="benefit-grid reveal">
+        <div class="benefit">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 7.7l5.4-.8L12 2z"/></svg>
+          <h3>Лучшая цена — гарантия</h3>
+          <p>На сайте и в приложении всегда не дороже, чем на сторонних площадках. Нашли дешевле — сравняем.</p>
+        </div>
+        <div class="benefit">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+          <h3>Заселение за минуту</h3>
+          <p>Онлайн-регистрация до приезда. Никаких анкет на стойке — приехали и сразу в номер.</p>
+        </div>
+        <div class="benefit">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+          <h3>Цифровой ключ</h3>
+          <p>PIN-код или Bluetooth: дверь открывается с телефона и действует ровно на время проживания.</p>
+        </div>
+        <div class="benefit">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.3 2.3 4.7-5.6"/></svg>
+          <h3>Баллы D за каждую ночь</h3>
+          <p>1 балл = 1 ₽. Возвращаем до 10% стоимости и принимаем баллы в оплату до 15% следующей брони.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="loyalty" id="loyalty">
+    <div class="wrap reveal">
+      <span class="overline">Программа лояльности</span>
+      <h2>Чем чаще вы возвращаетесь —<br>тем больше город ваш</h2>
+      <div class="tiers" role="list">
+        <div class="tier" role="listitem">
+          <strong>3%</strong><span>Member</span>
+          <em class="cond">при регистрации</em>
+        </div>
+        <div class="tier" role="listitem">
+          <strong>5%</strong><span>Silver</span>
+          <em class="cond">от 5 ночей в году</em>
+        </div>
+        <div class="tier" role="listitem">
+          <strong>7%</strong><span>Gold</span>
+          <em class="cond">от 15 ночей в году</em>
+        </div>
+        <div class="tier" role="listitem">
+          <strong>10%</strong><span>Platinum</span>
+          <em class="cond">от 30 ночей в году</em>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer id="contacts">
+  <div class="wrap">
+    <div class="footer-inner">
+      <div>
+        <a class="logo" href="#">D <span>H&amp;A</span></a>
+        <p style="margin-top: 16px; color: var(--fog-dim); font-size: 14px; max-width: 280px;">
+          Сеть отелей и апартаментов.<br>Санкт-Петербург.
+        </p>
+      </div>
+      <div class="footer-cols">
+        <div>
+          <h4>Гостям</h4>
+          <ul>
+            <li><a href="#">Мои бронирования</a></li>
+            <li><a href="#">Программа лояльности</a></li>
+            <li><a href="#">Онлайн-заселение</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Сеть</h4>
+          <ul>
+            <li><a href="#">Отели</a></li>
+            <li><a href="#">Апартаменты</a></li>
+            <li><a href="#">Тарифы</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Связаться</h4>
+          <ul>
+            <li><a href="tel:+78120000000">+7 (812) 000-00-00</a></li>
+            <li><a href="mailto:stay@dhotels.ru">stay@dhotels.ru</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="footer-note">
+      <span>© 2026 D Hotels &amp; Apartments</span>
+      <span>Политика конфиденциальности · Договор оферты</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  } else {
+    document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+  }
+</script>
+
+</body>
+</html>
