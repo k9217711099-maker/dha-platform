@@ -28,6 +28,10 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /var/www/dha
+            # Публичный адрес API для сборки фронта (HTTPS-домен). Задаётся здесь, а не
+            # только в deploy.sh, чтобы применилось СРАЗУ (workflow берётся из пушимого
+            # коммита, без лага самообновления deploy.sh).
+            export PUBLIC_API_URL=https://api.nomero.online/api
             # Чистим кэши сборки ДО deploy.sh (workflow берётся из пушимого коммита —
             # без задержки самообновления скрипта). Гарантирует, что фронт
             # пересоберётся с актуальным исходником, а не из кэша turbo/Next.

@@ -34,7 +34,7 @@ pnpm --filter @dha/api exec prisma db push --accept-data-loss
 # стучится в дефолтный localhost:3001 → "Load failed". Переопределяется на сервере
 # переменной PUBLIC_API_URL (напр. когда появится домен/https).
 if [ "$BRANCH" = "main" ]; then
-  API_URL="${PUBLIC_API_URL:-http://83.166.247.226:3001/api}"
+  API_URL="${PUBLIC_API_URL:-https://api.nomero.online/api}"
 else
   API_URL="${PUBLIC_API_URL:-http://localhost:3001/api}"
 fi
