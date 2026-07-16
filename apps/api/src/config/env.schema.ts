@@ -188,6 +188,12 @@ export const envSchema = z.object({
    * X-Telegram-Bot-Api-Secret-Token (задаётся при setWebhook), проверяется на входе.
    */
   TELEGRAM_PROVIDER: z.enum(['mock', 'http']).default('mock'),
+  /**
+   * Режим приёма входящих Telegram: webhook (Telegram шлёт нам) или polling (мы сами
+   * опрашиваем getUpdates). Если не задан — авто: polling при заданном
+   * MESSENGER_PROXY_URL (значит сеть блокируется в обе стороны), иначе webhook.
+   */
+  TELEGRAM_MODE: z.enum(['webhook', 'polling']).optional(),
   TELEGRAM_API_BASE: z.string().url().default('https://api.telegram.org'),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional(),
