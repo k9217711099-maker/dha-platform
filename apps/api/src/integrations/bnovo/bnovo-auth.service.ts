@@ -1,27 +1,20 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import type { Env } from '../../config/env.schema.js';
+import { BnovoConfigService } from './bnovo-config.service.js';
 
 /**
  * JWT-аутентификация Bnovo PMS (POST /api/v1/auth с { id, password }).
  * Токен живёт ~сутки; кэшируем и обновляем заранее или по 401 (invalidate()).
+ * Реквизиты берутся динамически из BnovoConfigService (админка/Setting поверх env).
  */
 @Injectable()
 export class BnovoAuthService {
   private readonly logger = new Logger(BnovoAuthService.name);
-  private readonly baseUrl: string;
-  private readonly accountId?: number;
-  private readonly apiKey?: string;
 
   private token: string | null = null;
   private expiresAt = 0;
   private pending: Promise<string> | null = null;
 
-  constructor(config: ConfigService<Env, true>) {
-    this.baseUrl = config.get('BNOVO_API_BASE', { infer: true });
-    this.accountId = config.get('BNOVO_ACCOUNT_ID', { infer: true });
-    this.apiKey = config.get('BNOVO_API_KEY', { infer: true });
-  }
+  constructor(private readonly bnovoConfig: BnovoConfigService) {}
 
   /** Действующий bearer-токен (из кэша или новая авторизация). */
   async getToken(force = false): Promise<string> {
@@ -39,13 +32,14 @@ export class BnovoAuthService {
   }
 
   private async authenticate(): Promise<string> {
-    if (!this.accountId || !this.apiKey) {
-      throw new ServiceUnavailableException('Bnovo не настроен: нужны BNOVO_ACCOUNT_ID и BNOVO_API_KEY');
+    const { baseUrl, accountId, apiKey } = await this.bnovoConfig.resolve();
+    if (!accountId || !apiKey) {
+      throw new ServiceUnavailableException('Bnovo не настроен: укажите ID аккаунта и ключ API в админке (Номерной фонд → Импорт из Bnovo) или в .env');
     }
-    const res = await fetch(`${this.baseUrl}/api/v1/auth`, {
+    const res = await fetch(`${baseUrl}/api/v1/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: this.accountId, password: this.apiKey }),
+      body: JSON.stringify({ id: accountId, password: apiKey }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');

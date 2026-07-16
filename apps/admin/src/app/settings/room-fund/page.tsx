@@ -6,6 +6,7 @@ import { Button, Card, Input } from '@dha/ui';
 import {
   adminApi,
   fileUrl,
+  type BnovoConfig,
   type BnovoImportPreview,
   type BnovoImportResult,
   type PmsRoom,
@@ -166,9 +167,26 @@ function BnovoImportTab({ onImported }: { onImported: () => void }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<BnovoImportResult | null>(null);
   const [err, setErr] = useState('');
+  // Реквизиты подключения Bnovo (хранятся в БД, ключ зашифрован).
+  const [cfg, setCfg] = useState<BnovoConfig | null>(null);
+  const [accountId, setAccountId] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [savingCfg, setSavingCfg] = useState(false);
 
   const load = () => { setLoading(true); setErr(''); void adminApi.bnovoImportPreview().then(setPreview).catch((e) => setErr(e instanceof Error ? e.message : 'Ошибка')).finally(() => setLoading(false)); };
-  useEffect(load, []);
+  const loadCfg = () => { void adminApi.bnovoConfig().then((c) => { setCfg(c); setAccountId(c.accountId ? String(c.accountId) : ''); }).catch(() => undefined); };
+  useEffect(() => { loadCfg(); load(); }, []);
+
+  const saveCfg = async () => {
+    setSavingCfg(true); setErr('');
+    try {
+      const body: { accountId?: number; apiKey?: string } = {};
+      if (accountId.trim()) body.accountId = Number(accountId);
+      if (apiKey.trim()) body.apiKey = apiKey.trim();
+      const c = await adminApi.bnovoSaveConfig(body);
+      setCfg(c); setApiKey(''); load(); // после сохранения — перепроверить доступность Bnovo
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка'); } finally { setSavingCfg(false); }
+  };
 
   const delBookings = preview?.existing.reduce((s, c) => s + c.bookings, 0) ?? 0;
   const apply = async () => {
@@ -183,6 +201,29 @@ function BnovoImportTab({ onImported }: { onImported: () => void }) {
 
   return (
     <div className="max-w-3xl space-y-4">
+      {/* Реквизиты подключения к Bnovo */}
+      <Card className="space-y-3 p-5">
+        <div className="flex items-center justify-between">
+          <p className="text-lg font-light text-ink">Подключение к Bnovo</p>
+          {cfg ? <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${cfg.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{cfg.connected ? 'Подключено' : 'Не настроено'}</span> : null}
+        </div>
+        <p className="text-sm text-dark-gray">ID аккаунта и ключ API из личного кабинета Bnovo (Настройки → API). Ключ хранится в зашифрованном виде и наружу не показывается.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-dark-gray">ID аккаунта</label>
+            <input value={accountId} onChange={(e) => setAccountId(e.target.value)} inputMode="numeric" placeholder="напр. 120037" className={selectCls} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-dark-gray">Ключ API</label>
+            <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password" autoComplete="off" placeholder={cfg?.apiKeySet ? '•••••••• (задан — оставьте пустым, чтобы не менять)' : 'Вставьте ключ API'} className={selectCls} />
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button onClick={saveCfg} disabled={savingCfg || (!accountId.trim() && !apiKey.trim())}>{savingCfg ? 'Сохранение…' : 'Сохранить и проверить'}</Button>
+          <span className="text-xs text-dark-gray">После сохранения подключение проверится автоматически.</span>
+        </div>
+      </Card>
+
       <Card className="space-y-3 p-5">
         <div className="flex items-center justify-between">
           <div>

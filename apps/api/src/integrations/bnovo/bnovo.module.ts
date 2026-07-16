@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BnovoPort } from './bnovo.port.js';
 import { BnovoAuthService } from './bnovo-auth.service.js';
+import { BnovoConfigService } from './bnovo-config.service.js';
 import { MockBnovoAdapter } from './mock-bnovo.adapter.js';
 import { HttpBnovoAdapter } from './http-bnovo.adapter.js';
 import type { Env } from '../../config/env.schema.js';
@@ -13,6 +14,7 @@ import type { Env } from '../../config/env.schema.js';
 @Global()
 @Module({
   providers: [
+    BnovoConfigService,
     BnovoAuthService,
     MockBnovoAdapter,
     HttpBnovoAdapter,
@@ -23,6 +25,6 @@ import type { Env } from '../../config/env.schema.js';
         config.get('BNOVO_PROVIDER', { infer: true }) === 'http' ? http : mock,
     },
   ],
-  exports: [BnovoPort, HttpBnovoAdapter],
+  exports: [BnovoPort, HttpBnovoAdapter, BnovoConfigService, BnovoAuthService],
 })
 export class BnovoModule {}

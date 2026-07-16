@@ -1118,6 +1118,12 @@ export interface BnovoImportPreview {
   bnovo: { properties: number; roomTypes: number; rooms: number; sampleRoomTypes: { name: string; capacity: number }[]; sampleRooms: { number: string; floor?: string }[] };
   existing: { id: string; name: string; property: string; rooms: number; bookings: number; fromBnovo: boolean }[];
 }
+/** Реквизиты подключения Bnovo (без ключа). */
+export interface BnovoConfig {
+  accountId: number | null;
+  apiKeySet: boolean;
+  connected: boolean;
+}
 /** Результат импорта из Bnovo. */
 export interface BnovoImportResult {
   properties: number;
@@ -2085,6 +2091,9 @@ export const adminApi = {
   financeUpdateCounterparty: (id: string, body: CounterpartyInput) => request<Counterparty>(`/v1/finance/counterparties/${id}`, { method: 'PATCH', body }),
   financeDeleteCounterparty: (id: string) => request<{ ok: boolean }>(`/v1/finance/counterparties/${id}`, { method: 'DELETE' }),
   // Импорт номерного фонда из Bnovo (категории + номера)
+  bnovoConfig: () => request<BnovoConfig>('/v1/pms/import/bnovo/config'),
+  bnovoSaveConfig: (body: { accountId?: number; apiKey?: string }) =>
+    request<BnovoConfig>('/v1/pms/import/bnovo/config', { method: 'PUT', body }),
   bnovoImportPreview: () => request<BnovoImportPreview>('/v1/pms/import/bnovo/preview'),
   bnovoImportApply: (deleteExisting: 'all' | 'empty' | 'hide' | 'none') =>
     request<BnovoImportResult>('/v1/pms/import/bnovo/apply', { method: 'POST', body: { deleteExisting } }),
