@@ -7,6 +7,7 @@ import { AgentsModule } from './agents/agents.module.js';
 import { TelegramModule } from '../integrations/telegram/telegram.module.js';
 import { MaxModule } from '../integrations/max/max.module.js';
 import { WhatsAppModule } from '../integrations/whatsapp/whatsapp.module.js';
+import { TelegramUserbotModule } from '../integrations/telegram-userbot/telegram-userbot.module.js';
 import { ChannelsModule } from './channels/channels.module.js';
 import { InboxModule } from './inbox/inbox.module.js';
 import { QaModule } from './qa/qa.module.js';
@@ -27,6 +28,7 @@ import { QaModule } from './qa/qa.module.js';
     TelegramModule,
     MaxModule,
     WhatsAppModule,
+    TelegramUserbotModule,
     ChannelsModule,
     InboxModule,
     QaModule,

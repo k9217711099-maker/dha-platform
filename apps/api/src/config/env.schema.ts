@@ -236,6 +236,22 @@ export const envSchema = z.object({
   WA_AUTH_DIR: z.string().default('.wa-auth'),
 
   /**
+   * Telegram Direct (userbot, GramJS/MTProto) — общение с ЛИЧНОГО аккаунта, а не
+   * бота. TG_USERBOT_ENABLED=true подключает сохранённую сессию при старте.
+   * api_id/api_hash (my.telegram.org) и телефон вводятся в админке (Setting,
+   * зашифровано), env — запасной вариант. Прокси — ОТДЕЛЬНЫЙ SOCKS5
+   * (TG_USERBOT_PROXY=socks5://user:pass@host:port), т.к. MTProto не ходит через
+   * HTTP-прокси. ⚠️ Неофициально, нарушает ToS Telegram — риск блокировки аккаунта.
+   */
+  TG_USERBOT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  TG_USERBOT_API_ID: z.string().optional(),
+  TG_USERBOT_API_HASH: z.string().optional(),
+  TG_USERBOT_PROXY: z.string().optional(),
+
+  /**
    * Базы знаний, доступные ГОСТЕВОМУ AI-агенту (ID баз через запятую). У страниц KB
    * пока нет флага видимости, поэтому гостю отдаём только явно разрешённые базы.
    * Пусто → гостевой kb_search выключен (без утечки внутренних страниц). Копилот

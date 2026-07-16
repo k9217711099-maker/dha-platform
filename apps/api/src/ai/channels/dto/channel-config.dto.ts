@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 /** Сохранение реквизитов Telegram-бота из админки (пустые поля — не менять). */
@@ -59,4 +59,38 @@ export class TestMaxConfigDto {
   @IsString()
   @MaxLength(300)
   botToken?: string;
+}
+
+/** Telegram Direct (userbot): шаг 1 — реквизиты и телефон. */
+export class TgDirectStartDto {
+  @ApiProperty({ description: 'api_id с my.telegram.org' })
+  @IsString()
+  @MaxLength(32)
+  apiId!: string;
+
+  @ApiProperty({ description: 'api_hash с my.telegram.org' })
+  @IsString()
+  @MaxLength(64)
+  apiHash!: string;
+
+  @ApiProperty({ description: 'Телефон аккаунта в международном формате, напр. +79990000000' })
+  @IsString()
+  @MaxLength(32)
+  phone!: string;
+}
+
+/** Telegram Direct: шаг 2 — код из Telegram. */
+export class TgDirectCodeDto {
+  @ApiProperty({ description: 'Код подтверждения из Telegram' })
+  @IsString()
+  @MaxLength(16)
+  code!: string;
+}
+
+/** Telegram Direct: шаг 3 — облачный пароль (2FA). */
+export class TgDirectPasswordDto {
+  @ApiProperty({ description: 'Облачный пароль двухэтапной проверки' })
+  @IsString()
+  @MaxLength(256)
+  password!: string;
 }

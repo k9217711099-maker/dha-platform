@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Card } from '@dha/ui';
-import { adminApi, type AiChannel, type MaxAdminConfig, type TelegramAdminConfig, type WaState } from '../../../lib/api';
+import { adminApi, type AiChannel, type MaxAdminConfig, type TelegramAdminConfig, type TgUserbotState, type WaState } from '../../../lib/api';
 import { useRequireAdmin } from '../../../lib/use-admin';
 import { useEsc } from '../../../lib/use-esc';
 
@@ -70,6 +70,9 @@ function IntegrationsTab() {
                 {i.id === 'whatsapp' && i.available ? (
                   <Button variant="secondary" onClick={() => setConfiguring('whatsapp')}>Настроить</Button>
                 ) : null}
+                {i.id === 'tg_direct' && i.available ? (
+                  <Button variant="secondary" onClick={() => setConfiguring('tg_direct')}>Настроить</Button>
+                ) : null}
                 {i.setup ? (
                   <Button variant="secondary" onClick={() => setOpenSetup(openSetup === i.id ? null : i.id)}>
                     {openSetup === i.id ? 'Скрыть инструкцию' : 'Инструкция'}
@@ -89,6 +92,7 @@ function IntegrationsTab() {
       {configuring === 'telegram' ? <TelegramSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
       {configuring === 'max' ? <MaxSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
       {configuring === 'whatsapp' ? <WhatsAppSettingsModal onClose={() => { setConfiguring(null); void load(); }} /> : null}
+      {configuring === 'tg_direct' ? <TgDirectSettingsModal onClose={() => { setConfiguring(null); void load(); }} /> : null}
     </div>
   );
 }
@@ -325,6 +329,103 @@ function WhatsAppSettingsModal({ onClose }: { onClose: () => void }) {
               ) : (
                 <Button onClick={start} disabled={busy || st.status === 'connecting'}>{busy ? '…' : st.status === 'qr' ? 'Обновить' : 'Подключить'}</Button>
               )}
+              <Button variant="secondary" onClick={onClose} disabled={busy}>Закрыть</Button>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Настройка Telegram Direct (userbot) ───
+const UB_BADGE: Record<TgUserbotState['status'], { label: string; cls: string }> = {
+  disabled: { label: 'Выключено', cls: 'bg-ink/10 text-dark-gray' },
+  disconnected: { label: 'Не подключено', cls: 'bg-amber-100 text-amber-800' },
+  awaiting_code: { label: 'Ожидает код', cls: 'bg-sky-100 text-sky-800' },
+  awaiting_password: { label: 'Ожидает пароль', cls: 'bg-sky-100 text-sky-800' },
+  connected: { label: 'Подключено', cls: 'bg-emerald-100 text-emerald-800' },
+};
+
+function TgDirectSettingsModal({ onClose }: { onClose: () => void }) {
+  useEsc(onClose);
+  const [st, setSt] = useState<TgUserbotState | null>(null);
+  const [apiId, setApiId] = useState('');
+  const [apiHash, setApiHash] = useState('');
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    void adminApi.aiTgDirectState().then((s) => { setSt(s); if (s.phone) setPhone(s.phone); }).catch(() => setErr('Не удалось загрузить статус'));
+  }, []);
+
+  const run = async (fn: () => Promise<TgUserbotState>) => {
+    setBusy(true); setErr('');
+    try { setSt(await fn()); } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка'); } finally { setBusy(false); }
+  };
+
+  const badge = st ? UB_BADGE[st.status] : null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <Card className="max-h-[90vh] w-full max-w-lg overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-xl font-light text-ink">Telegram Direct (личный аккаунт)</p>
+          {badge ? <span className={`rounded-full px-2 py-0.5 text-xs ${badge.cls}`}>{badge.label}</span> : null}
+        </div>
+        <p className="mb-4 text-sm text-dark-gray">Вход от личного аккаунта (userbot). ⚠️ Неофициально — риск блокировки аккаунта. Используйте <b>отдельный</b> аккаунт и SOCKS5-прокси.</p>
+
+        {!st ? <p className="text-sm text-dark-gray">Загрузка…</p> : (
+          <>
+            <p className="mb-4 rounded-md bg-ink/[0.03] px-3 py-2 text-sm text-dark-gray">{st.message}</p>
+
+            {st.status === 'disabled' ? (
+              <p className="text-xs text-amber-700">Включите TG_USERBOT_ENABLED=true и TG_USERBOT_PROXY (SOCKS5) в .env на сервере, затем перезапустите API.</p>
+            ) : st.status === 'disconnected' ? (
+              <div className="space-y-3">
+                <div>
+                  <label className={labelCls}>api_id</label>
+                  <input value={apiId} onChange={(e) => setApiId(e.target.value)} className={fieldCls} placeholder="1234567" autoComplete="off" />
+                </div>
+                <div>
+                  <label className={labelCls}>api_hash</label>
+                  <input value={apiHash} onChange={(e) => setApiHash(e.target.value)} className={fieldCls} placeholder="abcdef0123456789..." autoComplete="off" />
+                  <p className="mt-1 text-xs text-dark-gray">api_id и api_hash — на my.telegram.org → API development tools.</p>
+                </div>
+                <div>
+                  <label className={labelCls}>Телефон</label>
+                  <input value={phone} onChange={(e) => setPhone(e.target.value)} className={fieldCls} placeholder="+79990000000" autoComplete="off" />
+                </div>
+              </div>
+            ) : st.status === 'awaiting_code' ? (
+              <div>
+                <label className={labelCls}>Код из Telegram</label>
+                <input value={code} onChange={(e) => setCode(e.target.value)} className={fieldCls} placeholder="12345" autoComplete="off" />
+                <p className="mt-1 text-xs text-dark-gray">Код придёт в приложение Telegram на номер {st.phone ?? phone}.</p>
+              </div>
+            ) : st.status === 'awaiting_password' ? (
+              <div>
+                <label className={labelCls}>Облачный пароль (2FA)</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className={fieldCls} autoComplete="new-password" />
+              </div>
+            ) : st.status === 'connected' && st.me ? (
+              <p className="text-sm text-ink">Аккаунт: <b>{st.me}</b></p>
+            ) : null}
+
+            {err ? <p className="mt-3 text-sm text-red-600">{err}</p> : null}
+
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              {st.status === 'disconnected' ? (
+                <Button onClick={() => run(() => adminApi.aiTgDirectStart({ apiId, apiHash, phone }))} disabled={busy || !apiId || !apiHash || !phone}>{busy ? '…' : 'Подключить'}</Button>
+              ) : st.status === 'awaiting_code' ? (
+                <Button onClick={() => run(() => adminApi.aiTgDirectCode(code))} disabled={busy || !code}>{busy ? '…' : 'Отправить код'}</Button>
+              ) : st.status === 'awaiting_password' ? (
+                <Button onClick={() => run(() => adminApi.aiTgDirectPassword(password))} disabled={busy || !password}>{busy ? '…' : 'Войти'}</Button>
+              ) : st.status === 'connected' ? (
+                <Button variant="secondary" onClick={() => run(() => adminApi.aiTgDirectLogout())} disabled={busy}>{busy ? '…' : 'Отвязать аккаунт'}</Button>
+              ) : null}
               <Button variant="secondary" onClick={onClose} disabled={busy}>Закрыть</Button>
             </div>
           </>

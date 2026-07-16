@@ -2928,6 +2928,7 @@ enum AiChannel {
   WEB
   APP
   TELEGRAM
+  TELEGRAM_DIRECT
   MAX
   WHATSAPP
   ADMIN

@@ -6,19 +6,26 @@ import { CurrentAdminId } from '../../admin/current-admin.decorator.js';
 import { TelegramConfigService } from '../../integrations/telegram/telegram-config.service.js';
 import { MaxConfigService } from '../../integrations/max/max-config.service.js';
 import { WhatsAppService, type WaState } from '../../integrations/whatsapp/whatsapp.service.js';
+import {
+  TelegramUserbotService,
+  type TgUserbotState,
+} from '../../integrations/telegram-userbot/telegram-userbot.service.js';
 import { AuditService } from '../../warehouse/audit/audit.service.js';
 import {
   SaveMaxConfigDto,
   SaveTelegramConfigDto,
   TestMaxConfigDto,
   TestTelegramConfigDto,
+  TgDirectCodeDto,
+  TgDirectPasswordDto,
+  TgDirectStartDto,
 } from './dto/channel-config.dto.js';
 
 /** Категория канала: гостевой AI-агент или уведомления. */
 type ChannelCategory = 'guest' | 'notifications';
 
 interface ChannelCard {
-  id: 'web' | 'app' | 'telegram' | 'max' | 'whatsapp' | 'avito';
+  id: 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'avito';
   name: string;
   category: ChannelCategory;
   description: string;
@@ -47,6 +54,7 @@ export class ChannelsAdminController {
     private readonly telegram: TelegramConfigService,
     private readonly max: MaxConfigService,
     private readonly whatsapp: WhatsAppService,
+    private readonly userbot: TelegramUserbotService,
     private readonly audit: AuditService,
   ) {}
 
@@ -59,6 +67,7 @@ export class ChannelsAdminController {
       this.max.getPublicConfig(),
     ]);
     const wa = this.whatsapp.getState();
+    const ub = this.userbot.getState();
     return [
       {
         id: 'web',
@@ -102,6 +111,23 @@ export class ChannelsAdminController {
           '5. Сохраните и нажмите «Проверить подключение».\n' +
           '6. Зарегистрируйте вебхук у Telegram (один раз), подставив свой публичный адрес API:\n' +
           '   https://api.telegram.org/bot<ТОКЕН>/setWebhook?url=<ПУБЛИЧНЫЙ_URL>/api/ai/telegram/webhook&secret_token=<СЕКРЕТ>',
+      },
+      {
+        id: 'tg_direct',
+        name: 'Telegram Direct (личный аккаунт)',
+        category: 'guest',
+        description:
+          'Общение с гостями от ЛИЧНОГО Telegram-аккаунта (userbot), а не бота. Дублирует штатного бота. ⚠️ Неофициально, нарушает правила Telegram — риск блокировки аккаунта. Нужен отдельный SOCKS5-прокси.',
+        available: true,
+        connected: ub.status === 'connected',
+        needsSetup: true,
+        setup:
+          'Как подключить:\n' +
+          '1. На сервере: TG_USERBOT_ENABLED=true и TG_USERBOT_PROXY=socks5://user:pass@host:port (отдельный SOCKS5, HTTP-прокси не подойдёт), перезапустите API.\n' +
+          '2. На my.telegram.org → API development tools получите api_id и api_hash.\n' +
+          '3. В админке нажмите «Настроить», введите api_id, api_hash и телефон аккаунта → «Подключить».\n' +
+          '4. Введите код из Telegram; при двухэтапной проверке — облачный пароль.\n' +
+          '5. Статус сменится на «Подключено». Сессия хранится зашифрованно и переживает перезапуск.',
       },
       {
         id: 'max',
@@ -238,6 +264,45 @@ export class ChannelsAdminController {
   async whatsappLogout(@CurrentAdminId() adminId: string): Promise<WaState> {
     const state = await this.whatsapp.logout();
     await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'whatsapp', payload: { action: 'logout' } });
+    return state;
+  }
+
+  @Get('tg-direct')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Статус Telegram Direct (userbot)' })
+  tgDirectState(): Promise<TgUserbotState> {
+    return this.userbot.getPublicState();
+  }
+
+  @Post('tg-direct/start')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Шаг 1: реквизиты + телефон, отправить код' })
+  async tgDirectStart(@Body() dto: TgDirectStartDto, @CurrentAdminId() adminId: string): Promise<TgUserbotState> {
+    const state = await this.userbot.start(dto);
+    await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'tg_direct', payload: { action: 'start' } });
+    return state;
+  }
+
+  @Post('tg-direct/code')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Шаг 2: код из Telegram' })
+  tgDirectCode(@Body() dto: TgDirectCodeDto): Promise<TgUserbotState> {
+    return this.userbot.submitCode(dto.code);
+  }
+
+  @Post('tg-direct/password')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Шаг 3: облачный пароль (2FA)' })
+  tgDirectPassword(@Body() dto: TgDirectPasswordDto): Promise<TgUserbotState> {
+    return this.userbot.submitPassword(dto.password);
+  }
+
+  @Post('tg-direct/logout')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Отвязать аккаунт Telegram Direct' })
+  async tgDirectLogout(@CurrentAdminId() adminId: string): Promise<TgUserbotState> {
+    const state = await this.userbot.logout();
+    await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'tg_direct', payload: { action: 'logout' } });
     return state;
   }
 }

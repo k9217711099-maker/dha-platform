@@ -144,7 +144,7 @@ export interface CheckinQueueItem {
 }
 /** Канал коммуникации гостевого AI-агента (вкладка «Интеграции»). */
 export interface AiChannel {
-  id: 'web' | 'app' | 'telegram' | 'max' | 'whatsapp' | 'avito';
+  id: 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'avito';
   name: string;
   category: 'guest' | 'notifications';
   description: string;
@@ -176,6 +176,14 @@ export interface MaxAdminConfig {
 export interface WaState {
   status: 'disabled' | 'disconnected' | 'connecting' | 'qr' | 'connected';
   qr: string | null;
+  me: string | null;
+  message: string;
+}
+
+/** Статус Telegram Direct (userbot, GramJS). */
+export interface TgUserbotState {
+  status: 'disabled' | 'disconnected' | 'awaiting_code' | 'awaiting_password' | 'connected';
+  phone: string | null;
   me: string | null;
   message: string;
 }
@@ -2312,6 +2320,14 @@ export const adminApi = {
   aiWhatsappState: () => request<WaState>('/ai/channels/whatsapp'),
   aiWhatsappStart: () => request<WaState>('/ai/channels/whatsapp/start', { method: 'POST' }),
   aiWhatsappLogout: () => request<WaState>('/ai/channels/whatsapp/logout', { method: 'POST' }),
+  aiTgDirectState: () => request<TgUserbotState>('/ai/channels/tg-direct'),
+  aiTgDirectStart: (body: { apiId: string; apiHash: string; phone: string }) =>
+    request<TgUserbotState>('/ai/channels/tg-direct/start', { method: 'POST', body }),
+  aiTgDirectCode: (code: string) =>
+    request<TgUserbotState>('/ai/channels/tg-direct/code', { method: 'POST', body: { code } }),
+  aiTgDirectPassword: (password: string) =>
+    request<TgUserbotState>('/ai/channels/tg-direct/password', { method: 'POST', body: { password } }),
+  aiTgDirectLogout: () => request<TgUserbotState>('/ai/channels/tg-direct/logout', { method: 'POST' }),
 
   searchGuests: (q: string) =>
     request<GuestSearchResult[]>(`/admin/guests?q=${encodeURIComponent(q)}`),
