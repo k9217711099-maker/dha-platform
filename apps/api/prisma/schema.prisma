@@ -553,6 +553,8 @@ model RoomType {
 model Room {
   id                 String             @id @default(uuid())
   tenantId           String
+  /// Внешний ref номера в Bnovo (импорт), опционально под Путь B.
+  bnovoId            String?            @unique
   propertyId         String
   roomTypeId         String
   number             String

@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ChannelSyncService } from './channel-sync.service.js';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { AvailabilityService } from '../pms/availability/availability.service.js';
-import { MockChannelAdapter } from './adapters/mock-channel.adapter.js';
+import { ChannelAdapterRegistry } from './adapters/channel-adapter.registry.js';
 
 function setup() {
   const prisma = {
@@ -11,8 +11,9 @@ function setup() {
     channelSyncLog: { create: vi.fn().mockResolvedValue({}) },
   } as unknown as PrismaService;
   const availability = { search: vi.fn().mockResolvedValue([]) } as unknown as AvailabilityService;
-  const adapter = { pushAvailability: vi.fn(), pushRates: vi.fn(), pushRestrictions: vi.fn() } as unknown as MockChannelAdapter;
-  const service = new ChannelSyncService(prisma, availability, adapter);
+  const adapter = { pushAvailability: vi.fn(), pushRates: vi.fn(), pushRestrictions: vi.fn() };
+  const registry = { resolve: vi.fn().mockReturnValue(adapter) } as unknown as ChannelAdapterRegistry;
+  const service = new ChannelSyncService(prisma, availability, registry);
   return { service, prisma, availability, adapter };
 }
 

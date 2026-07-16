@@ -100,10 +100,12 @@ export class ChannelService {
       this.prisma.channelBooking.findFirst({ where: { channelId }, orderBy: { createdAt: 'desc' }, select: { externalBookingId: true, status: true, createdAt: true } }),
       this.prisma.channelSyncLog.findMany({ where: { channelId }, orderBy: { createdAt: 'desc' }, take: 10 }),
     ]);
+    const provider = ((channel.credentials as { provider?: string } | null)?.provider ?? channel.code).toLowerCase();
     return {
       id: channel.id,
       code: channel.code,
       name: channel.name,
+      provider,
       status: channel.status,
       active: channel.active,
       lastSyncAt: channel.lastSyncAt,

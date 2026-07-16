@@ -7,6 +7,7 @@ import { CurrentAdminId } from '../admin/current-admin.decorator.js';
 import { TenantService } from '../pms/tenant/tenant.service.js';
 import { ChannelService } from './channel.service.js';
 import { ChannelSyncService } from './channel-sync.service.js';
+import { AvitoPollService } from './adapters/avito/avito-poll.service.js';
 import { CreateChannelDto, EnqueueSyncDto, SetMappingDto, UpdateChannelDto } from './dto/channel.dto.js';
 
 /**
@@ -21,6 +22,7 @@ export class ChannelsController {
   constructor(
     private readonly channels: ChannelService,
     private readonly sync: ChannelSyncService,
+    private readonly avitoPoll: AvitoPollService,
     private readonly tenant: TenantService,
   ) {}
 
@@ -48,6 +50,20 @@ export class ChannelsController {
   @RequirePermission('pms_channels')
   async retryJob(@Param('jobId') jobId: string) {
     return this.sync.retryJob(await this.tenant.getDefaultTenantId(), jobId);
+  }
+
+  // Объявления аккаунта Avito (для сопоставления item_id ↔ нашей категории).
+  @Get(':id/avito/listings')
+  @RequirePermission('pms_channels')
+  async avitoListings(@Param('id') id: string) {
+    return this.avitoPoll.listItems(id);
+  }
+
+  // Ручной входящий поллинг броней Avito по каналу (планировщик делает это по расписанию).
+  @Post(':id/avito/poll')
+  @RequirePermission('pms_channels')
+  async pollAvito(@Param('id') id: string) {
+    return this.avitoPoll.pollChannel(id);
   }
 
   @Get(':id')

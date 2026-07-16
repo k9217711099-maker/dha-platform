@@ -32,6 +32,8 @@ import { FinanceDocService } from './finance-docs/finance-doc.service.js';
 import { FinanceDocController } from './finance-docs/finance-doc.controller.js';
 import { CounterpartyService } from './counterparties/counterparty.service.js';
 import { CounterpartyController } from './counterparties/counterparty.controller.js';
+import { BnovoImportService } from './import/bnovo-import.service.js';
+import { BnovoImportController } from './import/bnovo-import.controller.js';
 
 /**
  * D Hospitality Platform (PMS) — собственный движок бронирования/номерного фонда.
@@ -45,7 +47,7 @@ import { CounterpartyController } from './counterparties/counterparty.controller
 @Global()
 @Module({
   imports: [PromocodeModule, PaymentsModule],
-  controllers: [RoomsController, RoomTypesController, UploadsController, PmsBookingsController, AvailabilityController, RatePlansController, RatesController, PmsPromocodesController, MarketingController, FinanceController, TagController, PropertyController, FinanceDocController, CounterpartyController],
+  controllers: [RoomsController, RoomTypesController, UploadsController, PmsBookingsController, AvailabilityController, RatePlansController, RatesController, PmsPromocodesController, MarketingController, FinanceController, TagController, PropertyController, FinanceDocController, CounterpartyController, BnovoImportController],
   providers: [
     AdminAuthGuard,
     AuditService,
@@ -64,6 +66,7 @@ import { CounterpartyController } from './counterparties/counterparty.controller
     PropertyService,
     FinanceDocService,
     CounterpartyService,
+    BnovoImportService,
   ],
   exports: [TenantService, AvailabilityService, RateService, IdempotencyService, PmsBookingService],
 })

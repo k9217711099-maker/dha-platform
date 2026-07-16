@@ -11,6 +11,7 @@ import type {
   BnovoOffer,
   BnovoProperty,
   BnovoRatePlan,
+  BnovoRoom,
   BnovoRoomType,
 } from './bnovo.types.js';
 import type { Env } from '../../config/env.schema.js';
@@ -174,12 +175,34 @@ export class HttpBnovoAdapter extends BnovoPort {
     return all.map((r) => ({
       id: String(r.id),
       propertyId: String(r.hotel_id ?? _propertyId),
+      parentId: r.parent_id ? String(r.parent_id) : undefined,
       name: r.name ?? `Категория ${r.id}`,
       capacity: Number((r.adults ?? 0) + (r.children ?? 0)) || 2,
       description: r.description ?? undefined,
       amenities: [],
       photos: [],
     }));
+  }
+
+  // ─── Физические номера (юниты) — пагинация limit ≤ 30 ───
+  async listRooms(_propertyId?: string): Promise<BnovoRoom[]> {
+    const all: RawRoom[] = [];
+    for (let offset = 0; offset <= 5000; offset += 30) {
+      const data = await this.get<{ rooms?: RawRoom[]; meta?: { total?: number } }>(`/api/v1/rooms?limit=30&offset=${offset}`);
+      const list = data.rooms ?? [];
+      all.push(...list);
+      if (list.length < 30 || all.length >= (data.meta?.total ?? all.length)) break;
+    }
+    // Поля реального ответа Bnovo уточняются по факту — парсим устойчиво к именам.
+    return all
+      .map((r) => ({
+        id: String(r.id),
+        roomTypeId: String(r.room_type_id ?? r.roomtype_id ?? ''),
+        propertyId: r.hotel_id != null ? String(r.hotel_id) : undefined,
+        number: String(r.number ?? r.name ?? r.id),
+        floor: r.floor != null ? String(r.floor) : undefined,
+      }))
+      .filter((r) => r.roomTypeId);
   }
 
   // ─── Объект размещения (один аккаунт Bnovo = один отель) ───
@@ -230,4 +253,14 @@ interface RawRoomType {
   adults?: number;
   children?: number;
   description?: string | null;
+}
+
+interface RawRoom {
+  id: number;
+  room_type_id?: number;
+  roomtype_id?: number;
+  hotel_id?: number;
+  number?: string | number;
+  name?: string;
+  floor?: string | number;
 }

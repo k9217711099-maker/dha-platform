@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { BookingChannel, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { PmsBookingService } from '../pms/bookings/pms-booking.service.js';
-import { MockChannelAdapter } from './adapters/mock-channel.adapter.js';
+import { ChannelAdapterRegistry } from './adapters/channel-adapter.registry.js';
 import { ChannelSyncService } from './channel-sync.service.js';
 import type { CreateBookingDto } from '../pms/bookings/dto/booking.dto.js';
 
@@ -17,7 +17,7 @@ export class ChannelIngestionService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly adapter: MockChannelAdapter,
+    private readonly registry: ChannelAdapterRegistry,
     private readonly pmsBooking: PmsBookingService,
     private readonly sync: ChannelSyncService,
   ) {}
@@ -25,7 +25,7 @@ export class ChannelIngestionService {
   async ingestBooking(channelId: string, raw: unknown, token?: string) {
     const channel = await this.getActiveChannel(channelId);
     this.assertToken(channel, token);
-    const norm = this.adapter.parseBooking(raw);
+    const norm = this.registry.resolve(channel).parseBooking(raw);
     const tenantId = channel.tenantId;
 
     // Дедуп: повторный payload не создаёт дубль (DHP §10).
@@ -34,15 +34,17 @@ export class ChannelIngestionService {
     });
     if (dup) return { duplicate: true, channelBooking: dup };
 
-    // Обратный маппинг remote → наши id.
-    const [propMap, rtMap] = await Promise.all([
-      this.prisma.channelPropertyMapping.findUnique({ where: { channelId_remotePropertyId: { channelId, remotePropertyId: norm.remotePropertyId } } }),
-      this.prisma.channelRoomTypeMapping.findUnique({ where: { channelId_remoteRoomTypeId: { channelId, remoteRoomTypeId: norm.remoteRoomTypeId } } }),
-    ]);
-    if (!propMap || !rtMap) throw new BadRequestException({ code: 'mapping_not_found', message: 'Не найден маппинг объекта/категории для канала' });
+    // Обратный маппинг remote → наши id. Категория (item/room-type) обязательна.
+    const rtMap = await this.prisma.channelRoomTypeMapping.findUnique({
+      where: { channelId_remoteRoomTypeId: { channelId, remoteRoomTypeId: norm.remoteRoomTypeId } },
+    });
+    if (!rtMap) throw new BadRequestException({ code: 'mapping_not_found', message: 'Не найден маппинг категории для канала' });
+    // Объект: из явного property-маппинга (если задан) либо от самой категории (каналы уровня
+    // объявления, напр. Avito — квартира = категория, отдельного property-маппинга нет).
+    const propertyId = await this.resolvePropertyId(channelId, tenantId, norm.remotePropertyId, rtMap.roomTypeId);
 
     const dto: CreateBookingDto = {
-      propertyId: propMap.propertyId,
+      propertyId,
       roomTypeId: rtMap.roomTypeId,
       checkIn: norm.arrivalDate,
       checkOut: norm.departureDate,
@@ -68,7 +70,7 @@ export class ChannelIngestionService {
       });
       await this.prisma.channel.update({ where: { id: channelId }, data: { lastBookingAt: new Date() } });
       // Инвентарь изменился → синк доступности в остальные каналы (сбой не критичен).
-      await this.sync.enqueueForProperty(tenantId, propMap.propertyId, 'AVAILABILITY', channelId);
+      await this.sync.enqueueForProperty(tenantId, propertyId, 'AVAILABILITY', channelId);
       return { channelBooking, booking };
     } catch (e) {
       if (e instanceof ConflictException) {
@@ -86,7 +88,7 @@ export class ChannelIngestionService {
   async ingestCancellation(channelId: string, raw: unknown, token?: string) {
     const channel = await this.getActiveChannel(channelId);
     this.assertToken(channel, token);
-    const norm = this.adapter.parseCancellation(raw);
+    const norm = this.registry.resolve(channel).parseCancellation(raw);
 
     const cb = await this.prisma.channelBooking.findUnique({
       where: { channelId_externalBookingId: { channelId, externalBookingId: norm.externalBookingId } },
@@ -101,6 +103,23 @@ export class ChannelIngestionService {
     const updated = await this.prisma.channelBooking.update({ where: { id: cb.id }, data: { status: 'CANCELLED' } });
     await this.sync.enqueueForProperty(channel.tenantId, booking.propertyId, 'AVAILABILITY', channelId);
     return updated;
+  }
+
+  /**
+   * Объект брони: сперва явный property-маппинг по remotePropertyId (multi-property каналы),
+   * иначе — объект самой категории (каналы уровня объявления). roomType→property авторитетна,
+   * и PmsBookingService всё равно валидирует принадлежность категории объекту.
+   */
+  private async resolvePropertyId(channelId: string, tenantId: string, remotePropertyId: string, roomTypeId: string): Promise<string> {
+    if (remotePropertyId) {
+      const propMap = await this.prisma.channelPropertyMapping.findUnique({
+        where: { channelId_remotePropertyId: { channelId, remotePropertyId } },
+      });
+      if (propMap) return propMap.propertyId;
+    }
+    const roomType = await this.prisma.roomType.findFirst({ where: { id: roomTypeId, tenantId }, select: { propertyId: true } });
+    if (!roomType) throw new BadRequestException({ code: 'mapping_not_found', message: 'Категория маппинга не найдена в каталоге' });
+    return roomType.propertyId;
   }
 
   private async getActiveChannel(channelId: string) {

@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ChannelSyncJob, Prisma, SyncJobStatus, SyncJobType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { AvailabilityService } from '../pms/availability/availability.service.js';
-import { MockChannelAdapter } from './adapters/mock-channel.adapter.js';
+import { ChannelAdapterRegistry } from './adapters/channel-adapter.registry.js';
 import type { ChannelContext } from './channel.types.js';
 
 const BACKOFF_BASE_MS = 30_000;
@@ -21,7 +21,7 @@ export class ChannelSyncService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly availability: AvailabilityService,
-    private readonly adapter: MockChannelAdapter,
+    private readonly registry: ChannelAdapterRegistry,
   ) {}
 
   // ─── Постановка задач ───
@@ -85,15 +85,16 @@ export class ChannelSyncService {
     await this.prisma.channelSyncJob.update({ where: { id: job.id }, data: { status: 'PROCESSING' } });
 
     const ctx: ChannelContext = { channelId: channel.id, code: channel.code, credentials: (channel.credentials as Record<string, unknown> | null) ?? null };
+    const adapter = this.registry.resolve({ code: channel.code, credentials: ctx.credentials });
     const payload = await this.buildPayload(job);
 
     let result;
     try {
       result = job.jobType === 'RATES'
-        ? await this.adapter.pushRates(ctx, payload)
+        ? await adapter.pushRates(ctx, payload)
         : job.jobType === 'RESTRICTIONS'
-          ? await this.adapter.pushRestrictions(ctx, payload)
-          : await this.adapter.pushAvailability(ctx, payload);
+          ? await adapter.pushRestrictions(ctx, payload)
+          : await adapter.pushAvailability(ctx, payload);
     } catch (err) {
       result = { ok: false, errorCode: 'unknown_error', retryable: true, response: { message: (err as Error).message } };
     }

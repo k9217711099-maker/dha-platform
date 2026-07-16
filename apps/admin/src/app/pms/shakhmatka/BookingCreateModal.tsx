@@ -57,6 +57,13 @@ function nightsOf(a: string, b: string): number {
 }
 const capOf = (c: RoomFundCategory | undefined) => (c ? (c.mainPlaces ?? c.capacity) + c.extraPlaces : 99);
 const rangeKey = (a: string, b: string) => `${a}|${b}`;
+/** Ключ идемпотентности. crypto.randomUUID() ДОЛЖЕН вызываться на объекте crypto —
+ *  нельзя «отвязывать» метод (`(crypto.randomUUID ?? …)()` бросает «Can only call
+ *  Crypto.randomUUID on instances of Crypto»). Фолбэк — если API недоступен. */
+const idempotencyKey = (): string =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 /** Создание брони (вкл. мульти-номер) и закрытие продажи. Категории — единым списком сети (без переключения объектов). */
 export function BookingCreateModal({ rooms, prefill, onClose, onCreated }: {
@@ -263,7 +270,7 @@ export function BookingCreateModal({ rooms, prefill, onClose, onCreated }: {
           discountReason: discountReason || undefined,
           extras: s.extras.length ? s.extras.map((x) => ({ extraId: x.extraId, qty: x.qty })) : undefined,
           comment: comment || undefined,
-        }, (crypto.randomUUID ?? (() => Math.random().toString(36).slice(2) + Date.now().toString(36)))());
+        }, idempotencyKey());
       }
       // Сохранить отредактированное примечание гостя (§3) — за существующим гостем из базы.
       if (guestId && guestNotes !== guestNotesBase) {

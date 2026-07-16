@@ -1111,6 +1111,23 @@ export interface Counterparty {
   active: boolean;
 }
 export type CounterpartyInput = Partial<Omit<Counterparty, 'id'>> & { name: string };
+/** Предпросмотр импорта из Bnovo. */
+export interface BnovoImportPreview {
+  reachable: boolean;
+  error?: string;
+  bnovo: { properties: number; roomTypes: number; rooms: number; sampleRoomTypes: { name: string; capacity: number }[]; sampleRooms: { number: string; floor?: string }[] };
+  existing: { id: string; name: string; property: string; rooms: number; bookings: number; fromBnovo: boolean }[];
+}
+/** Результат импорта из Bnovo. */
+export interface BnovoImportResult {
+  properties: number;
+  roomTypes: number;
+  rooms: number;
+  deletedCategories: number;
+  deletedBookings: number;
+  hiddenCategories: number;
+  keptCategories: { name: string; bookings: number }[];
+}
 /** Платёжная/учётная интеграция (Финансы). */
 export interface FinanceIntegration {
   id: string;
@@ -1337,9 +1354,29 @@ export interface Channel {
   lastBookingAt: string | null;
 }
 export interface ChannelMonitoring extends Channel {
+  provider: string;
   jobs: { pending: number; processing: number; success: number; failed: number; retryScheduled: number; deadLetter: number };
   lastBooking: { externalBookingId: string; status: string; createdAt: string } | null;
   recentLogs: ChannelSyncLog[];
+}
+export interface AvitoListing {
+  id: number;
+  title?: string;
+  address?: string;
+  price?: number;
+  status?: string;
+  url?: string;
+  mappedRoomTypeId: string | null;
+}
+export interface AvitoPollResult {
+  channelId: string;
+  items: number;
+  fetched: number;
+  ingested: number;
+  cancelled: number;
+  conflicts: number;
+  duplicates: number;
+  errors: number;
 }
 export interface ChannelMapping {
   property: { id: string; propertyId: string; remotePropertyId: string }[];
@@ -2047,6 +2084,10 @@ export const adminApi = {
   financeCreateCounterparty: (body: CounterpartyInput) => request<Counterparty>('/v1/finance/counterparties', { method: 'POST', body }),
   financeUpdateCounterparty: (id: string, body: CounterpartyInput) => request<Counterparty>(`/v1/finance/counterparties/${id}`, { method: 'PATCH', body }),
   financeDeleteCounterparty: (id: string) => request<{ ok: boolean }>(`/v1/finance/counterparties/${id}`, { method: 'DELETE' }),
+  // Импорт номерного фонда из Bnovo (категории + номера)
+  bnovoImportPreview: () => request<BnovoImportPreview>('/v1/pms/import/bnovo/preview'),
+  bnovoImportApply: (deleteExisting: 'all' | 'empty' | 'hide' | 'none') =>
+    request<BnovoImportResult>('/v1/pms/import/bnovo/apply', { method: 'POST', body: { deleteExisting } }),
   financeLegalEntities: () => request<LegalEntity[]>('/v1/finance/legal-entities'),
   financeCreateLegalEntity: (body: LegalEntityInput) => request<LegalEntity>('/v1/finance/legal-entities', { method: 'POST', body }),
   financeUpdateLegalEntity: (id: string, body: LegalEntityInput) => request<LegalEntity>(`/v1/finance/legal-entities/${id}`, { method: 'PATCH', body }),
@@ -2139,6 +2180,8 @@ export const adminApi = {
   retrySyncJob: (jobId: string) => request<ChannelSyncJob>(`/v1/channels/sync-jobs/${jobId}/retry`, { method: 'POST' }),
   channelSyncJobs: (id: string) => request<ChannelSyncJob[]>(`/v1/channels/${id}/sync-jobs`),
   channelLogs: (id: string) => request<ChannelSyncLog[]>(`/v1/channels/${id}/logs`),
+  avitoListings: (id: string) => request<AvitoListing[]>(`/v1/channels/${id}/avito/listings`),
+  pollAvito: (id: string) => request<AvitoPollResult>(`/v1/channels/${id}/avito/poll`, { method: 'POST' }),
 
   // Задачи и Уборка (TASKS-HOUSEKEEPING-TZ) — /v1/ops/*
   opsTasks: (params: Record<string, string | undefined> = {}) => {

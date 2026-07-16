@@ -6,6 +6,7 @@ import type {
   BnovoCreateBookingRequest,
   BnovoOffer,
   BnovoProperty,
+  BnovoRoom,
   BnovoRoomType,
 } from './bnovo.types.js';
 
@@ -20,6 +21,9 @@ export abstract class BnovoPort {
 
   /** Категории номеров объекта. */
   abstract listRoomTypes(propertyId: string): Promise<BnovoRoomType[]>;
+
+  /** Физические номера (юниты) — для импорта в наш PMS. */
+  abstract listRooms(propertyId?: string): Promise<BnovoRoom[]>;
 
   /** Доступность, цены и тарифы на даты (источник истины). */
   abstract getAvailability(query: BnovoAvailabilityQuery): Promise<BnovoOffer[]>;

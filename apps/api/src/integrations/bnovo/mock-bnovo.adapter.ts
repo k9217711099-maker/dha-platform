@@ -9,6 +9,7 @@ import type {
   BnovoCreateBookingRequest,
   BnovoOffer,
   BnovoProperty,
+  BnovoRoom,
   BnovoRoomType,
 } from './bnovo.types.js';
 
@@ -111,6 +112,16 @@ export class MockBnovoAdapter extends BnovoPort {
     return this.rooms
       .filter((r) => r.propertyId === propertyId)
       .map(({ basePrice: _basePrice, ...room }) => room);
+  }
+
+  /** Синтезируем по 3 номера на категорию (в mock реальных юнитов нет). */
+  async listRooms(propertyId?: string): Promise<BnovoRoom[]> {
+    const out: BnovoRoom[] = [];
+    for (const r of this.rooms) {
+      if (propertyId && r.propertyId !== propertyId) continue;
+      for (let i = 1; i <= 3; i++) out.push({ id: `${r.id}-u${i}`, roomTypeId: r.id, propertyId: r.propertyId, number: `${r.id.slice(-1)}0${i}`, floor: String(i) });
+    }
+    return out;
   }
 
   async getAvailability(query: BnovoAvailabilityQuery): Promise<BnovoOffer[]> {

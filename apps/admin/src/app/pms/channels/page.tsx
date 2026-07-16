@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Input } from '@dha/ui';
-import { adminApi, type Channel, type ChannelMapping, type ChannelMonitoring, type ChannelSyncJob, type PmsRatePlan, type PmsRoomOption } from '../../../lib/api';
+import { adminApi, type AvitoListing, type AvitoPollResult, type Channel, type ChannelMapping, type ChannelMonitoring, type ChannelSyncJob, type PmsRoomOption } from '../../../lib/api';
 import { useRequireAdmin } from '../../../lib/use-admin';
 
 const selectCls = 'w-full rounded-md border border-ink/20 bg-white px-3 py-2 text-sm';
@@ -16,23 +16,28 @@ export default function PmsChannelsPage() {
   const ready = useRequireAdmin();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [options, setOptions] = useState<PmsRoomOption[]>([]);
-  const [plans, setPlans] = useState<PmsRatePlan[]>([]);
   const [sel, setSel] = useState('');
   const [mon, setMon] = useState<ChannelMonitoring | null>(null);
   const [maps, setMaps] = useState<ChannelMapping | null>(null);
   const [jobs, setJobs] = useState<ChannelSyncJob[]>([]);
   const [error, setError] = useState('');
 
-  const [nc, setNc] = useState({ code: '', name: '', kind: 'OTA', token: '' });
-  const [mp, setMp] = useState({ propertyId: '', remoteProperty: '', roomTypeId: '', remoteRoomType: '', ratePlanId: '', remoteRatePlan: '' });
+  const [nc, setNc] = useState({ provider: 'avito', code: 'avito', name: 'Avito', token: '', clientId: '', clientSecret: '', userId: '' });
+  const [mp, setMp] = useState({ propertyId: '', remoteProperty: '', roomTypeId: '', remoteRoomType: '' });
   const roomTypes = useMemo(() => options.find((p) => p.id === mp.propertyId)?.roomTypes ?? [], [options, mp.propertyId]);
+  // Плоский список всех категорий (объект · категория) — для сопоставления объявлений Avito.
+  const allCategories = useMemo(() => options.flatMap((p) => p.roomTypes.map((rt) => ({ id: rt.id, label: `${p.name} · ${rt.name}` }))), [options]);
+
+  const [listings, setListings] = useState<AvitoListing[] | null>(null);
+  const [listingPick, setListingPick] = useState<Record<string, string>>({});
+  const [pollRes, setPollRes] = useState<AvitoPollResult | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const loadChannels = () => adminApi.channels().then(setChannels).catch(() => undefined);
   useEffect(() => {
     if (!ready) return;
     void loadChannels();
     void adminApi.pmsRoomOptions().then((o) => { setOptions(o); if (o[0]) setMp((s) => ({ ...s, propertyId: o[0]!.id })); });
-    void adminApi.pmsRatePlans().then(setPlans).catch(() => undefined);
   }, [ready]);
 
   const loadDetail = (id: string) => {
@@ -40,20 +45,56 @@ export default function PmsChannelsPage() {
     void adminApi.channelMappings(id).then(setMaps).catch(() => undefined);
     void adminApi.channelSyncJobs(id).then(setJobs).catch(() => undefined);
   };
-  useEffect(() => { if (sel) loadDetail(sel); }, [sel]);
+  useEffect(() => { if (sel) { loadDetail(sel); setListings(null); setPollRes(null); } }, [sel]);
   useEffect(() => { setMp((s) => ({ ...s, roomTypeId: roomTypes[0]?.id ?? '' })); }, [roomTypes]);
 
   const run = (fn: () => Promise<unknown>) => { setError(''); void fn().then(() => { if (sel) loadDetail(sel); loadChannels(); }).catch((e) => setError(e instanceof Error ? e.message : 'Ошибка')); };
+  const isAvito = mon?.provider === 'avito';
 
   async function createChannel() {
     setError('');
     if (!nc.code || !nc.name) { setError('Укажите код и название'); return; }
+    let credentials: Record<string, unknown> | undefined;
+    if (nc.provider === 'avito') {
+      if (!nc.clientId || !nc.clientSecret || !nc.userId) { setError('Для Avito укажите Client ID, Client Secret и номер аккаунта'); return; }
+      credentials = { provider: 'avito', clientId: nc.clientId, clientSecret: nc.clientSecret, userId: Number(nc.userId), pushMode: 'off' };
+    } else if (nc.token) {
+      credentials = { token: nc.token };
+    }
     try {
-      const c = await adminApi.createChannel({ code: nc.code, name: nc.name, kind: nc.kind, credentials: nc.token ? { token: nc.token } : undefined });
-      setNc({ code: '', name: '', kind: 'OTA', token: '' });
+      const c = await adminApi.createChannel({ code: nc.code, name: nc.name, kind: 'OTA', credentials });
+      setNc({ provider: 'avito', code: 'avito', name: 'Avito', token: '', clientId: '', clientSecret: '', userId: '' });
       await loadChannels();
       setSel(c.id);
     } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка'); }
+  }
+
+  async function loadListings() {
+    if (!mon) return;
+    setBusy(true); setError('');
+    try { setListings(await adminApi.avitoListings(mon.id)); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Не удалось получить объявления'); }
+    finally { setBusy(false); }
+  }
+
+  async function pollNow() {
+    if (!mon) return;
+    setBusy(true); setError('');
+    try { setPollRes(await adminApi.pollAvito(mon.id)); loadDetail(mon.id); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Поллинг не удался'); }
+    finally { setBusy(false); }
+  }
+
+  async function mapListing(item: AvitoListing) {
+    if (!mon) return;
+    const roomTypeId = listingPick[String(item.id)];
+    if (!roomTypeId) return;
+    setError('');
+    try {
+      await adminApi.setChannelMapping(mon.id, 'room-type', { localId: roomTypeId, remoteId: String(item.id) });
+      await loadListings();
+      loadDetail(mon.id);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка маппинга'); }
   }
 
   if (!ready) return <main className="px-8 py-12 text-dark-gray">Загрузка…</main>;
@@ -61,7 +102,7 @@ export default function PmsChannelsPage() {
   return (
     <main className="px-8 py-8">
       <h1 className="mb-1 text-3xl font-light text-ink">PMS · Каналы продаж</h1>
-      <p className="mb-6 text-sm text-dark-gray">Channel Manager: подключение каналов, маппинги, синхронизация наличия и приём OTA-броней.</p>
+      <p className="mb-6 text-sm text-dark-gray">Channel Manager: подключение каналов, сопоставление объявлений, приём OTA-броней.</p>
 
       <div className="mb-4 flex items-center gap-3">
         <Button variant="secondary" onClick={() => run(() => adminApi.runChannelSync())}>Обработать очередь синка</Button>
@@ -84,9 +125,24 @@ export default function PmsChannelsPage() {
           <Card>
             <p className="mb-3 text-sm font-medium text-ink">Новый канал</p>
             <div className="space-y-3">
-              <Input id="cc" label="Код (ostrovok, avito…)" value={nc.code} onChange={(e) => setNc({ ...nc, code: e.target.value })} />
+              <label><span className="mb-1 block text-xs text-dark-gray">Тип канала</span>
+                <select value={nc.provider} onChange={(e) => setNc({ ...nc, provider: e.target.value, code: e.target.value === 'avito' ? 'avito' : nc.code, name: e.target.value === 'avito' ? 'Avito' : nc.name })} className={selectCls}>
+                  <option value="avito">Avito</option>
+                  <option value="generic">Другой / mock</option>
+                </select>
+              </label>
+              <Input id="cc" label="Код (уникальный)" value={nc.code} onChange={(e) => setNc({ ...nc, code: e.target.value })} />
               <Input id="cn" label="Название" value={nc.name} onChange={(e) => setNc({ ...nc, name: e.target.value })} />
-              <Input id="ct" label="Токен приёма броней (опц.)" value={nc.token} onChange={(e) => setNc({ ...nc, token: e.target.value })} />
+              {nc.provider === 'avito' ? (
+                <>
+                  <Input id="acid" label="Client ID" value={nc.clientId} onChange={(e) => setNc({ ...nc, clientId: e.target.value })} />
+                  <Input id="acs" label="Client Secret" value={nc.clientSecret} onChange={(e) => setNc({ ...nc, clientSecret: e.target.value })} />
+                  <Input id="auid" label="Номер аккаунта (self.id)" value={nc.userId} onChange={(e) => setNc({ ...nc, userId: e.target.value })} />
+                  <p className="text-xs text-dark-gray">Выгрузка цен/календаря в Avito по умолчанию выключена — канал только принимает брони.</p>
+                </>
+              ) : (
+                <Input id="ct" label="Токен приёма броней (опц.)" value={nc.token} onChange={(e) => setNc({ ...nc, token: e.target.value })} />
+              )}
               <Button onClick={() => void createChannel()}>Подключить</Button>
             </div>
           </Card>
@@ -111,37 +167,73 @@ export default function PmsChannelsPage() {
                 </div>
               </Card>
 
-              <Card>
-                <p className="mb-3 text-sm font-medium text-ink">Маппинги</p>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="flex items-end gap-2">
-                    <label className="flex-1"><span className="mb-1 block text-xs text-dark-gray">Объект</span>
-                      <select value={mp.propertyId} onChange={(e) => setMp({ ...mp, propertyId: e.target.value })} className={selectCls}>{options.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-                    </label>
-                    <Input id="rp" label="ID в канале" value={mp.remoteProperty} onChange={(e) => setMp({ ...mp, remoteProperty: e.target.value })} />
-                    <Button variant="secondary" onClick={() => run(() => adminApi.setChannelMapping(mon.id, 'property', { localId: mp.propertyId, remoteId: mp.remoteProperty }))} disabled={!mp.remoteProperty}>↔</Button>
+              {isAvito ? (
+                <Card>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-ink">Avito · объявления и брони</p>
+                    <div className="flex gap-2">
+                      <Button variant="secondary" onClick={() => void loadListings()} disabled={busy}>Загрузить объявления</Button>
+                      <Button onClick={() => void pollNow()} disabled={busy}>Опросить брони</Button>
+                    </div>
                   </div>
-                  <div className="flex items-end gap-2">
-                    <label className="flex-1"><span className="mb-1 block text-xs text-dark-gray">Категория</span>
-                      <select value={mp.roomTypeId} onChange={(e) => setMp({ ...mp, roomTypeId: e.target.value })} className={selectCls}>{roomTypes.map((rt) => <option key={rt.id} value={rt.id}>{rt.name}</option>)}</select>
-                    </label>
-                    <Input id="rr" label="ID в канале" value={mp.remoteRoomType} onChange={(e) => setMp({ ...mp, remoteRoomType: e.target.value })} />
-                    <Button variant="secondary" onClick={() => run(() => adminApi.setChannelMapping(mon.id, 'room-type', { localId: mp.roomTypeId, remoteId: mp.remoteRoomType }))} disabled={!mp.remoteRoomType}>↔</Button>
+                  {pollRes ? (
+                    <p className="mb-3 text-xs text-dark-gray">Опрошено объявлений {pollRes.items}, броней {pollRes.fetched}: заведено <span className="text-emerald-700">{pollRes.ingested}</span>, отмен {pollRes.cancelled}, конфликтов <span className={pollRes.conflicts ? 'text-red-700' : ''}>{pollRes.conflicts}</span>, дублей {pollRes.duplicates}, ошибок {pollRes.errors}.</p>
+                  ) : null}
+                  {listings === null ? (
+                    <p className="text-sm text-dark-gray">Нажмите «Загрузить объявления», чтобы сопоставить их с категориями.</p>
+                  ) : listings.length === 0 ? (
+                    <p className="text-sm text-dark-gray">В аккаунте Avito нет объявлений.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {listings.map((it) => (
+                        <div key={it.id} className="flex flex-wrap items-end justify-between gap-2 border-b border-ink/10 pb-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm text-ink">{it.title ?? it.id}</p>
+                            <p className="truncate text-xs text-dark-gray">{it.address} · {it.price ? `${it.price.toLocaleString('ru-RU')} ₽` : ''} · id {it.id}</p>
+                          </div>
+                          {it.mappedRoomTypeId ? (
+                            <span className="text-xs text-emerald-700">✓ сопоставлено</span>
+                          ) : (
+                            <div className="flex items-end gap-2">
+                              <select value={listingPick[String(it.id)] ?? ''} onChange={(e) => setListingPick({ ...listingPick, [String(it.id)]: e.target.value })} className={`${selectCls} max-w-xs`}>
+                                <option value="">— категория —</option>
+                                {allCategories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                              </select>
+                              <Button variant="secondary" onClick={() => void mapListing(it)} disabled={!listingPick[String(it.id)]}>↔</Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              ) : (
+                <Card>
+                  <p className="mb-3 text-sm font-medium text-ink">Маппинги</p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="flex items-end gap-2">
+                      <label className="flex-1"><span className="mb-1 block text-xs text-dark-gray">Объект</span>
+                        <select value={mp.propertyId} onChange={(e) => setMp({ ...mp, propertyId: e.target.value })} className={selectCls}>{options.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+                      </label>
+                      <Input id="rp" label="ID в канале" value={mp.remoteProperty} onChange={(e) => setMp({ ...mp, remoteProperty: e.target.value })} />
+                      <Button variant="secondary" onClick={() => run(() => adminApi.setChannelMapping(mon.id, 'property', { localId: mp.propertyId, remoteId: mp.remoteProperty }))} disabled={!mp.remoteProperty}>↔</Button>
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <label className="flex-1"><span className="mb-1 block text-xs text-dark-gray">Категория</span>
+                        <select value={mp.roomTypeId} onChange={(e) => setMp({ ...mp, roomTypeId: e.target.value })} className={selectCls}>{roomTypes.map((rt) => <option key={rt.id} value={rt.id}>{rt.name}</option>)}</select>
+                      </label>
+                      <Input id="rr" label="ID в канале" value={mp.remoteRoomType} onChange={(e) => setMp({ ...mp, remoteRoomType: e.target.value })} />
+                      <Button variant="secondary" onClick={() => run(() => adminApi.setChannelMapping(mon.id, 'room-type', { localId: mp.roomTypeId, remoteId: mp.remoteRoomType }))} disabled={!mp.remoteRoomType}>↔</Button>
+                    </div>
                   </div>
-                </div>
-                {maps ? (
-                  <div className="mt-3 space-y-1 text-xs text-dark-gray">
-                    {maps.property.map((m) => <p key={m.id}>Объект {m.propertyId.slice(0, 8)}… ↔ <span className="text-ink">{m.remotePropertyId}</span></p>)}
-                    {maps.roomType.map((m) => <p key={m.id}>Категория {m.roomTypeId.slice(0, 8)}… ↔ <span className="text-ink">{m.remoteRoomTypeId}</span></p>)}
-                  </div>
-                ) : null}
-                <div className="mt-4 flex items-end gap-2 border-t border-ink/10 pt-3">
-                  <label className="flex-1 max-w-xs"><span className="mb-1 block text-xs text-dark-gray">Выгрузить наличие по объекту</span>
-                    <select value={mp.propertyId} onChange={(e) => setMp({ ...mp, propertyId: e.target.value })} className={selectCls}>{options.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-                  </label>
-                  <Button onClick={() => run(() => adminApi.enqueueChannelSync(mon.id, { propertyId: mp.propertyId, jobType: 'AVAILABILITY' }))}>Поставить синк</Button>
-                </div>
-              </Card>
+                  {maps ? (
+                    <div className="mt-3 space-y-1 text-xs text-dark-gray">
+                      {maps.property.map((m) => <p key={m.id}>Объект {m.propertyId.slice(0, 8)}… ↔ <span className="text-ink">{m.remotePropertyId}</span></p>)}
+                      {maps.roomType.map((m) => <p key={m.id}>Категория {m.roomTypeId.slice(0, 8)}… ↔ <span className="text-ink">{m.remoteRoomTypeId}</span></p>)}
+                    </div>
+                  ) : null}
+                </Card>
+              )}
 
               <Card>
                 <p className="mb-3 text-sm font-medium text-ink">Задачи синхронизации</p>

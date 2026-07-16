@@ -23,6 +23,6 @@ import type { Env } from '../../config/env.schema.js';
         config.get('BNOVO_PROVIDER', { infer: true }) === 'http' ? http : mock,
     },
   ],
-  exports: [BnovoPort],
+  exports: [BnovoPort, HttpBnovoAdapter],
 })
 export class BnovoModule {}

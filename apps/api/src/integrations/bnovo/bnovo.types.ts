@@ -29,6 +29,8 @@ export interface BnovoProperty {
 export interface BnovoRoomType {
   id: string;
   propertyId: string;
+  /** Родительская категория (Bnovo дерево: дети — варианты размещения по числу гостей). */
+  parentId?: string;
   name: string;
   capacity: number;
   bedType?: string;
@@ -36,6 +38,15 @@ export interface BnovoRoomType {
   description?: string;
   amenities: string[];
   photos: string[];
+}
+
+/** Физический номер (юнит) Bnovo. */
+export interface BnovoRoom {
+  id: string;
+  roomTypeId: string;
+  propertyId?: string;
+  number: string;
+  floor?: string;
 }
 
 export interface BnovoAvailabilityQuery {

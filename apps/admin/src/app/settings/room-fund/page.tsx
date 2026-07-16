@@ -6,6 +6,8 @@ import { Button, Card, Input } from '@dha/ui';
 import {
   adminApi,
   fileUrl,
+  type BnovoImportPreview,
+  type BnovoImportResult,
   type PmsRoom,
   type PmsRoomOption,
   type RoomFundCategory,
@@ -14,7 +16,7 @@ import {
 import { useRequireAdmin } from '../../../lib/use-admin';
 import { ObjectsTab } from './ObjectsTab';
 
-type Tab = 'objects' | 'categories' | 'rooms' | 'log';
+type Tab = 'objects' | 'categories' | 'rooms' | 'import' | 'log';
 const selectCls = 'w-full rounded-md border border-ink/20 bg-white px-3 py-2 text-sm';
 
 /** Тумблер вкл/выкл. */
@@ -97,7 +99,7 @@ export default function RoomFundPage() {
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-lg bg-ink/5 p-1">
-          {([['objects', 'Объекты'], ['categories', 'Категории номеров'], ['rooms', 'Номера'], ['log', 'Журнал изменений']] as [Tab, string][]).map(([t, label]) => (
+          {([['objects', 'Объекты'], ['categories', 'Категории номеров'], ['rooms', 'Номера'], ['import', 'Импорт из Bnovo'], ['log', 'Журнал изменений']] as [Tab, string][]).map(([t, label]) => (
             <button key={t} type="button" onClick={() => setTab(t)}
               className={`rounded-md px-4 py-1.5 text-sm transition ${tab === t ? 'bg-white font-medium text-ink shadow-sm' : 'text-dark-gray hover:text-ink'}`}>
               {label}
@@ -142,8 +144,108 @@ export default function RoomFundPage() {
         />
       )}
 
+      {tab === 'import' && <BnovoImportTab onImported={() => { void adminApi.pmsRoomOptions().then(setOptions).catch(() => undefined); void loadCats(); void loadRooms(); }} />}
+
       {tab === 'log' && <ChangelogTab />}
     </main>
+  );
+}
+
+const DELETE_MODES: { value: 'none' | 'empty' | 'hide' | 'all'; label: string; hint: string }[] = [
+  { value: 'none', label: 'Ничего не трогать', hint: 'Только добавить/обновить категории и номера из Bnovo.' },
+  { value: 'empty', label: 'Удалить пустые', hint: 'Удалить существующие категории без броней; с бронями — оставить.' },
+  { value: 'hide', label: 'Скрыть старые', hint: 'Существующие категории пометить неактивными (данные сохранятся).' },
+  { value: 'all', label: 'Удалить все (с бронями)', hint: 'Удалить все существующие категории вместе с их бронями. Необратимо.' },
+];
+
+/** Импорт номерного фонда из Bnovo (категории + номера). Идемпотентно по bnovoId. */
+function BnovoImportTab({ onImported }: { onImported: () => void }) {
+  const [preview, setPreview] = useState<BnovoImportPreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'none' | 'empty' | 'hide' | 'all'>('none');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<BnovoImportResult | null>(null);
+  const [err, setErr] = useState('');
+
+  const load = () => { setLoading(true); setErr(''); void adminApi.bnovoImportPreview().then(setPreview).catch((e) => setErr(e instanceof Error ? e.message : 'Ошибка')).finally(() => setLoading(false)); };
+  useEffect(load, []);
+
+  const delBookings = preview?.existing.reduce((s, c) => s + c.bookings, 0) ?? 0;
+  const apply = async () => {
+    const warn = mode === 'all' && delBookings > 0
+      ? `Будут удалены существующие категории и ${delBookings} броней. Действие необратимо. Продолжить?`
+      : 'Импортировать категории и номера из Bnovo?';
+    if (!confirm(warn)) return;
+    setBusy(true); setErr(''); setResult(null);
+    try { const r = await adminApi.bnovoImportApply(mode); setResult(r); load(); onImported(); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка'); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <Card className="space-y-3 p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-lg font-light text-ink">Выгрузка из Bnovo</p>
+            <p className="text-sm text-dark-gray">Категории (родительские) и физические номера. Повторный запуск обновляет по bnovoId, не создавая дублей.</p>
+          </div>
+          <Button variant="secondary" onClick={load} disabled={loading}>{loading ? 'Проверка…' : 'Обновить'}</Button>
+        </div>
+
+        {loading && !preview ? <p className="text-sm text-dark-gray">Подключение к Bnovo…</p> : null}
+        {preview && !preview.reachable ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">Bnovo недоступен: {preview.error}</p> : null}
+        {preview?.reachable ? (
+          <div className="grid grid-cols-3 gap-3 rounded-lg bg-ink/[0.03] p-3 text-sm">
+            <div><span className="block text-dark-gray">Объектов</span><span className="text-xl font-medium text-ink">{preview.bnovo.properties}</span></div>
+            <div><span className="block text-dark-gray">Категорий</span><span className="text-xl font-medium text-ink">{preview.bnovo.roomTypes}</span></div>
+            <div><span className="block text-dark-gray">Номеров</span><span className="text-xl font-medium text-ink">{preview.bnovo.rooms}</span></div>
+          </div>
+        ) : null}
+        {preview?.reachable && preview.bnovo.sampleRoomTypes.length ? (
+          <p className="text-xs text-dark-gray">Примеры категорий: {preview.bnovo.sampleRoomTypes.slice(0, 4).map((s) => s.name).join('; ')}…</p>
+        ) : null}
+      </Card>
+
+      {preview ? (
+        <Card className="space-y-3 p-5">
+          <p className="text-sm font-medium text-ink">Существующие категории у нас ({preview.existing.length})</p>
+          {preview.existing.length === 0 ? <p className="text-sm text-dark-gray">Категорий пока нет.</p> : (
+            <div className="max-h-52 overflow-auto rounded-lg border border-ink/10">
+              {preview.existing.map((c) => (
+                <div key={c.id} className="flex items-center justify-between border-b border-ink/5 px-3 py-1.5 text-sm last:border-0">
+                  <span className="truncate text-ink">{c.name} <span className="text-dark-gray">· {c.property}</span></span>
+                  <span className="shrink-0 text-xs text-dark-gray">{c.rooms} ном. · {c.bookings} брон.{c.fromBnovo ? ' · Bnovo' : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div>
+            <p className="mb-1.5 text-sm font-medium text-ink">Что сделать с существующими категориями</p>
+            <div className="space-y-1.5">
+              {DELETE_MODES.map((m) => (
+                <label key={m.value} className={`flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 ${mode === m.value ? 'border-ink bg-ink/[0.03]' : 'border-ink/15'} ${m.value === 'all' ? 'hover:border-red-300' : ''}`}>
+                  <input type="radio" className="mt-0.5" checked={mode === m.value} onChange={() => setMode(m.value)} />
+                  <span><span className={`text-sm font-medium ${m.value === 'all' ? 'text-red-700' : 'text-ink'}`}>{m.label}</span><span className="block text-xs text-dark-gray">{m.hint}</span></span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {err ? <p className="text-sm text-red-600">{err}</p> : null}
+          {result ? (
+            <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              Импортировано: категорий {result.roomTypes}, номеров {result.rooms}. Удалено категорий {result.deletedCategories} (броней {result.deletedBookings}){result.hiddenCategories ? `, скрыто ${result.hiddenCategories}` : ''}.
+              {result.keptCategories.length ? ` Оставлены с бронями: ${result.keptCategories.map((k) => k.name).join(', ')}.` : ''}
+            </div>
+          ) : null}
+
+          <div>
+            <Button onClick={apply} disabled={busy || !preview.reachable}>{busy ? 'Импорт…' : 'Импортировать из Bnovo'}</Button>
+          </div>
+        </Card>
+      ) : null}
+    </div>
   );
 }
 
