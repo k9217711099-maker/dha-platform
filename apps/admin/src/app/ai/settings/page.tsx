@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Card } from '@dha/ui';
-import { adminApi, type AiChannel, type MaxAdminConfig, type TelegramAdminConfig } from '../../../lib/api';
+import { adminApi, type AiChannel, type MaxAdminConfig, type TelegramAdminConfig, type WaState } from '../../../lib/api';
 import { useRequireAdmin } from '../../../lib/use-admin';
 import { useEsc } from '../../../lib/use-esc';
 
@@ -67,6 +67,9 @@ function IntegrationsTab() {
                 {i.id === 'max' && i.available ? (
                   <Button variant="secondary" onClick={() => setConfiguring('max')}>Настроить</Button>
                 ) : null}
+                {i.id === 'whatsapp' && i.available ? (
+                  <Button variant="secondary" onClick={() => setConfiguring('whatsapp')}>Настроить</Button>
+                ) : null}
                 {i.setup ? (
                   <Button variant="secondary" onClick={() => setOpenSetup(openSetup === i.id ? null : i.id)}>
                     {openSetup === i.id ? 'Скрыть инструкцию' : 'Инструкция'}
@@ -85,6 +88,7 @@ function IntegrationsTab() {
       {items.length === 0 ? <Card className="p-6 text-sm text-dark-gray">Загрузка каналов…</Card> : null}
       {configuring === 'telegram' ? <TelegramSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
       {configuring === 'max' ? <MaxSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
+      {configuring === 'whatsapp' ? <WhatsAppSettingsModal onClose={() => { setConfiguring(null); void load(); }} /> : null}
     </div>
   );
 }
@@ -244,6 +248,84 @@ function MaxSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
             <div className="mt-5 rounded-md bg-ink/[0.03] px-3 py-3 text-xs leading-relaxed text-dark-gray">
               <p className="mb-1 font-medium text-ink">Как получить токен</p>
               <p>В приложении MAX найдите <b>@MasterBot</b> → создайте бота (имя и username) → скопируйте выданный токен и вставьте в поле выше. Сохраните и проверьте подключение — сервер начнёт опрашивать MAX автоматически.</p>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Настройка WhatsApp (Baileys) ───
+const WA_BADGE: Record<WaState['status'], { label: string; cls: string }> = {
+  disabled: { label: 'Выключено', cls: 'bg-ink/10 text-dark-gray' },
+  disconnected: { label: 'Не подключено', cls: 'bg-amber-100 text-amber-800' },
+  connecting: { label: 'Подключение…', cls: 'bg-sky-100 text-sky-800' },
+  qr: { label: 'Ожидает QR', cls: 'bg-sky-100 text-sky-800' },
+  connected: { label: 'Подключено', cls: 'bg-emerald-100 text-emerald-800' },
+};
+
+function WhatsAppSettingsModal({ onClose }: { onClose: () => void }) {
+  useEsc(onClose);
+  const [st, setSt] = useState<WaState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    const tick = () => adminApi.aiWhatsappState().then((s) => { if (alive) setSt(s); }).catch(() => {});
+    void tick();
+    const id = setInterval(tick, 2000); // ловим появление QR и переход в «Подключено»
+    return () => { alive = false; clearInterval(id); };
+  }, []);
+
+  const start = async () => {
+    setBusy(true); setErr('');
+    try { setSt(await adminApi.aiWhatsappStart()); } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка'); } finally { setBusy(false); }
+  };
+  const logout = async () => {
+    if (!confirm('Отвязать номер WhatsApp и удалить сессию?')) return;
+    setBusy(true); setErr('');
+    try { setSt(await adminApi.aiWhatsappLogout()); } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка'); } finally { setBusy(false); }
+  };
+
+  const badge = st ? WA_BADGE[st.status] : null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <Card className="max-h-[90vh] w-full max-w-lg overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-xl font-light text-ink">WhatsApp</p>
+          {badge ? <span className={`rounded-full px-2 py-0.5 text-xs ${badge.cls}`}>{badge.label}</span> : null}
+        </div>
+        <p className="mb-4 text-sm text-dark-gray">Неофициальное подключение по QR (Baileys). Подключайте <b>отдельный номер</b> — за автоматизацию WhatsApp может заблокировать аккаунт.</p>
+
+        {!st ? <p className="text-sm text-dark-gray">Загрузка…</p> : (
+          <>
+            <p className="mb-4 rounded-md bg-ink/[0.03] px-3 py-2 text-sm text-dark-gray">{st.message}</p>
+
+            {st.status === 'qr' && st.qr ? (
+              <div className="mb-4 flex flex-col items-center gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={st.qr} alt="QR для привязки WhatsApp" className="h-64 w-64 rounded-md border border-ink/10" />
+                <p className="text-center text-xs text-dark-gray">WhatsApp → Настройки → Связанные устройства → Привязка устройства → сканируйте код. Код обновляется автоматически.</p>
+              </div>
+            ) : null}
+
+            {st.status === 'connected' && st.me ? (
+              <p className="mb-4 text-sm text-ink">Номер: <b>{st.me}</b></p>
+            ) : null}
+
+            {err ? <p className="mb-3 text-sm text-red-600">{err}</p> : null}
+
+            <div className="flex flex-wrap items-center gap-2">
+              {st.status === 'connected' ? (
+                <Button variant="secondary" onClick={logout} disabled={busy}>{busy ? '…' : 'Отвязать номер'}</Button>
+              ) : st.status === 'disabled' ? (
+                <p className="text-xs text-amber-700">Включите WA_ENABLED=true и MESSENGER_PROXY_URL в .env на сервере, затем перезапустите API.</p>
+              ) : (
+                <Button onClick={start} disabled={busy || st.status === 'connecting'}>{busy ? '…' : st.status === 'qr' ? 'Обновить' : 'Подключить'}</Button>
+              )}
+              <Button variant="secondary" onClick={onClose} disabled={busy}>Закрыть</Button>
             </div>
           </>
         )}

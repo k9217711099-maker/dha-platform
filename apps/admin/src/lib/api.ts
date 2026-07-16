@@ -172,6 +172,14 @@ export interface MaxAdminConfig {
   botLink: string | null;
 }
 
+/** Статус подключения WhatsApp (Baileys). */
+export interface WaState {
+  status: 'disabled' | 'disconnected' | 'connecting' | 'qr' | 'connected';
+  qr: string | null;
+  me: string | null;
+  message: string;
+}
+
 export interface Promocode {
   id: string;
   code: string;
@@ -2301,6 +2309,9 @@ export const adminApi = {
     request<MaxAdminConfig>('/ai/channels/max', { method: 'PUT', body }),
   aiTestMax: (botToken?: string) =>
     request<{ ok: boolean; message: string }>('/ai/channels/max/test', { method: 'POST', body: { botToken } }),
+  aiWhatsappState: () => request<WaState>('/ai/channels/whatsapp'),
+  aiWhatsappStart: () => request<WaState>('/ai/channels/whatsapp/start', { method: 'POST' }),
+  aiWhatsappLogout: () => request<WaState>('/ai/channels/whatsapp/logout', { method: 'POST' }),
 
   searchGuests: (q: string) =>
     request<GuestSearchResult[]>(`/admin/guests?q=${encodeURIComponent(q)}`),

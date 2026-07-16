@@ -51,3 +51,6 @@ coverage/
 .expo/
 apps/mobile/ios/
 apps/mobile/android/
+
+# WhatsApp (Baileys) session — не коммитим
+.wa-auth/

@@ -228,6 +228,12 @@ export const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  /**
+   * Папка хранения сессии WhatsApp (Baileys, useMultiFileAuthState). Должна жить
+   * ВНЕ git-репозитория, иначе деплой (git reset) сотрёт привязку и потребуется
+   * повторный QR. На сервере задайте абсолютный путь, напр. /var/www/dha-data/wa-auth.
+   */
+  WA_AUTH_DIR: z.string().default('.wa-auth'),
 
   /**
    * Базы знаний, доступные ГОСТЕВОМУ AI-агенту (ID баз через запятую). У страниц KB

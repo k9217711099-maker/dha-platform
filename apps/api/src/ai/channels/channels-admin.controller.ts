@@ -5,6 +5,7 @@ import { RequirePermission } from '../../admin/require-permission.decorator.js';
 import { CurrentAdminId } from '../../admin/current-admin.decorator.js';
 import { TelegramConfigService } from '../../integrations/telegram/telegram-config.service.js';
 import { MaxConfigService } from '../../integrations/max/max-config.service.js';
+import { WhatsAppService, type WaState } from '../../integrations/whatsapp/whatsapp.service.js';
 import { AuditService } from '../../warehouse/audit/audit.service.js';
 import {
   SaveMaxConfigDto,
@@ -45,6 +46,7 @@ export class ChannelsAdminController {
   constructor(
     private readonly telegram: TelegramConfigService,
     private readonly max: MaxConfigService,
+    private readonly whatsapp: WhatsAppService,
     private readonly audit: AuditService,
   ) {}
 
@@ -56,6 +58,7 @@ export class ChannelsAdminController {
       this.telegram.getPublicConfig(),
       this.max.getPublicConfig(),
     ]);
+    const wa = this.whatsapp.getState();
     return [
       {
         id: 'web',
@@ -119,13 +122,20 @@ export class ChannelsAdminController {
       },
       {
         id: 'whatsapp',
-        name: 'WhatsApp Business',
+        name: 'WhatsApp',
         category: 'guest',
         description:
-          'Приём и ответы в WhatsApp через Business API. Появится на следующем этапе (v2).',
-        available: false,
-        connected: false,
+          'Неофициальное подключение номера WhatsApp по QR-коду (Baileys). Гость пишет в WhatsApp, AI-агент отвечает. Подключайте ОТДЕЛЬНЫЙ номер — за автоматизацию WhatsApp может заблокировать аккаунт.',
+        available: true,
+        connected: wa.status === 'connected',
         needsSetup: true,
+        setup:
+          'Как подключить:\n' +
+          '1. На сервере включите канал: WA_ENABLED=true (и MESSENGER_PROXY_URL, т.к. WhatsApp заблокирован с РФ-сервера), перезапустите API.\n' +
+          '2. Возьмите отдельный телефон/номер под бота (не основной рабочий).\n' +
+          '3. В админке нажмите «Подключить» — появится QR-код.\n' +
+          '4. В WhatsApp на телефоне: Настройки → Связанные устройства → Привязка устройства → отсканируйте QR.\n' +
+          '5. Статус сменится на «Подключено». Сессия хранится на сервере (WA_AUTH_DIR) и переживает перезапуск.',
       },
       {
         id: 'avito',
@@ -204,5 +214,30 @@ export class ChannelsAdminController {
   @ApiOperation({ summary: 'Проверить подключение MAX-бота (/me)' })
   testMax(@Body() dto: TestMaxConfigDto) {
     return this.max.testConnection(dto.botToken);
+  }
+
+  @Get('whatsapp')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Статус WhatsApp (подключение/QR)' })
+  whatsappState(): WaState {
+    return this.whatsapp.getState();
+  }
+
+  @Post('whatsapp/start')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Запустить подключение WhatsApp (сгенерировать QR)' })
+  async whatsappStart(@CurrentAdminId() adminId: string): Promise<WaState> {
+    const state = await this.whatsapp.start();
+    await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'whatsapp', payload: { action: 'start' } });
+    return state;
+  }
+
+  @Post('whatsapp/logout')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Отвязать номер WhatsApp и удалить сессию' })
+  async whatsappLogout(@CurrentAdminId() adminId: string): Promise<WaState> {
+    const state = await this.whatsapp.logout();
+    await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'whatsapp', payload: { action: 'logout' } });
+    return state;
   }
 }

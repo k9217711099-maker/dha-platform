@@ -11,6 +11,7 @@ import { TelegramPollingService } from './telegram-polling.service.js';
 import { MaxAgentService } from './max-agent.service.js';
 import { MaxController } from './max.controller.js';
 import { MaxPollingService } from './max-polling.service.js';
+import { WhatsAppAgentService } from './whatsapp-agent.service.js';
 
 /**
  * Каналы гостевого агента, требующие серверного адаптера. Этап E: Telegram
@@ -28,6 +29,7 @@ import { MaxPollingService } from './max-polling.service.js';
     TelegramPollingService,
     MaxAgentService,
     MaxPollingService,
+    WhatsAppAgentService,
     AdminAuthGuard,
     AuditService,
   ],

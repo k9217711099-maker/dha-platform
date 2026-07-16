@@ -1,0 +1,233 @@
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { existsSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { Agent } from 'node:https';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import { SocksProxyAgent } from 'socks-proxy-agent';
+import QRCode from 'qrcode';
+import * as baileys from '@whiskeysockets/baileys';
+import type { WASocket, WAMessage, ConnectionState } from '@whiskeysockets/baileys';
+import type { Env } from '../../config/env.schema.js';
+import { WhatsAppPort } from './whatsapp.port.js';
+
+const makeWASocket = baileys.default;
+const { useMultiFileAuthState, DisconnectReason, Browsers } = baileys;
+
+/** Статус подключения WhatsApp для админки. */
+export type WaStatus = 'disabled' | 'disconnected' | 'connecting' | 'qr' | 'connected';
+
+export interface WaState {
+  status: WaStatus;
+  /** QR как data:image/png;base64 — показываем в админке, пока status='qr'. */
+  qr: string | null;
+  /** Номер, к которому привязан бот (когда подключено). */
+  me: string | null;
+  message: string;
+}
+
+/** Пустой логгер для Baileys (иначе шумит в stdout). */
+function silentLogger(): unknown {
+  const noop = (): void => undefined;
+  const l: Record<string, unknown> = {
+    level: 'silent', trace: noop, debug: noop, info: noop, warn: noop, error: noop, fatal: noop,
+  };
+  l.child = () => l;
+  return l;
+}
+
+/** http.Agent для WebSocket Baileys через прокси (WhatsApp заблокирован с РФ). */
+function wsProxyAgent(url?: string): Agent | undefined {
+  if (!url) return undefined;
+  return (url.startsWith('socks')
+    ? new SocksProxyAgent(url)
+    : new HttpsProxyAgent(url)) as unknown as Agent;
+}
+
+/**
+ * WhatsApp через Baileys (неофициально): вход по QR личным/бизнес-номером, сессия
+ * в файлах WA_AUTH_DIR (вне репозитория). Сокет живёт в процессе API, авто-
+ * переподключается; исходящие идут через MESSENGER_PROXY_URL. Пейринг (показ QR)
+ * запускается из админки. Входящие — через registerHandler (WhatsAppAgentService).
+ *
+ * ⚠️ Неофициальный клиент: WhatsApp может заблокировать номер за автоматизацию —
+ * подключайте отдельный номер, не основной рабочий.
+ */
+@Injectable()
+export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger('WhatsApp');
+  private sock: WASocket | null = null;
+  private state: WaStatus = 'disconnected';
+  private qr: string | null = null;
+  private me: string | null = null;
+  private stopped = false;
+  private connecting = false;
+  private handler: ((from: string, text: string) => Promise<void>) | null = null;
+
+  constructor(private readonly config: ConfigService<Env, true>) {
+    super();
+  }
+
+  private get enabled(): boolean {
+    return this.config.get('WA_ENABLED', { infer: true });
+  }
+  private get authDir(): string {
+    return resolve(this.config.get('WA_AUTH_DIR', { infer: true }));
+  }
+
+  onModuleInit(): void {
+    if (!this.enabled) {
+      this.state = 'disabled';
+      return;
+    }
+    // Есть сохранённая сессия — переподключаемся при старте.
+    if (existsSync(resolve(this.authDir, 'creds.json'))) void this.connect();
+  }
+
+  onModuleDestroy(): void {
+    this.stopped = true;
+    try {
+      this.sock?.end(undefined);
+    } catch {
+      /* noop */
+    }
+  }
+
+  /** Регистрируется WhatsAppAgentService — маршрут входящих в гостевой агент. */
+  registerHandler(fn: (from: string, text: string) => Promise<void>): void {
+    this.handler = fn;
+  }
+
+  getState(): WaState {
+    const msg: Record<WaStatus, string> = {
+      disabled: 'Канал выключен. Включите WA_ENABLED=true в .env и перезапустите API.',
+      disconnected: 'Не подключено. Нажмите «Подключить» и отсканируйте QR в WhatsApp.',
+      connecting: 'Подключение…',
+      qr: 'Отсканируйте QR-код в приложении WhatsApp: Настройки → Связанные устройства.',
+      connected: `Подключено${this.me ? ` как ${this.me}` : ''}.`,
+    };
+    return { status: this.state, qr: this.qr, me: this.me, message: msg[this.state] };
+  }
+
+  /** Запуск пейринга/подключения из админки. */
+  async start(): Promise<WaState> {
+    if (!this.enabled) return this.getState();
+    if (this.state === 'connected' || this.connecting) return this.getState();
+    this.stopped = false;
+    await this.connect();
+    return this.getState();
+  }
+
+  /** Отвязать номер и удалить сессию. */
+  async logout(): Promise<WaState> {
+    this.stopped = true;
+    try {
+      await this.sock?.logout();
+    } catch {
+      /* уже отвалилось */
+    }
+    this.sock = null;
+    this.clearSession();
+    this.state = this.enabled ? 'disconnected' : 'disabled';
+    this.qr = null;
+    this.me = null;
+    return this.getState();
+  }
+
+  async sendMessage(to: string, text: string): Promise<void> {
+    if (!this.sock || this.state !== 'connected') {
+      this.logger.warn('WhatsApp не подключён — сообщение не отправлено.');
+      return;
+    }
+    const jid = to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
+    try {
+      await this.sock.sendMessage(jid, { text });
+    } catch (e) {
+      this.logger.error(`WhatsApp sendMessage: ${(e as Error).message}`);
+    }
+  }
+
+  private async connect(): Promise<void> {
+    if (this.connecting) return;
+    this.connecting = true;
+    this.state = 'connecting';
+    try {
+      const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
+      const agent = wsProxyAgent(this.config.get('MESSENGER_PROXY_URL', { infer: true }));
+      const sock = makeWASocket({
+        auth: state,
+        browser: Browsers.ubuntu('D H&A'),
+        logger: silentLogger() as never,
+        agent,
+        fetchAgent: agent,
+        markOnlineOnConnect: false,
+        syncFullHistory: false,
+      });
+      this.sock = sock;
+      sock.ev.on('creds.update', () => void saveCreds());
+      sock.ev.on('connection.update', (u) => void this.onConnectionUpdate(u));
+      sock.ev.on('messages.upsert', (m) => void this.onMessages(m.messages, m.type));
+    } catch (e) {
+      this.logger.error(`WhatsApp connect: ${(e as Error).message}`);
+      this.state = 'disconnected';
+    } finally {
+      this.connecting = false;
+    }
+  }
+
+  private async onConnectionUpdate(u: Partial<ConnectionState>): Promise<void> {
+    if (u.qr) {
+      this.qr = await QRCode.toDataURL(u.qr).catch(() => null);
+      this.state = 'qr';
+      this.logger.log('WhatsApp: получен QR — ожидаем сканирования.');
+    }
+    if (u.connection === 'open') {
+      this.state = 'connected';
+      this.qr = null;
+      this.me = this.sock?.user?.id?.split(':')[0]?.replace(/@.*/, '') ?? null;
+      this.logger.log(`WhatsApp подключён${this.me ? ` как ${this.me}` : ''}.`);
+    }
+    if (u.connection === 'close') {
+      const code = (u.lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
+      const loggedOut = code === DisconnectReason.loggedOut;
+      this.sock = null;
+      if (loggedOut) {
+        this.clearSession();
+        this.state = 'disconnected';
+        this.me = null;
+        this.logger.warn('WhatsApp: сессия завершена (logout) — нужен повторный QR.');
+        return;
+      }
+      if (!this.stopped) {
+        this.state = 'connecting';
+        setTimeout(() => void this.connect(), 3_000); // авто-переподключение
+      } else {
+        this.state = 'disconnected';
+      }
+    }
+  }
+
+  private async onMessages(messages: WAMessage[], type: string): Promise<void> {
+    if (type !== 'notify' || !this.handler) return;
+    for (const msg of messages) {
+      const from = msg.key.remoteJid;
+      if (!from || msg.key.fromMe) continue;
+      if (from.endsWith('@g.us') || from === 'status@broadcast') continue; // группы/статусы — не обрабатываем
+      const text = msg.message?.conversation ?? msg.message?.extendedTextMessage?.text;
+      if (!text) continue;
+      try {
+        await this.handler(from, text.trim());
+      } catch (e) {
+        this.logger.error(`WhatsApp обработка входящего: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  private clearSession(): void {
+    try {
+      rmSync(this.authDir, { recursive: true, force: true });
+    } catch {
+      /* noop */
+    }
+  }
+}
