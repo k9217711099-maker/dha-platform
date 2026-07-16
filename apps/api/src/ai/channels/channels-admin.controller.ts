@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AdminAuthGuard } from '../../admin/admin-auth.guard.js';
 import { RequirePermission } from '../../admin/require-permission.decorator.js';
@@ -16,16 +16,24 @@ import {
   SaveTelegramConfigDto,
   TestMaxConfigDto,
   TestTelegramConfigDto,
+  ToggleChannelDto,
   TgDirectCodeDto,
   TgDirectPasswordDto,
   TgDirectStartDto,
 } from './dto/channel-config.dto.js';
+import {
+  ChannelToggleService,
+  TOGGLEABLE_CHANNELS,
+  type ToggleChannelId,
+} from './channel-toggle.service.js';
 
 /** Категория канала: гостевой AI-агент или уведомления. */
 type ChannelCategory = 'guest' | 'notifications';
 
-interface ChannelCard {
-  id: 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'avito';
+type ChannelId = 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'avito';
+
+interface ChannelCardBase {
+  id: ChannelId;
   name: string;
   category: ChannelCategory;
   description: string;
@@ -38,6 +46,16 @@ interface ChannelCard {
   /** Короткая инструкция по подключению (Markdown-подобный текст). */
   setup?: string;
 }
+
+interface ChannelCard extends ChannelCardBase {
+  /** Есть ли тумблер вкл/выкл (web/app работают из коробки, без тумблера). */
+  toggleable: boolean;
+  /** Включён ли канал (для переключаемых — из Setting; иначе всегда true). */
+  enabled: boolean;
+}
+
+const isToggleable = (id: ChannelId): id is ToggleChannelId =>
+  (TOGGLEABLE_CHANNELS as readonly string[]).includes(id);
 
 /**
  * Админ-API интеграций каналов гостевого AI-агента (AI-COMMUNICATIONS-TZ §4.2,
@@ -55,6 +73,7 @@ export class ChannelsAdminController {
     private readonly max: MaxConfigService,
     private readonly whatsapp: WhatsAppService,
     private readonly userbot: TelegramUserbotService,
+    private readonly toggle: ChannelToggleService,
     private readonly audit: AuditService,
   ) {}
 
@@ -62,13 +81,14 @@ export class ChannelsAdminController {
   @RequirePermission('ai_agent')
   @ApiOperation({ summary: 'Список каналов коммуникации и их статус' })
   async list(): Promise<ChannelCard[]> {
-    const [tg, mx] = await Promise.all([
+    const [tg, mx, enabledMap] = await Promise.all([
       this.telegram.getPublicConfig(),
       this.max.getPublicConfig(),
+      this.toggle.map(),
     ]);
     const wa = this.whatsapp.getState();
     const ub = this.userbot.getState();
-    return [
+    const base: ChannelCardBase[] = [
       {
         id: 'web',
         name: 'Виджет на сайте и в личном кабинете',
@@ -123,11 +143,12 @@ export class ChannelsAdminController {
         needsSetup: true,
         setup:
           'Как подключить:\n' +
-          '1. На сервере: TG_USERBOT_ENABLED=true и TG_USERBOT_PROXY=socks5://user:pass@host:port (отдельный SOCKS5, HTTP-прокси не подойдёт), перезапустите API.\n' +
-          '2. На my.telegram.org → API development tools получите api_id и api_hash.\n' +
-          '3. В админке нажмите «Настроить», введите api_id, api_hash и телефон аккаунта → «Подключить».\n' +
-          '4. Введите код из Telegram; при двухэтапной проверке — облачный пароль.\n' +
-          '5. Статус сменится на «Подключено». Сессия хранится зашифрованно и переживает перезапуск.',
+          '1. Включите канал тумблером выше.\n' +
+          '2. На сервере нужен отдельный SOCKS5-прокси: TG_USERBOT_PROXY=socks5://user:pass@host:port (HTTP-прокси для MTProto не подойдёт).\n' +
+          '3. На my.telegram.org → API development tools получите api_id и api_hash.\n' +
+          '4. Нажмите «Настроить», введите api_id, api_hash и телефон → «Подключить».\n' +
+          '5. Введите код из Telegram; при двухэтапной проверке — облачный пароль.\n' +
+          '6. Статус сменится на «Подключено». Сессия хранится зашифрованно и переживает перезапуск.',
       },
       {
         id: 'max',
@@ -157,11 +178,11 @@ export class ChannelsAdminController {
         needsSetup: true,
         setup:
           'Как подключить:\n' +
-          '1. На сервере включите канал: WA_ENABLED=true (и MESSENGER_PROXY_URL, т.к. WhatsApp заблокирован с РФ-сервера), перезапустите API.\n' +
+          '1. Включите канал тумблером выше.\n' +
           '2. Возьмите отдельный телефон/номер под бота (не основной рабочий).\n' +
-          '3. В админке нажмите «Подключить» — появится QR-код.\n' +
+          '3. Нажмите «Подключить» — появится QR-код.\n' +
           '4. В WhatsApp на телефоне: Настройки → Связанные устройства → Привязка устройства → отсканируйте QR.\n' +
-          '5. Статус сменится на «Подключено». Сессия хранится на сервере (WA_AUTH_DIR) и переживает перезапуск.',
+          '5. Статус сменится на «Подключено». Сессия хранится на сервере и переживает перезапуск.',
       },
       {
         id: 'avito',
@@ -174,6 +195,35 @@ export class ChannelsAdminController {
         needsSetup: true,
       },
     ];
+    return base.map((c) => ({
+      ...c,
+      toggleable: isToggleable(c.id),
+      enabled: isToggleable(c.id) ? enabledMap[c.id] : true,
+    }));
+  }
+
+  /** Включить/выключить канал тумблером. Для WhatsApp/Telegram Direct — со стартом/остановкой сокета. */
+  @Put(':id/enabled')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Включить/выключить канал' })
+  async setEnabled(
+    @Param('id') id: string,
+    @Body() dto: ToggleChannelDto,
+    @CurrentAdminId() adminId: string,
+  ): Promise<ChannelCard[]> {
+    if (!isToggleable(id as ChannelId)) throw new BadRequestException('Канал не переключается');
+    const channel = id as ToggleChannelId;
+    if (channel === 'whatsapp') await this.whatsapp.setEnabled(dto.enabled);
+    else if (channel === 'tg_direct') await this.userbot.setEnabled(dto.enabled);
+    else await this.toggle.setEnabled(channel, dto.enabled);
+    await this.audit.record({
+      actorId: adminId,
+      action: 'updated',
+      entity: 'AiChannel',
+      entityId: channel,
+      payload: { enabled: dto.enabled },
+    });
+    return this.list();
   }
 
   @Get('telegram')

@@ -15,7 +15,8 @@ function setup(existing: { id: string } | null) {
   } as unknown as ConversationService;
   const max = { sendMessage: vi.fn() } as unknown as MaxPort;
   const tenant = { getDefaultTenantId: vi.fn().mockResolvedValue('t1') } as unknown as TenantService;
-  const svc = new MaxAgentService(guestAgent, conversations, max, tenant);
+  const toggle = { isEnabled: vi.fn().mockResolvedValue(true) } as unknown as import('./channel-toggle.service.js').ChannelToggleService;
+  const svc = new MaxAgentService(guestAgent, conversations, max, tenant, toggle);
   return { svc, guestAgent, conversations, max };
 }
 

@@ -40,8 +40,14 @@ function IntegrationsTab() {
   const [items, setItems] = useState<AiChannel[]>([]);
   const [configuring, setConfiguring] = useState<AiChannel['id'] | null>(null);
   const [openSetup, setOpenSetup] = useState<string | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
   const load = () => adminApi.aiChannels().then(setItems).catch(() => setItems([]));
   useEffect(() => { void load(); }, []);
+
+  const setEnabled = async (id: string, enabled: boolean) => {
+    setToggling(id);
+    try { setItems(await adminApi.aiSetChannelEnabled(id, enabled)); } catch { /* игнор */ } finally { setToggling(null); }
+  };
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -51,26 +57,28 @@ function IntegrationsTab() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-lg font-medium text-ink">{i.name}</p>
-                {i.available
-                  ? <span className={`rounded-full px-2 py-0.5 text-xs ${i.connected ? 'bg-emerald-100 text-emerald-800' : i.needsSetup ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                {!i.available
+                  ? <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs text-dark-gray">Скоро (v2)</span>
+                  : i.toggleable && !i.enabled
+                  ? <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs text-dark-gray">Выключено</span>
+                  : <span className={`rounded-full px-2 py-0.5 text-xs ${i.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                       {i.connected ? 'Подключено' : 'Не настроено'}
-                    </span>
-                  : <span className="rounded-full bg-ink/10 px-2 py-0.5 text-xs text-dark-gray">Скоро (v2)</span>}
+                    </span>}
                 {i.available && !i.needsSetup ? <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-800">Из коробки</span> : null}
               </div>
               <p className="mt-1 text-sm text-dark-gray">{i.description}</p>
 
               <div className="mt-3 flex flex-wrap gap-2">
-                {i.id === 'telegram' && i.available ? (
+                {i.id === 'telegram' && i.available && i.enabled ? (
                   <Button variant="secondary" onClick={() => setConfiguring('telegram')}>Настроить</Button>
                 ) : null}
-                {i.id === 'max' && i.available ? (
+                {i.id === 'max' && i.available && i.enabled ? (
                   <Button variant="secondary" onClick={() => setConfiguring('max')}>Настроить</Button>
                 ) : null}
-                {i.id === 'whatsapp' && i.available ? (
+                {i.id === 'whatsapp' && i.available && i.enabled ? (
                   <Button variant="secondary" onClick={() => setConfiguring('whatsapp')}>Настроить</Button>
                 ) : null}
-                {i.id === 'tg_direct' && i.available ? (
+                {i.id === 'tg_direct' && i.available && i.enabled ? (
                   <Button variant="secondary" onClick={() => setConfiguring('tg_direct')}>Настроить</Button>
                 ) : null}
                 {i.setup ? (
@@ -84,6 +92,19 @@ function IntegrationsTab() {
                 <pre className="mt-3 whitespace-pre-wrap rounded-md bg-ink/[0.03] px-3 py-2 text-xs leading-relaxed text-dark-gray">{i.setup}</pre>
               ) : null}
             </div>
+            {i.available && i.toggleable ? (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={i.enabled}
+                aria-label={i.enabled ? 'Выключить канал' : 'Включить канал'}
+                disabled={toggling === i.id}
+                onClick={() => void setEnabled(i.id, !i.enabled)}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-50 ${i.enabled ? 'bg-emerald-500' : 'bg-ink/20'}`}
+              >
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${i.enabled ? 'left-[22px]' : 'left-0.5'}`} />
+              </button>
+            ) : null}
           </div>
           {!i.available ? <p className="mt-3 rounded-md bg-ink/[0.03] px-3 py-2 text-xs text-dark-gray">Канал появится на следующем этапе. Здесь будут поля подключения аккаунта.</p> : null}
         </Card>
@@ -325,7 +346,7 @@ function WhatsAppSettingsModal({ onClose }: { onClose: () => void }) {
               {st.status === 'connected' ? (
                 <Button variant="secondary" onClick={logout} disabled={busy}>{busy ? '…' : 'Отвязать номер'}</Button>
               ) : st.status === 'disabled' ? (
-                <p className="text-xs text-amber-700">Включите WA_ENABLED=true и MESSENGER_PROXY_URL в .env на сервере, затем перезапустите API.</p>
+                <p className="text-xs text-amber-700">Канал выключен — включите переключателем на карточке.</p>
               ) : (
                 <Button onClick={start} disabled={busy || st.status === 'connecting'}>{busy ? '…' : st.status === 'qr' ? 'Обновить' : 'Подключить'}</Button>
               )}
@@ -382,7 +403,7 @@ function TgDirectSettingsModal({ onClose }: { onClose: () => void }) {
             <p className="mb-4 rounded-md bg-ink/[0.03] px-3 py-2 text-sm text-dark-gray">{st.message}</p>
 
             {st.status === 'disabled' ? (
-              <p className="text-xs text-amber-700">Включите TG_USERBOT_ENABLED=true и TG_USERBOT_PROXY (SOCKS5) в .env на сервере, затем перезапустите API.</p>
+              <p className="text-xs text-amber-700">Канал выключен — включите переключателем на карточке. Для подключения на сервере нужен SOCKS5-прокси (TG_USERBOT_PROXY).</p>
             ) : st.status === 'disconnected' ? (
               <div className="space-y-3">
                 <div>

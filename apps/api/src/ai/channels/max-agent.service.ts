@@ -4,6 +4,7 @@ import { GuestAgentService } from '../agents/guest-agent.service.js';
 import { ConversationService } from '../conversations/conversation.service.js';
 import { MaxPort } from '../../integrations/max/max.port.js';
 import { TenantService } from '../../pms/tenant/tenant.service.js';
+import { ChannelToggleService } from './channel-toggle.service.js';
 
 const MAX_GREETING =
   'Здравствуйте! Я AI-администратор D Hotels & Apartments 🙂 Помогу подобрать номер и ответить на вопросы. ' +
@@ -34,9 +35,11 @@ export class MaxAgentService {
     private readonly conversations: ConversationService,
     private readonly max: MaxPort,
     private readonly tenant: TenantService,
+    private readonly toggle: ChannelToggleService,
   ) {}
 
   async handleUpdate(update: MaxUpdate): Promise<void> {
+    if (!(await this.toggle.isEnabled('max'))) return; // канал выключен тумблером
     if (update.update_type && update.update_type !== 'message_created') return;
     const chatId = update.message?.recipient?.chat_id;
     const text = update.message?.body?.text?.trim();

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../config/env.schema.js';
 import { MaxConfigService } from '../../integrations/max/max-config.service.js';
 import { MaxAgentService, type MaxUpdate } from './max-agent.service.js';
+import { ChannelToggleService } from './channel-toggle.service.js';
 
 interface RawUpdate extends MaxUpdate {
   timestamp?: number;
@@ -24,6 +25,7 @@ export class MaxPollingService implements OnModuleInit, OnModuleDestroy {
     private readonly cfg: MaxConfigService,
     private readonly config: ConfigService<Env, true>,
     private readonly agent: MaxAgentService,
+    private readonly toggle: ChannelToggleService,
   ) {}
 
   onModuleInit(): void {
@@ -38,6 +40,10 @@ export class MaxPollingService implements OnModuleInit, OnModuleDestroy {
 
   private async loop(): Promise<void> {
     while (!this.stopped) {
+      if (!(await this.toggle.isEnabled('max'))) {
+        await this.sleep(10_000); // канал выключен тумблером — не опрашиваем
+        continue;
+      }
       const { apiBase, botToken } = await this.cfg.resolve();
       if (!botToken) {
         await this.sleep(10_000); // токен ещё не задан в админке — ждём

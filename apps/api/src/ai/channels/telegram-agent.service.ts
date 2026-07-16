@@ -5,6 +5,7 @@ import { ConversationService } from '../conversations/conversation.service.js';
 import { TelegramLinkService } from './telegram-link.service.js';
 import { TelegramPort } from '../../integrations/telegram/telegram.port.js';
 import { TenantService } from '../../pms/tenant/tenant.service.js';
+import { ChannelToggleService } from './channel-toggle.service.js';
 
 const TG_GREETING =
   'Здравствуйте! Я AI-администратор D Hotels & Apartments 🙂 Помогу подобрать номер и ответить на вопросы. ' +
@@ -34,9 +35,11 @@ export class TelegramAgentService {
     private readonly link: TelegramLinkService,
     private readonly telegram: TelegramPort,
     private readonly tenant: TenantService,
+    private readonly toggle: ChannelToggleService,
   ) {}
 
   async handleUpdate(update: TelegramUpdate): Promise<void> {
+    if (!(await this.toggle.isEnabled('telegram'))) return; // канал выключен тумблером
     const chatId = update.message?.chat?.id;
     const text = update.message?.text?.trim();
     if (chatId === undefined || !text) return; // не текстовое сообщение — игнорируем

@@ -22,8 +22,9 @@ function setup(existing: { id: string; guestId?: string | null } | null, guestId
   } as unknown as TelegramLinkService;
   const telegram = { sendMessage: vi.fn() } as unknown as TelegramPort;
   const tenant = { getDefaultTenantId: vi.fn().mockResolvedValue('t1') } as unknown as TenantService;
-  const svc = new TelegramAgentService(guestAgent, conversations, link, telegram, tenant);
-  return { svc, guestAgent, conversations, link, telegram };
+  const toggle = { isEnabled: vi.fn().mockResolvedValue(true) } as unknown as import('./channel-toggle.service.js').ChannelToggleService;
+  const svc = new TelegramAgentService(guestAgent, conversations, link, telegram, tenant, toggle);
+  return { svc, guestAgent, conversations, link, telegram, toggle };
 }
 
 describe('TelegramAgentService', () => {

@@ -17,6 +17,9 @@ const K = {
   session: 'ai.tguserbot.session',
 } as const;
 
+/** Ключ Setting тумблера канала (единый формат с ChannelToggleService). */
+const ENABLED_KEY = 'ai.channel.tg_direct.enabled';
+
 export type TgUserbotStatus =
   | 'disabled'
   | 'disconnected'
@@ -76,6 +79,7 @@ export class TelegramUserbotService
   private pending: { client: TelegramClient; phone: string; phoneCodeHash: string } | null = null;
   private status: TgUserbotStatus = 'disconnected';
   private me: string | null = null;
+  private enabledCached = false;
   private handler: ((from: string, text: string) => Promise<void>) | null = null;
 
   constructor(
@@ -86,19 +90,42 @@ export class TelegramUserbotService
     super();
   }
 
-  private get enabled(): boolean {
-    return this.config.get('TG_USERBOT_ENABLED', { infer: true });
+  /** Тумблер (Setting) с фолбэком на legacy-env TG_USERBOT_ENABLED. */
+  private async loadEnabled(): Promise<boolean> {
+    const v = await this.settings.get(ENABLED_KEY);
+    this.enabledCached =
+      v === null || v === undefined || v === ''
+        ? this.config.get('TG_USERBOT_ENABLED', { infer: true })
+        : v === 'true';
+    return this.enabledCached;
   }
   private get proxy(): SocksProxy | undefined {
     return parseSocks(this.config.get('TG_USERBOT_PROXY', { infer: true }));
   }
 
-  onModuleInit(): void {
-    if (!this.enabled) {
+  async onModuleInit(): Promise<void> {
+    if (!(await this.loadEnabled())) {
       this.status = 'disabled';
       return;
     }
     void this.connectSaved();
+  }
+
+  /** Включить/выключить канал (тумблер из админки). */
+  async setEnabled(on: boolean): Promise<TgUserbotState> {
+    await this.settings.set(ENABLED_KEY, on ? 'true' : 'false');
+    this.enabledCached = on;
+    if (!on) {
+      await this.client?.disconnect().catch(() => undefined);
+      await this.pending?.client.disconnect().catch(() => undefined);
+      this.client = null;
+      this.pending = null;
+      this.status = 'disabled';
+    } else {
+      this.status = 'disconnected';
+      void this.connectSaved();
+    }
+    return this.getState();
   }
 
   onModuleDestroy(): void {
@@ -113,7 +140,7 @@ export class TelegramUserbotService
   getState(): TgUserbotState {
     const phone = null; // телефон резолвится асинхронно; в getState не блокируемся
     const msg: Record<TgUserbotStatus, string> = {
-      disabled: 'Канал выключен. Включите TG_USERBOT_ENABLED=true и TG_USERBOT_PROXY (SOCKS5) в .env, перезапустите API.',
+      disabled: 'Канал выключен — включите переключателем. Для подключения нужен SOCKS5-прокси (TG_USERBOT_PROXY в .env).',
       disconnected: 'Не подключено. Введите api_id, api_hash (my.telegram.org) и телефон, затем «Подключить».',
       awaiting_code: 'Введите код, присланный в Telegram на этот номер.',
       awaiting_password: 'Включена двухэтапная проверка — введите облачный пароль (2FA).',
@@ -154,7 +181,7 @@ export class TelegramUserbotService
 
   /** Шаг 1: сохранить реквизиты, отправить код на телефон. */
   async start(input: { apiId: string; apiHash: string; phone: string }): Promise<TgUserbotState> {
-    if (!this.enabled) return this.getState();
+    if (!this.enabledCached) return this.getState();
     const phone = input.phone.trim();
     const { apiId, apiHash } = await this.creds(input);
     if (!apiId || !apiHash || !phone) {
@@ -225,7 +252,7 @@ export class TelegramUserbotService
     this.pending = null;
     this.me = null;
     await this.settings.set(K.session, '');
-    this.status = this.enabled ? 'disconnected' : 'disabled';
+    this.status = this.enabledCached ? 'disconnected' : 'disabled';
     return this.getState();
   }
 

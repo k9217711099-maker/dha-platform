@@ -9,7 +9,11 @@ import QRCode from 'qrcode';
 import * as baileys from '@whiskeysockets/baileys';
 import type { WASocket, WAMessage, ConnectionState } from '@whiskeysockets/baileys';
 import type { Env } from '../../config/env.schema.js';
+import { SettingsService } from '../../common/settings/settings.service.js';
 import { WhatsAppPort } from './whatsapp.port.js';
+
+/** Ключ Setting тумблера канала (единый формат с ChannelToggleService). */
+const ENABLED_KEY = 'ai.channel.whatsapp.enabled';
 
 const makeWASocket = baileys.default;
 const { useMultiFileAuthState, DisconnectReason, Browsers } = baileys;
@@ -62,21 +66,31 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
   private me: string | null = null;
   private stopped = false;
   private connecting = false;
+  private enabledCached = false;
   private handler: ((from: string, text: string) => Promise<void>) | null = null;
 
-  constructor(private readonly config: ConfigService<Env, true>) {
+  constructor(
+    private readonly config: ConfigService<Env, true>,
+    private readonly settings: SettingsService,
+  ) {
     super();
   }
 
-  private get enabled(): boolean {
-    return this.config.get('WA_ENABLED', { infer: true });
+  /** Тумблер (Setting) с фолбэком на legacy-env WA_ENABLED. */
+  private async loadEnabled(): Promise<boolean> {
+    const v = await this.settings.get(ENABLED_KEY);
+    this.enabledCached =
+      v === null || v === undefined || v === ''
+        ? this.config.get('WA_ENABLED', { infer: true })
+        : v === 'true';
+    return this.enabledCached;
   }
   private get authDir(): string {
     return resolve(this.config.get('WA_AUTH_DIR', { infer: true }));
   }
 
-  onModuleInit(): void {
-    if (!this.enabled) {
+  async onModuleInit(): Promise<void> {
+    if (!(await this.loadEnabled())) {
       this.state = 'disabled';
       return;
     }
@@ -100,7 +114,7 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
 
   getState(): WaState {
     const msg: Record<WaStatus, string> = {
-      disabled: 'Канал выключен. Включите WA_ENABLED=true в .env и перезапустите API.',
+      disabled: 'Канал выключен — включите переключателем, затем нажмите «Подключить».',
       disconnected: 'Не подключено. Нажмите «Подключить» и отсканируйте QR в WhatsApp.',
       connecting: 'Подключение…',
       qr: 'Отсканируйте QR-код в приложении WhatsApp: Настройки → Связанные устройства.',
@@ -109,9 +123,33 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
     return { status: this.state, qr: this.qr, me: this.me, message: msg[this.state] };
   }
 
+  /** Включить/выключить канал (тумблер из админки). */
+  async setEnabled(on: boolean): Promise<WaState> {
+    await this.settings.set(ENABLED_KEY, on ? 'true' : 'false');
+    this.enabledCached = on;
+    if (!on) {
+      this.stopped = true;
+      try {
+        this.sock?.end(undefined);
+      } catch {
+        /* noop */
+      }
+      this.sock = null;
+      this.qr = null;
+      this.me = null;
+      this.state = 'disabled';
+    } else {
+      this.stopped = false;
+      this.state = 'disconnected';
+      // Есть сессия — сразу переподключаемся; иначе ждём «Подключить» (QR).
+      if (existsSync(resolve(this.authDir, 'creds.json'))) void this.connect();
+    }
+    return this.getState();
+  }
+
   /** Запуск пейринга/подключения из админки. */
   async start(): Promise<WaState> {
-    if (!this.enabled) return this.getState();
+    if (!this.enabledCached) return this.getState();
     if (this.state === 'connected' || this.connecting) return this.getState();
     this.stopped = false;
     await this.connect();
@@ -128,7 +166,7 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
     }
     this.sock = null;
     this.clearSession();
-    this.state = this.enabled ? 'disconnected' : 'disabled';
+    this.state = this.enabledCached ? 'disconnected' : 'disabled';
     this.qr = null;
     this.me = null;
     return this.getState();

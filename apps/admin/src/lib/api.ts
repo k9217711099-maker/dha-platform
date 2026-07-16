@@ -152,6 +152,10 @@ export interface AiChannel {
   connected: boolean;
   needsSetup: boolean;
   setup?: string;
+  /** Есть ли тумблер вкл/выкл (web/app — из коробки, без тумблера). */
+  toggleable: boolean;
+  /** Включён ли канал. */
+  enabled: boolean;
 }
 
 /** Публичная конфигурация Telegram-бота (без секретов). */
@@ -2359,6 +2363,8 @@ export const adminApi = {
 
   // AI и коммуникации · каналы (интеграции)
   aiChannels: () => request<AiChannel[]>('/ai/channels'),
+  aiSetChannelEnabled: (id: string, enabled: boolean) =>
+    request<AiChannel[]>(`/ai/channels/${id}/enabled`, { method: 'PUT', body: { enabled } }),
   aiTelegramConfig: () => request<TelegramAdminConfig>('/ai/channels/telegram'),
   aiSaveTelegram: (body: { botToken?: string; botUsername?: string; webhookSecret?: string }) =>
     request<TelegramAdminConfig>('/ai/channels/telegram', { method: 'PUT', body }),

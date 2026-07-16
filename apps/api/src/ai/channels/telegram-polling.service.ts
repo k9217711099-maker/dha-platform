@@ -4,6 +4,7 @@ import type { Env } from '../../config/env.schema.js';
 import { withProxy } from '../../common/proxy/messenger-proxy.js';
 import { TelegramConfigService } from '../../integrations/telegram/telegram-config.service.js';
 import { TelegramAgentService, type TelegramUpdate } from './telegram-agent.service.js';
+import { ChannelToggleService } from './channel-toggle.service.js';
 
 interface RawUpdate extends TelegramUpdate {
   update_id: number;
@@ -30,6 +31,7 @@ export class TelegramPollingService implements OnModuleInit, OnModuleDestroy {
     private readonly cfg: TelegramConfigService,
     private readonly config: ConfigService<Env, true>,
     private readonly agent: TelegramAgentService,
+    private readonly toggle: ChannelToggleService,
   ) {}
 
   onModuleInit(): void {
@@ -47,6 +49,10 @@ export class TelegramPollingService implements OnModuleInit, OnModuleDestroy {
 
   private async loop(): Promise<void> {
     while (!this.stopped) {
+      if (!(await this.toggle.isEnabled('telegram'))) {
+        await this.sleep(10_000); // бот выключен тумблером — не опрашиваем
+        continue;
+      }
       const { apiBase, botToken } = await this.cfg.resolve();
       const proxy = this.config.get('MESSENGER_PROXY_URL', { infer: true });
       if (!botToken) {

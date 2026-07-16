@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+
+/** Включить/выключить канал. */
+export class ToggleChannelDto {
+  @ApiProperty({ description: 'Включён ли канал' })
+  @IsBoolean()
+  enabled!: boolean;
+}
 
 /** Сохранение реквизитов Telegram-бота из админки (пустые поля — не менять). */
 export class SaveTelegramConfigDto {
