@@ -1,4 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { Env } from '../../config/env.schema.js';
+import { withProxy } from '../../common/proxy/messenger-proxy.js';
 import { TelegramPort } from './telegram.port.js';
 import { TelegramConfigService } from './telegram-config.service.js';
 
@@ -7,7 +10,10 @@ import { TelegramConfigService } from './telegram-config.service.js';
 export class HttpTelegramAdapter extends TelegramPort {
   private readonly logger = new Logger('Telegram');
 
-  constructor(private readonly cfg: TelegramConfigService) {
+  constructor(
+    private readonly cfg: TelegramConfigService,
+    private readonly config: ConfigService<Env, true>,
+  ) {
     super();
   }
 
@@ -17,11 +23,18 @@ export class HttpTelegramAdapter extends TelegramPort {
       this.logger.warn('Токен Telegram-бота не задан (админка/ env) — сообщение не отправлено.');
       return;
     }
-    const res = await fetch(`${apiBase}/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text }),
-    }).catch((err: unknown) => {
+    const proxy = this.config.get('MESSENGER_PROXY_URL', { infer: true });
+    const res = await fetch(
+      `${apiBase}/bot${botToken}/sendMessage`,
+      withProxy(
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text }),
+        },
+        proxy,
+      ),
+    ).catch((err: unknown) => {
       this.logger.error(`Telegram sendMessage сеть: ${(err as Error).message}`);
       return null;
     });

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SettingsService } from '../../common/settings/settings.service.js';
 import { CryptoService } from '../../common/crypto/crypto.service.js';
+import { withProxy } from '../../common/proxy/messenger-proxy.js';
 import type { Env } from '../../config/env.schema.js';
 
 /** Ключи Setting для подключения Telegram-бота (токен/секрет — зашифрованы). */
@@ -109,7 +110,8 @@ export class TelegramConfigService {
     const token = (botToken && botToken.trim()) || creds.botToken;
     if (!token) return { ok: false, message: 'Не задан токен бота — введите его в поле выше.' };
     try {
-      const res = await fetch(`${creds.apiBase}/bot${token}/getMe`);
+      const proxy = this.config.get('MESSENGER_PROXY_URL', { infer: true });
+      const res = await fetch(`${creds.apiBase}/bot${token}/getMe`, withProxy({}, proxy));
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         result?: { username?: string; first_name?: string };

@@ -195,6 +195,13 @@ export const envSchema = z.object({
   TELEGRAM_BOT_USERNAME: z.string().optional(),
 
   /**
+   * Прокси для исходящих к заблокированным с РФ-сервера мессенджерам (Telegram/WhatsApp).
+   * Формат: http://login:password@host:port. Если задан — запросы к Telegram (и позже
+   * WhatsApp) идут через него; DeepSeek и прочее — напрямую. Пусто → напрямую.
+   */
+  MESSENGER_PROXY_URL: z.string().optional(),
+
+  /**
    * Базы знаний, доступные ГОСТЕВОМУ AI-агенту (ID баз через запятую). У страниц KB
    * пока нет флага видимости, поэтому гостю отдаём только явно разрешённые базы.
    * Пусто → гостевой kb_search выключен (без утечки внутренних страниц). Копилот
