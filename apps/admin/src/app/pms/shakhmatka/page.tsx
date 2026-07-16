@@ -145,7 +145,7 @@ export default function ShakhmatkaPage() {
   // Дерево: объект → категория → номера.
   const tree = useMemo<TreeNode[]>(() => {
     const byProp = new Map<string, TreeNode>();
-    for (const r of [...rooms].sort((a, b) => a.number.localeCompare(b.number, 'ru', { numeric: true }))) {
+    for (const r of [...rooms].sort((a, b) => (a.sortOrder - b.sortOrder) || a.number.localeCompare(b.number, 'ru', { numeric: true }))) {
       const node = byProp.get(r.property.id) ?? { propertyId: r.property.id, name: r.property.name, cats: [], roomCount: 0 };
       let cat = node.cats.find((c) => c.roomTypeId === r.roomType.id);
       if (!cat) { cat = { roomTypeId: r.roomType.id, name: r.roomType.name, rooms: [] }; node.cats.push(cat); }

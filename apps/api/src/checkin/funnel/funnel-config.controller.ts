@@ -7,6 +7,9 @@ import { AdminAuthGuard } from '../../admin/admin-auth.guard.js';
 import { RequirePermission } from '../../admin/require-permission.decorator.js';
 import { CurrentAdminId } from '../../admin/current-admin.decorator.js';
 import { TenantService } from '../../pms/tenant/tenant.service.js';
+import { TelegramConfigService } from '../../integrations/telegram/telegram-config.service.js';
+import { MaxConfigService } from '../../integrations/max/max-config.service.js';
+import { WhatsAppService } from '../../integrations/whatsapp/whatsapp.service.js';
 import { FunnelConfigService } from './funnel-config.service.js';
 import { CreateStageDto, ReorderStagesDto, UpsertFunnelDto, UpsertStageDto } from './dto/funnel-config.dto.js';
 
@@ -19,15 +22,30 @@ export class FunnelConfigController {
   constructor(
     private readonly config: FunnelConfigService,
     private readonly tenant: TenantService,
+    private readonly telegram: TelegramConfigService,
+    private readonly max: MaxConfigService,
+    private readonly whatsapp: WhatsAppService,
   ) {}
 
   /** Словарь конструктора: условия, каналы, типовые этапы, шаблоны уведомлений (§2.1). */
   @Get('dictionary')
   @RequirePermission('checkin_funnel_manage')
-  dictionary() {
+  async dictionary() {
+    // Каналы с флагом active: реально настроенные/подключённые подсвечиваются как
+    // доступные, ненастроенные — приглушены (гость по ним не получит уведомление).
+    const [tgConfigured, maxConfigured] = await Promise.all([this.telegram.hasToken(), this.max.hasToken()]);
+    const waConnected = this.whatsapp.getState().status === 'connected';
+    const active: Record<string, boolean> = {
+      push: true, sms: true, email: true, guest_portal: true, ota_messaging: true,
+      telegram: tgConfigured, whatsapp: waConnected, max: maxConfigured,
+    };
+    const channels = [...FUNNEL_CHANNELS, { key: 'max', label: 'MAX' } as const].map((c) => ({
+      ...c,
+      active: active[c.key] ?? true,
+    }));
     return {
       conditions: FUNNEL_CONDITIONS,
-      channels: FUNNEL_CHANNELS,
+      channels,
       stageKeys: FUNNEL_STAGE_KEYS,
       protectedStageKeys: FUNNEL_PROTECTED_STAGE_KEYS,
       // Сценарии для выбора шаблона этапа + предпросмотр дефолтного текста (§5.2).

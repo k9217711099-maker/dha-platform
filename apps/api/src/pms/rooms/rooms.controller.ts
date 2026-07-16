@@ -5,7 +5,7 @@ import { RequirePermission } from '../../admin/require-permission.decorator.js';
 import { CurrentAdminId } from '../../admin/current-admin.decorator.js';
 import { TenantService } from '../tenant/tenant.service.js';
 import { RoomService } from './room.service.js';
-import { BatchCreateRoomsDto, BulkCreateRoomsDto, BulkInstructionsDto, CreateRoomDto, RoomStatusDto, UpdateRoomDto } from './dto/room.dto.js';
+import { BatchCreateRoomsDto, BulkCreateRoomsDto, BulkInstructionsDto, CreateRoomDto, ReorderRoomsDto, RoomStatusDto, UpdateRoomDto } from './dto/room.dto.js';
 
 /**
  * Номерной фонд PMS (юниты). Маршруты `/api/v1/rooms` (совпадают с DHP OpenAPI).
@@ -65,6 +65,14 @@ export class RoomsController {
   async batchCreate(@Body() dto: BatchCreateRoomsDto, @CurrentAdminId() adminId: string) {
     const tenantId = await this.tenant.getDefaultTenantId();
     return this.rooms.batchCreate(tenantId, dto, adminId);
+  }
+
+  // Порядок номеров (перетаскивание). Статичный маршрут — до ':id'.
+  @Post('reorder')
+  @RequirePermission('pms_rooms')
+  async reorder(@Body() dto: ReorderRoomsDto, @CurrentAdminId() adminId: string) {
+    const tenantId = await this.tenant.getDefaultTenantId();
+    return this.rooms.reorder(tenantId, dto.ids, adminId);
   }
 
   // Массовое заполнение инструкций/адресов заселения (апартаменты). Статичный — до ':id'.

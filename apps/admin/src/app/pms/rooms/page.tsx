@@ -28,6 +28,17 @@ export default function PmsRoomsPage() {
   );
 
   const load = () => adminApi.pmsRooms().then(setRooms).catch(() => undefined);
+
+  // Перемещение номера ↑/↓ меняет порядок выдачи на шахматке и в модуле бронирования.
+  const move = async (index: number, dir: -1 | 1) => {
+    const j = index + dir;
+    if (j < 0 || j >= rooms.length) return;
+    const next = [...rooms];
+    [next[index], next[j]] = [next[j]!, next[index]!];
+    setRooms(next);
+    try { await adminApi.pmsReorderRooms(next.map((r) => r.id)); } catch { void load(); }
+  };
+
   useEffect(() => {
     if (!ready) return;
     void adminApi.pmsRoomOptions().then((o) => {
@@ -100,15 +111,21 @@ export default function PmsRoomsPage() {
         {rooms.length === 0 ? (
           <p className="text-sm text-dark-gray">Номеров пока нет. Добавьте первый выше.</p>
         ) : null}
-        {rooms.map((r) => (
+        {rooms.map((r, i) => (
           <Card key={r.id} className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-[220px]">
-              <p className="text-ink">
-                № {r.number}
-                {r.floor ? <span className="text-dark-gray"> · этаж {r.floor}</span> : null}
-                {!r.active ? <span className="text-red-600"> · неактивен</span> : null}
-              </p>
-              <p className="text-xs text-dark-gray">{r.property.name} · {r.roomType.name}</p>
+            <div className="flex min-w-[220px] items-center gap-2">
+              <div className="flex flex-col">
+                <button type="button" aria-label="Выше" disabled={i === 0} onClick={() => void move(i, -1)} className="px-1 text-dark-gray hover:text-ink disabled:opacity-30 leading-none">▲</button>
+                <button type="button" aria-label="Ниже" disabled={i === rooms.length - 1} onClick={() => void move(i, 1)} className="px-1 text-dark-gray hover:text-ink disabled:opacity-30 leading-none">▼</button>
+              </div>
+              <div>
+                <p className="text-ink">
+                  № {r.number}
+                  {r.floor ? <span className="text-dark-gray"> · этаж {r.floor}</span> : null}
+                  {!r.active ? <span className="text-red-600"> · неактивен</span> : null}
+                </p>
+                <p className="text-xs text-dark-gray">{r.property.name} · {r.roomType.name}</p>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <select

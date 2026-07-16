@@ -292,13 +292,19 @@ function StageCard({ stage, dict, busy, first, last, onMove, onPatch, onDelete }
           <div>
             <p className="mb-1.5 text-xs uppercase tracking-wide text-dark-gray">Каналы уведомлений</p>
             <div className="flex flex-wrap gap-1.5">
-              {dict.channels.map((c) => (
-                <button key={c.key} type="button" disabled={busy} onClick={() => toggleChannel(c.key)}
-                  className={`rounded-full border px-2.5 py-1 text-xs transition ${stage.channels.includes(c.key) ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : 'border-ink/15 text-dark-gray hover:border-ink/30'}`}>
-                  {c.label}
-                </button>
-              ))}
+              {dict.channels.map((c) => {
+                const on = stage.channels.includes(c.key);
+                const inactive = c.active === false;
+                return (
+                  <button key={c.key} type="button" disabled={busy} onClick={() => toggleChannel(c.key)}
+                    title={inactive ? 'Канал не настроен/не подключён — подключите в «AI и коммуникации → Настройки»' : undefined}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition ${on ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : inactive ? 'border-ink/10 text-ink/30' : 'border-ink/15 text-dark-gray hover:border-ink/30'}`}>
+                    {c.label}{inactive ? ' ·⃠' : ''}
+                  </button>
+                );
+              })}
             </div>
+            <p className="mt-1.5 text-xs text-dark-gray">Приглушённые каналы не подключены. Telegram/WhatsApp/MAX доставляют, только если гость привязал этот мессенджер к своему аккаунту — для гарантированной доставки анкеты держите SMS/Email.</p>
           </div>
 
           {/* Шаблон уведомления этапа + предпросмотр (§5.2) */}

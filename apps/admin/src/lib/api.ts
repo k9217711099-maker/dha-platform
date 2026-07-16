@@ -726,6 +726,8 @@ export interface PmsRoom {
   id: string;
   number: string;
   floor: string | null;
+  /** Порядок вывода (шахматка/модуль бронирования); меньше — выше. */
+  sortOrder: number;
   address: string | null;
   comment: string | null;
   excludeFromStats: boolean;
@@ -849,7 +851,7 @@ export interface CheckinFunnel {
 }
 export interface FunnelDictionary {
   conditions: { type: string; label: string }[];
-  channels: { key: string; label: string }[];
+  channels: { key: string; label: string; active?: boolean }[];
   stageKeys: { key: string; label: string }[];
   protectedStageKeys: string[];
   templates: { key: string; label: string; preview: { title: string; body: string } }[];
@@ -1970,6 +1972,8 @@ export const adminApi = {
   deleteRoomFundCategory: (id: string) => request<{ ok: boolean }>(`/v1/room-types/${id}`, { method: 'DELETE' }),
   reorderRoomFundCategories: (body: { propertyId: string; orderedIds: string[] }) =>
     request<{ ok: boolean }>('/v1/room-types/reorder', { method: 'PATCH', body }),
+  pmsReorderRooms: (ids: string[]) =>
+    request<{ ok: boolean; count: number }>('/v1/rooms/reorder', { method: 'POST', body: { ids } }),
   roomFundChangelog: (params: { entity?: string; action?: string; from?: string; to?: string } = {}) => {
     const qs = new URLSearchParams();
     if (params.entity) qs.set('entity', params.entity);

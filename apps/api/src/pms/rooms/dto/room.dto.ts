@@ -3,6 +3,15 @@ import { HousekeepingStatus, MaintenanceStatus, RoomSellStatus } from '@prisma/c
 import { Type } from 'class-transformer';
 import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsOptional, IsString, ValidateNested } from 'class-validator';
 
+/** Новый порядок номеров (ids в желаемом порядке). */
+export class ReorderRoomsDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  ids!: string[];
+}
+
 /** Конкретный номер/юнит: привязан к объекту и категории. */
 export class CreateRoomDto {
   @ApiProperty() @IsString() propertyId!: string;

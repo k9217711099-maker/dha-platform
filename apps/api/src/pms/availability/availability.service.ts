@@ -72,6 +72,8 @@ export class AvailabilityService {
       // Только жёсткий OOO выбывает из пула; мягкий OUT_OF_SERVICE (§7-C) остаётся продаваемым.
       where: { tenantId, roomTypeId: { in: typeIds }, active: true, sellStatus: 'SELLABLE', maintenanceStatus: { not: 'OUT_OF_ORDER' } },
       select: { id: true, roomTypeId: true },
+      // Порядок выдачи номеров = заданный в «Номерном фонде» (sortOrder), затем номер.
+      orderBy: [{ sortOrder: 'asc' }, { number: 'asc' }],
     });
     const poolByType = new Map<string, string[]>();
     const typeByRoom = new Map<string, string>();

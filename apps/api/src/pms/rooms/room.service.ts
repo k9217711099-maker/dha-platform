@@ -38,8 +38,23 @@ export class RoomService {
         roomTypeId: filters.roomTypeId,
       },
       include: { property: { select: { id: true, name: true } }, roomType: { select: { id: true, name: true } } },
-      orderBy: [{ propertyId: 'asc' }, { number: 'asc' }],
+      orderBy: [{ propertyId: 'asc' }, { sortOrder: 'asc' }, { number: 'asc' }],
     });
+  }
+
+  /**
+   * Задать порядок номеров (перетаскивание в «Номерном фонде»). ids — в желаемом
+   * порядке; sortOrder = позиция. Применяется к шахматке и модулю бронирования.
+   */
+  async reorder(tenantId: string, ids: string[], actorId?: string) {
+    const owned = await this.prisma.room.findMany({ where: { id: { in: ids }, tenantId }, select: { id: true } });
+    const ownedIds = new Set(owned.map((r) => r.id));
+    const ordered = ids.filter((id) => ownedIds.has(id));
+    await this.prisma.$transaction(
+      ordered.map((id, index) => this.prisma.room.update({ where: { id }, data: { sortOrder: index } })),
+    );
+    await this.audit.record({ tenantId, actorId, action: 'reordered', entity: 'Room', entityId: 'sort', payload: { count: ordered.length } });
+    return { ok: true, count: ordered.length };
   }
 
   async get(tenantId: string, id: string) {
