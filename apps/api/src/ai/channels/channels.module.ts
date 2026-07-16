@@ -8,6 +8,9 @@ import { TelegramAgentService } from './telegram-agent.service.js';
 import { TelegramLinkService } from './telegram-link.service.js';
 import { TelegramController } from './telegram.controller.js';
 import { TelegramPollingService } from './telegram-polling.service.js';
+import { MaxAgentService } from './max-agent.service.js';
+import { MaxController } from './max.controller.js';
+import { MaxPollingService } from './max-polling.service.js';
 
 /**
  * Каналы гостевого агента, требующие серверного адаптера. Этап E: Telegram
@@ -18,11 +21,13 @@ import { TelegramPollingService } from './telegram-polling.service.js';
  */
 @Module({
   imports: [AgentsModule, ConversationsModule],
-  controllers: [TelegramController, ChannelsAdminController],
+  controllers: [TelegramController, MaxController, ChannelsAdminController],
   providers: [
     TelegramAgentService,
     TelegramLinkService,
     TelegramPollingService,
+    MaxAgentService,
+    MaxPollingService,
     AdminAuthGuard,
     AuditService,
   ],

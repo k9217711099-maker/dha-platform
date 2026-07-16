@@ -2928,6 +2928,8 @@ enum AiChannel {
   WEB
   APP
   TELEGRAM
+  MAX
+  WHATSAPP
   ADMIN
 }
 

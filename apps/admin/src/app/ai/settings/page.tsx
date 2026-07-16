@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Card } from '@dha/ui';
-import { adminApi, type AiChannel, type TelegramAdminConfig } from '../../../lib/api';
+import { adminApi, type AiChannel, type MaxAdminConfig, type TelegramAdminConfig } from '../../../lib/api';
 import { useRequireAdmin } from '../../../lib/use-admin';
 import { useEsc } from '../../../lib/use-esc';
 
@@ -64,6 +64,9 @@ function IntegrationsTab() {
                 {i.id === 'telegram' && i.available ? (
                   <Button variant="secondary" onClick={() => setConfiguring('telegram')}>Настроить</Button>
                 ) : null}
+                {i.id === 'max' && i.available ? (
+                  <Button variant="secondary" onClick={() => setConfiguring('max')}>Настроить</Button>
+                ) : null}
                 {i.setup ? (
                   <Button variant="secondary" onClick={() => setOpenSetup(openSetup === i.id ? null : i.id)}>
                     {openSetup === i.id ? 'Скрыть инструкцию' : 'Инструкция'}
@@ -81,6 +84,7 @@ function IntegrationsTab() {
       ))}
       {items.length === 0 ? <Card className="p-6 text-sm text-dark-gray">Загрузка каналов…</Card> : null}
       {configuring === 'telegram' ? <TelegramSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
+      {configuring === 'max' ? <MaxSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
     </div>
   );
 }
@@ -165,6 +169,81 @@ function TelegramSettingsModal({ onClose, onSaved }: { onClose: () => void; onSa
               <p>После сохранения токена подставьте свой публичный адрес API и откройте ссылку в браузере:</p>
               <code className="mt-1 block break-all rounded bg-white px-2 py-1">https://api.telegram.org/bot&lt;ТОКЕН&gt;/setWebhook?url=&lt;ПУБЛИЧНЫЙ_URL&gt;/api/ai/telegram/webhook&amp;secret_token=&lt;СЕКРЕТ&gt;</code>
               <p className="mt-1">Проверка подключения использует метод getMe и не трогает вебхук.</p>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Настройка MAX-бота ───
+function MaxSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  useEsc(onClose);
+  const [cfg, setCfg] = useState<MaxAdminConfig | null>(null);
+  const [token, setToken] = useState('');
+  const [username, setUsername] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  useEffect(() => {
+    void adminApi.aiMaxConfig().then((c) => { setCfg(c); setUsername(c.botUsername); }).catch(() => setErr('Не удалось загрузить настройки'));
+  }, []);
+
+  const save = async () => {
+    setBusy(true); setErr('');
+    try {
+      await adminApi.aiSaveMax({ botToken: token || undefined, botUsername: username });
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка сохранения'); } finally { setBusy(false); }
+  };
+
+  const test = async () => {
+    setTesting(true); setErr(''); setTestResult(null);
+    try {
+      const r = await adminApi.aiTestMax(token || undefined);
+      setTestResult(r);
+    } catch (e) { setTestResult({ ok: false, message: e instanceof Error ? e.message : 'Ошибка проверки' }); } finally { setTesting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <Card className="max-h-[90vh] w-full max-w-lg overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-xl font-light text-ink">MAX-бот</p>
+          {cfg ? <span className={`rounded-full px-2 py-0.5 text-xs ${cfg.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{cfg.connected ? 'Подключено' : 'Не настроено'}</span> : null}
+        </div>
+        <p className="mb-5 text-sm text-dark-gray">Токен выдаёт @MasterBot при создании бота в MAX. После сохранения нажмите «Проверить подключение». Приём входящих — long polling, отдельная настройка вебхука не нужна.</p>
+
+        {!cfg ? <p className="text-sm text-dark-gray">Загрузка…</p> : (
+          <>
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>Токен бота (@MasterBot)</label>
+                <input type="password" value={token} onChange={(e) => setToken(e.target.value)} className={fieldCls} autoComplete="new-password"
+                  placeholder={cfg.tokenSet ? '•••••••• (задан — оставьте пустым, чтобы не менять)' : 'вставьте токен от @MasterBot'} />
+                <p className="mt-1 text-xs text-dark-gray">Хранится в зашифрованном виде и обратно не показывается.</p>
+              </div>
+              <div>
+                <label className={labelCls}>Username бота (без @)</label>
+                <input value={username} onChange={(e) => setUsername(e.target.value)} className={fieldCls} placeholder="dha_bot" autoComplete="off" />
+                <p className="mt-1 text-xs text-dark-gray">По нему собирается ссылка для гостей: max.ru/&lt;username&gt;.{cfg.botLink ? ` Текущая: ${cfg.botLink}` : ''}</p>
+              </div>
+            </div>
+
+            {testResult ? <p className={`mt-4 rounded-md px-3 py-2 text-sm ${testResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{testResult.ok ? '✓ ' : '✕ '}{testResult.message}</p> : null}
+            {err ? <p className="mt-3 text-sm text-red-600">{err}</p> : null}
+
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              <Button onClick={save} disabled={busy || testing}>{busy ? 'Сохранение…' : 'Сохранить'}</Button>
+              <Button variant="secondary" onClick={test} disabled={busy || testing}>{testing ? 'Проверка…' : 'Проверить подключение'}</Button>
+              <Button variant="secondary" onClick={onClose} disabled={busy || testing}>Отмена</Button>
+            </div>
+
+            <div className="mt-5 rounded-md bg-ink/[0.03] px-3 py-3 text-xs leading-relaxed text-dark-gray">
+              <p className="mb-1 font-medium text-ink">Как получить токен</p>
+              <p>В приложении MAX найдите <b>@MasterBot</b> → создайте бота (имя и username) → скопируйте выданный токен и вставьте в поле выше. Сохраните и проверьте подключение — сервер начнёт опрашивать MAX автоматически.</p>
             </div>
           </>
         )}

@@ -144,7 +144,7 @@ export interface CheckinQueueItem {
 }
 /** Канал коммуникации гостевого AI-агента (вкладка «Интеграции»). */
 export interface AiChannel {
-  id: 'web' | 'app' | 'telegram' | 'whatsapp' | 'avito';
+  id: 'web' | 'app' | 'telegram' | 'max' | 'whatsapp' | 'avito';
   name: string;
   category: 'guest' | 'notifications';
   description: string;
@@ -156,6 +156,15 @@ export interface AiChannel {
 
 /** Публичная конфигурация Telegram-бота (без секретов). */
 export interface TelegramAdminConfig {
+  botUsername: string;
+  tokenSet: boolean;
+  webhookSecretSet: boolean;
+  connected: boolean;
+  botLink: string | null;
+}
+
+/** Публичная конфигурация MAX-бота (без секретов). */
+export interface MaxAdminConfig {
   botUsername: string;
   tokenSet: boolean;
   webhookSecretSet: boolean;
@@ -2287,6 +2296,11 @@ export const adminApi = {
     request<TelegramAdminConfig>('/ai/channels/telegram', { method: 'PUT', body }),
   aiTestTelegram: (botToken?: string) =>
     request<{ ok: boolean; message: string }>('/ai/channels/telegram/test', { method: 'POST', body: { botToken } }),
+  aiMaxConfig: () => request<MaxAdminConfig>('/ai/channels/max'),
+  aiSaveMax: (body: { botToken?: string; botUsername?: string; webhookSecret?: string }) =>
+    request<MaxAdminConfig>('/ai/channels/max', { method: 'PUT', body }),
+  aiTestMax: (botToken?: string) =>
+    request<{ ok: boolean; message: string }>('/ai/channels/max/test', { method: 'POST', body: { botToken } }),
 
   searchGuests: (q: string) =>
     request<GuestSearchResult[]>(`/admin/guests?q=${encodeURIComponent(q)}`),

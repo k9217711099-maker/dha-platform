@@ -4,14 +4,20 @@ import { AdminAuthGuard } from '../../admin/admin-auth.guard.js';
 import { RequirePermission } from '../../admin/require-permission.decorator.js';
 import { CurrentAdminId } from '../../admin/current-admin.decorator.js';
 import { TelegramConfigService } from '../../integrations/telegram/telegram-config.service.js';
+import { MaxConfigService } from '../../integrations/max/max-config.service.js';
 import { AuditService } from '../../warehouse/audit/audit.service.js';
-import { SaveTelegramConfigDto, TestTelegramConfigDto } from './dto/channel-config.dto.js';
+import {
+  SaveMaxConfigDto,
+  SaveTelegramConfigDto,
+  TestMaxConfigDto,
+  TestTelegramConfigDto,
+} from './dto/channel-config.dto.js';
 
 /** Категория канала: гостевой AI-агент или уведомления. */
 type ChannelCategory = 'guest' | 'notifications';
 
 interface ChannelCard {
-  id: 'web' | 'app' | 'telegram' | 'whatsapp' | 'avito';
+  id: 'web' | 'app' | 'telegram' | 'max' | 'whatsapp' | 'avito';
   name: string;
   category: ChannelCategory;
   description: string;
@@ -38,6 +44,7 @@ interface ChannelCard {
 export class ChannelsAdminController {
   constructor(
     private readonly telegram: TelegramConfigService,
+    private readonly max: MaxConfigService,
     private readonly audit: AuditService,
   ) {}
 
@@ -45,7 +52,10 @@ export class ChannelsAdminController {
   @RequirePermission('ai_agent')
   @ApiOperation({ summary: 'Список каналов коммуникации и их статус' })
   async list(): Promise<ChannelCard[]> {
-    const tg = await this.telegram.getPublicConfig();
+    const [tg, mx] = await Promise.all([
+      this.telegram.getPublicConfig(),
+      this.max.getPublicConfig(),
+    ]);
     return [
       {
         id: 'web',
@@ -89,6 +99,23 @@ export class ChannelsAdminController {
           '5. Сохраните и нажмите «Проверить подключение».\n' +
           '6. Зарегистрируйте вебхук у Telegram (один раз), подставив свой публичный адрес API:\n' +
           '   https://api.telegram.org/bot<ТОКЕН>/setWebhook?url=<ПУБЛИЧНЫЙ_URL>/api/ai/telegram/webhook&secret_token=<СЕКРЕТ>',
+      },
+      {
+        id: 'max',
+        name: 'MAX (бот)',
+        category: 'guest',
+        description:
+          'Гость пишет боту в мессенджере MAX, AI-агент отвечает и при необходимости эскалирует оператору. Нужен токен бота от @MasterBot. MAX — российская площадка, работает с сервера напрямую.',
+        available: true,
+        connected: mx.connected,
+        needsSetup: true,
+        setup:
+          'Как подключить:\n' +
+          '1. В MAX откройте @MasterBot → создайте бота, задайте имя и username.\n' +
+          '2. Скопируйте выданный токен и вставьте в поле «Токен бота».\n' +
+          '3. Укажите username бота (без @) — по нему собирается ссылка max.ru/<bot> для гостей.\n' +
+          '4. Сохраните и нажмите «Проверить подключение» (метод /me).\n' +
+          '5. Приём входящих по умолчанию — long polling (сервер сам опрашивает MAX), отдельная регистрация вебхука не требуется.',
       },
       {
         id: 'whatsapp',
@@ -144,5 +171,38 @@ export class ChannelsAdminController {
   @ApiOperation({ summary: 'Проверить подключение Telegram-бота (getMe)' })
   testTelegram(@Body() dto: TestTelegramConfigDto) {
     return this.telegram.testConnection(dto.botToken);
+  }
+
+  @Get('max')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Текущая конфигурация MAX-бота (без секретов)' })
+  maxConfig() {
+    return this.max.getPublicConfig();
+  }
+
+  @Put('max')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Сохранить реквизиты MAX-бота' })
+  async saveMax(@Body() dto: SaveMaxConfigDto, @CurrentAdminId() adminId: string) {
+    await this.max.save(dto);
+    await this.audit.record({
+      actorId: adminId,
+      action: 'updated',
+      entity: 'AiChannel',
+      entityId: 'max',
+      payload: {
+        botUsernameSet: dto.botUsername !== undefined,
+        tokenChanged: !!dto.botToken,
+        webhookSecretChanged: !!dto.webhookSecret,
+      },
+    });
+    return this.max.getPublicConfig();
+  }
+
+  @Post('max/test')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Проверить подключение MAX-бота (/me)' })
+  testMax(@Body() dto: TestMaxConfigDto) {
+    return this.max.testConnection(dto.botToken);
   }
 }

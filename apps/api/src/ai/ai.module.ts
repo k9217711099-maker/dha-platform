@@ -5,6 +5,7 @@ import { ConversationsModule } from './conversations/conversations.module.js';
 import { ToolsModule } from './tools/tools.module.js';
 import { AgentsModule } from './agents/agents.module.js';
 import { TelegramModule } from '../integrations/telegram/telegram.module.js';
+import { MaxModule } from '../integrations/max/max.module.js';
 import { ChannelsModule } from './channels/channels.module.js';
 import { InboxModule } from './inbox/inbox.module.js';
 import { QaModule } from './qa/qa.module.js';
@@ -23,6 +24,7 @@ import { QaModule } from './qa/qa.module.js';
     ToolsModule,
     AgentsModule,
     TelegramModule,
+    MaxModule,
     ChannelsModule,
     InboxModule,
     QaModule,

@@ -208,6 +208,28 @@ export const envSchema = z.object({
   MESSENGER_PROXY_URL: z.string().optional(),
 
   /**
+   * MAX-мессенджер (бот): токен от @MasterBot. Приём входящих — long polling
+   * (GET /updates, marker) или webhook (POST /subscriptions). MAX — российская
+   * площадка, доступна с РФ-сервера напрямую, прокси не нужен. Токен также можно
+   * ввести в админке (Setting поверх env), канал включается без правки .env.
+   */
+  MAX_API_BASE: z.string().url().default('https://platform-api2.max.ru'),
+  MAX_BOT_TOKEN: z.string().optional(),
+  MAX_MODE: z.enum(['webhook', 'polling']).default('polling'),
+  MAX_WEBHOOK_SECRET: z.string().optional(),
+
+  /**
+   * WhatsApp через Baileys (неофициальное подключение личного/бизнес-номера по QR).
+   * WA_ENABLED=true поднимает сокет в процессе API; сессия (креды) хранится в БД.
+   * Исходящие идут через MESSENGER_PROXY_URL (WhatsApp заблокирован с РФ-сервера).
+   * Пейринг (показ QR) запускается из админки — держите отдельный номер под бота.
+   */
+  WA_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  /**
    * Базы знаний, доступные ГОСТЕВОМУ AI-агенту (ID баз через запятую). У страниц KB
    * пока нет флага видимости, поэтому гостю отдаём только явно разрешённые базы.
    * Пусто → гостевой kb_search выключен (без утечки внутренних страниц). Копилот
