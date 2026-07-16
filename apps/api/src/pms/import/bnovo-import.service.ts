@@ -151,21 +151,31 @@ export class BnovoImportService {
       const dbProp = propDbId.get(rt.propertyId) ?? fallbackPropDbId;
       if (!dbProp) continue;
       importedPropDbIds.add(dbProp);
-      // Обогащение из описания (площадь + удобства) — только при первом создании, чтобы
-      // повторный импорт не затирал ручные правки контента.
+      // Обогащение из описания (площадь + удобства). При повторном импорте заполняем только
+      // ПУСТЫЕ поля — чтобы не затирать ручные правки, но «догрузить» ранее импортированные категории.
       const parsed = this.parseDescription(rt.description, amenityByLabel);
-      const cat = await this.prisma.roomType.upsert({
-        where: { bnovoId: rt.id },
-        update: { name: rt.name, capacity: Math.max(1, rt.capacity), propertyId: dbProp },
-        create: {
-          tenantId, bnovoId: rt.id, propertyId: dbProp, name: rt.name,
-          capacity: Math.max(1, rt.capacity), mainPlaces: Math.max(1, rt.capacity),
-          description: rt.description ?? null,
-          areaSqm: parsed.areaSqm ?? null,
-          amenities: parsed.amenities,
-        },
-      });
-      rtDbId.set(rt.id, cat.id);
+      const existing = await this.prisma.roomType.findUnique({ where: { bnovoId: rt.id }, select: { id: true, areaSqm: true, amenities: true, description: true } });
+      let catId: string;
+      if (!existing) {
+        const cat = await this.prisma.roomType.create({
+          data: {
+            tenantId, bnovoId: rt.id, propertyId: dbProp, name: rt.name,
+            capacity: Math.max(1, rt.capacity), mainPlaces: Math.max(1, rt.capacity),
+            description: rt.description ?? null, areaSqm: parsed.areaSqm ?? null, amenities: parsed.amenities,
+          },
+        });
+        catId = cat.id;
+      } else {
+        const upd: { name: string; capacity: number; propertyId: string; areaSqm?: number; amenities?: string[]; description?: string } = {
+          name: rt.name, capacity: Math.max(1, rt.capacity), propertyId: dbProp,
+        };
+        if (existing.areaSqm == null && parsed.areaSqm != null) upd.areaSqm = parsed.areaSqm;
+        if ((existing.amenities?.length ?? 0) === 0 && parsed.amenities.length) upd.amenities = parsed.amenities;
+        if (!existing.description && rt.description) upd.description = rt.description;
+        const cat = await this.prisma.roomType.update({ where: { id: existing.id }, data: upd });
+        catId = cat.id;
+      }
+      rtDbId.set(rt.id, catId);
     }
 
     // 3) Номера — идемпотентно по bnovoId; объект берём у категории (консистентность).
