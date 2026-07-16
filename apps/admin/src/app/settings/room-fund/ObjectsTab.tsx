@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Input } from '@dha/ui';
 import { adminApi, type PmsProperty, type PmsPropertyInput } from '../../../lib/api';
+import { MapPicker } from '../../../components/MapPicker';
 
 const selectCls = 'w-full rounded-md border border-ink/20 bg-white px-3 py-2 text-sm';
 
@@ -60,6 +61,14 @@ export function ObjectsTab({ onChanged }: { onChanged: () => void }) {
     void adminApi.pmsUpdateProperty(p.id, { active: !p.active }).then(() => { void load(); onChanged(); }).catch((e) => setError(e instanceof Error ? e.message : 'Ошибка'));
   };
 
+  const remove = (p: PmsProperty) => {
+    const rooms = p._count?.rooms ?? 0;
+    const cats = p._count?.roomTypes ?? 0;
+    if (!confirm(`Удалить объект «${p.name}»?${cats || rooms ? ` Вместе с ним удалятся категории (${cats}) и номера (${rooms}).` : ''} Действие необратимо.`)) return;
+    setError('');
+    void adminApi.pmsDeleteProperty(p.id).then(() => { void load(); onChanged(); }).catch((e) => setError(e instanceof Error ? e.message : 'Ошибка'));
+  };
+
   if (editing) {
     return <PropertyForm initial={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load(); onChanged(); }} />;
   }
@@ -80,6 +89,7 @@ export function ObjectsTab({ onChanged }: { onChanged: () => void }) {
               <span className="shrink-0 text-xs text-dark-gray">{p._count?.roomTypes ?? 0} кат. · {p._count?.rooms ?? 0} ном.</span>
               <button type="button" onClick={() => toggleActive(p)} className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${p.active ? 'bg-emerald-100 text-emerald-800' : 'bg-ink/10 text-dark-gray'}`}>{p.active ? 'Активен' : 'Скрыт'}</button>
               <button type="button" onClick={() => setEditing(p)} className="shrink-0 rounded px-2 py-1 text-xs text-primary hover:bg-primary-50">Редактировать</button>
+              <button type="button" onClick={() => remove(p)} className="shrink-0 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50">Удалить</button>
             </div>
           ))}
         </div>
@@ -142,6 +152,16 @@ function PropertyForm({ initial, onClose, onSaved }: { initial: PmsProperty | nu
             </label>
             <Input id="p-city" label="Город" value={f.city} onChange={(e) => set({ city: e.target.value })} />
             <Input id="p-addr" label="Адрес" className="sm:col-span-2" value={f.address} onChange={(e) => set({ address: e.target.value })} />
+          </div>
+          <div className="mt-3">
+            <p className="mb-1 text-xs text-dark-gray">Точка на карте — введите адрес и выберите из подсказок или кликните по карте; координаты и адрес заполнятся автоматически.</p>
+            <MapPicker
+              lat={f.latitude ? Number(f.latitude) : null}
+              lng={f.longitude ? Number(f.longitude) : null}
+              address={f.address}
+              onChange={(lat, lng) => set({ latitude: String(lat), longitude: String(lng) })}
+              onAddressChange={(address) => set({ address })}
+            />
           </div>
           <label className="mt-3 flex items-center gap-2 text-sm text-ink"><input type="checkbox" checked={f.active} onChange={(e) => set({ active: e.target.checked })} /> Активен (виден при выборе объекта)</label>
         </Section>

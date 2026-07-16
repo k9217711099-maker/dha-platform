@@ -67,6 +67,7 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
   private stopped = false;
   private connecting = false;
   private enabledCached = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private handler: ((from: string, text: string) => Promise<void>) | null = null;
 
   constructor(
@@ -100,6 +101,7 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
 
   onModuleDestroy(): void {
     this.stopped = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     try {
       this.sock?.end(undefined);
     } catch {
@@ -129,6 +131,7 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
     this.enabledCached = on;
     if (!on) {
       this.stopped = true;
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
       try {
         this.sock?.end(undefined);
       } catch {
@@ -151,14 +154,27 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
   async start(): Promise<WaState> {
     if (!this.enabledCached) return this.getState();
     if (this.state === 'connected' || this.connecting) return this.getState();
+    // QR уже показан и сокет жив — не плодим второй сокет (двойной вход = конфликт,
+    // WhatsApp сбрасывает сессию). QR обновляется сам через connection.update.
+    if (this.state === 'qr' && this.sock) return this.getState();
     this.stopped = false;
     await this.connect();
     return this.getState();
   }
 
+  /** Переподключение с очисткой предыдущего таймера (без наложения). */
+  private scheduleReconnect(delayMs: number): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.connect();
+    }, delayMs);
+  }
+
   /** Отвязать номер и удалить сессию. */
   async logout(): Promise<WaState> {
     this.stopped = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     try {
       await this.sock?.logout();
     } catch {
@@ -189,6 +205,13 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
     if (this.connecting) return;
     this.connecting = true;
     this.state = 'connecting';
+    // Гасим предыдущий сокет, если остался — иначе два соединения дают конфликт.
+    try {
+      this.sock?.end(undefined);
+    } catch {
+      /* noop */
+    }
+    this.sock = null;
     try {
       const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
       const agent = wsProxyAgent(this.config.get('MESSENGER_PROXY_URL', { infer: true }));
@@ -228,6 +251,9 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
     if (u.connection === 'close') {
       const code = (u.lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
       const loggedOut = code === DisconnectReason.loggedOut;
+      // 515 restartRequired — штатный разрыв сразу после сканирования QR: нужно
+      // быстро переподключиться на сохранённой сессии (это НЕ ошибка пейринга).
+      const restartRequired = code === DisconnectReason.restartRequired;
       this.sock = null;
       if (loggedOut) {
         this.clearSession();
@@ -238,7 +264,7 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
       }
       if (!this.stopped) {
         this.state = 'connecting';
-        setTimeout(() => void this.connect(), 3_000); // авто-переподключение
+        this.scheduleReconnect(restartRequired ? 500 : 3_000); // после пейринга — почти сразу
       } else {
         this.state = 'disconnected';
       }

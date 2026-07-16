@@ -86,7 +86,13 @@ function PlansTab({ options, plans, onChanged, onError }: { options: PmsRoomOpti
   const propName = (id: string | null) => (id ? options.find((o) => o.id === id)?.name ?? '' : 'Вся сеть');
   const allRoomTypes = useMemo<NamedId[]>(() => options.flatMap((o) => o.roomTypes.map((rt) => ({ id: rt.id, name: `${o.name} · ${rt.name}` }))), [options]);
   // Сетевой тариф (propertyId=null) → все категории сети; иначе — категории объекта.
-  const roomTypesOf = (propertyId: string | null) => (propertyId ? options.find((o) => o.id === propertyId)?.roomTypes ?? [] : allRoomTypes);
+  // Если propertyId «осиротел» (объект пересоздан импортом и id больше не совпадает),
+  // не оставляем список категорий пустым — показываем все категории сети.
+  const roomTypesOf = (propertyId: string | null) => {
+    if (!propertyId) return allRoomTypes;
+    const own = options.find((o) => o.id === propertyId)?.roomTypes;
+    return own && own.length ? own : allRoomTypes;
+  };
 
   const toggle = (p: PmsRatePlan, patch: Partial<Pick<PmsRatePlan, 'availableFrontDesk' | 'availableBookingModule' | 'availableOta' | 'active'>>) => {
     onError('');

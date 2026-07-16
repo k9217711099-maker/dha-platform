@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, PropertyKind, PropertyType, District } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { AuditService } from '../../warehouse/audit/audit.service.js';
@@ -122,5 +122,23 @@ export class PropertyService {
     const property = await this.prisma.property.update({ where: { id }, data });
     await this.audit.record({ tenantId, actorId, action: 'updated', entity: 'Property', entityId: id, payload: { name: property.name } });
     return property;
+  }
+
+  /**
+   * Удалить объект. Запрещено, если есть бронирования (иначе каскад удалил бы и их).
+   * Категории, номера и замки объекта удаляются каскадом (onDelete: Cascade).
+   */
+  async remove(tenantId: string, id: string, actorId?: string) {
+    const existing = await this.prisma.property.findFirst({ where: { id, tenantId } });
+    if (!existing) throw new NotFoundException('Объект не найден');
+    const bookings = await this.prisma.booking.count({ where: { propertyId: id } });
+    if (bookings > 0) {
+      throw new BadRequestException(
+        `У объекта есть бронирования (${bookings}). Удаление запрещено — скройте объект (снимите «Активен») вместо удаления.`,
+      );
+    }
+    await this.prisma.property.delete({ where: { id } });
+    await this.audit.record({ tenantId, actorId, action: 'deleted', entity: 'Property', entityId: id, payload: { name: existing.name } });
+    return { ok: true };
   }
 }

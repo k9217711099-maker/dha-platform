@@ -2048,6 +2048,7 @@ export const adminApi = {
   pmsProperty: (id: string) => request<PmsProperty>(`/v1/properties/${id}`),
   pmsCreateProperty: (body: PmsPropertyInput) => request<PmsProperty>('/v1/properties', { method: 'POST', body }),
   pmsUpdateProperty: (id: string, body: PmsPropertyInput) => request<PmsProperty>(`/v1/properties/${id}`, { method: 'PATCH', body }),
+  pmsDeleteProperty: (id: string) => request<{ ok: true }>(`/v1/properties/${id}`, { method: 'DELETE' }),
   // PMS · Теги броней (цветные маркеры шахматки)
   pmsTagPalette: () => request<Record<string, string>>('/v1/tags/palette'),
   pmsTags: () => request<BookingTag[]>('/v1/tags'),

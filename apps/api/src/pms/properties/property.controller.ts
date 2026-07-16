@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AdminAuthGuard } from '../../admin/admin-auth.guard.js';
 import { CurrentAdminId } from '../../admin/current-admin.decorator.js';
@@ -39,5 +39,11 @@ export class PropertyController {
   @RequirePermission('pms_properties')
   async update(@Param('id') id: string, @Body() dto: PropertyInput, @CurrentAdminId() actorId?: string) {
     return this.properties.update(await this.tenant.getDefaultTenantId(), id, dto, actorId);
+  }
+
+  @Delete(':id')
+  @RequirePermission('pms_properties')
+  async remove(@Param('id') id: string, @CurrentAdminId() actorId?: string) {
+    return this.properties.remove(await this.tenant.getDefaultTenantId(), id, actorId);
   }
 }

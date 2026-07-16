@@ -1,7 +1,18 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { LockCoverage, LockTarget, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { TtlockPort } from '../integrations/ttlock/ttlock.port.js';
+
+/** Prisma-ошибки БД → понятные сообщения (иначе клиент видит «Внутренняя ошибка сервера»). */
+function asLockError(e: unknown): never {
+  if (e instanceof Prisma.PrismaClientKnownRequestError) {
+    if (e.code === 'P2002') throw new ConflictException('Этот замок TTLock уже добавлен — он привязан к другой двери.');
+    if (e.code === 'P2003' || e.code === 'P2025') {
+      throw new BadRequestException('Указан несуществующий объект или номер — обновите список и повторите.');
+    }
+  }
+  throw e;
+}
 
 /** Управление замками и их покрытием (админка, §17). */
 @Injectable()
@@ -28,7 +39,7 @@ export class LocksService {
     });
   }
 
-  createLock(data: {
+  async createLock(data: {
     propertyId: string;
     ttlockLockId: string;
     name: string;
@@ -40,21 +51,25 @@ export class LocksService {
   }) {
     const coverage =
       data.coverage ?? (data.target === LockTarget.ROOM ? LockCoverage.ROOM : LockCoverage.PROPERTY);
-    return this.prisma.lock.create({
-      data: {
-        propertyId: data.propertyId,
-        ttlockLockId: data.ttlockLockId,
-        name: data.name,
-        target: data.target,
-        coverage,
-        coverageFloor: coverage === LockCoverage.FLOOR ? (data.coverageFloor ?? null) : null,
-        hasGateway: data.hasGateway ?? false,
-        roomLinks:
-          usesRoomList(coverage) && data.roomIds?.length
-            ? { create: data.roomIds.map((roomId) => ({ roomId })) }
-            : undefined,
-      },
-    });
+    try {
+      return await this.prisma.lock.create({
+        data: {
+          propertyId: data.propertyId,
+          ttlockLockId: data.ttlockLockId,
+          name: data.name,
+          target: data.target,
+          coverage,
+          coverageFloor: coverage === LockCoverage.FLOOR ? (data.coverageFloor ?? null) : null,
+          hasGateway: data.hasGateway ?? false,
+          roomLinks:
+            usesRoomList(coverage) && data.roomIds?.length
+              ? { create: data.roomIds.map((roomId) => ({ roomId })) }
+              : undefined,
+        },
+      });
+    } catch (e) {
+      return asLockError(e);
+    }
   }
 
   /** Изменить зону покрытия замка (весь объект / этаж / список номеров). */
@@ -88,11 +103,15 @@ export class LocksService {
 
   /** Привязать замок к одному номеру (не трогая остальные привязки). */
   async linkRoom(lockId: string, roomId: string) {
-    await this.prisma.roomLock.upsert({
-      where: { roomId_lockId: { roomId, lockId } },
-      create: { roomId, lockId },
-      update: {},
-    });
+    try {
+      await this.prisma.roomLock.upsert({
+        where: { roomId_lockId: { roomId, lockId } },
+        create: { roomId, lockId },
+        update: {},
+      });
+    } catch (e) {
+      return asLockError(e);
+    }
     return { ok: true };
   }
 
@@ -106,10 +125,14 @@ export class LocksService {
   private async replaceRoomLinks(tx: Prisma.TransactionClient, lockId: string, roomIds: string[]) {
     await tx.roomLock.deleteMany({ where: { lockId } });
     if (roomIds.length) {
-      await tx.roomLock.createMany({
-        data: roomIds.map((roomId) => ({ roomId, lockId })),
-        skipDuplicates: true,
-      });
+      try {
+        await tx.roomLock.createMany({
+          data: roomIds.map((roomId) => ({ roomId, lockId })),
+          skipDuplicates: true,
+        });
+      } catch (e) {
+        asLockError(e);
+      }
     }
   }
 }
