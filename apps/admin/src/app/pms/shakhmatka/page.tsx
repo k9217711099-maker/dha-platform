@@ -94,6 +94,8 @@ export default function ShakhmatkaPage() {
   const [bookings, setBookings] = useState<PmsBooking[]>([]);
   const [blocks, setBlocks] = useState<PmsRoomBlock[]>([]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Свёрнутые категории (§4). По умолчанию свёрнута категория с 1 номером (брони показываются на ней).
+  const [catCollapsed, setCatCollapsed] = useState<Record<string, boolean>>({});
   const [modal, setModal] = useState<BookingPrefill | null>(null);
   const [previewRtId, setPreviewRtId] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -189,17 +191,22 @@ export default function ShakhmatkaPage() {
     return free;
   }, [rooms, bookings, blocks, dates]);
 
+  // Категория свёрнута? По умолчанию: 1 номер → свёрнута, 2+ → развёрнута (§4).
+  const catIsCollapsed = useCallback((cat: TreeNode['cats'][number]) => catCollapsed[cat.roomTypeId] ?? (cat.rooms.length === 1), [catCollapsed]);
+
   const flatRows = useMemo<FlatRow[]>(() => {
     const rowsArr: FlatRow[] = [];
     for (const node of tree) {
       rowsArr.push({ kind: 'property', node });
       if (!collapsed[node.propertyId]) for (const cat of node.cats) {
         rowsArr.push({ kind: 'category', cat });
-        for (const room of cat.rooms) rowsArr.push({ kind: 'room', room });
+        // Свёрнутая категория не раскрывает свои номера (брони номера показываются на самой категории, если он один).
+        const catOpen = !(catCollapsed[cat.roomTypeId] ?? (cat.rooms.length === 1));
+        if (catOpen) for (const room of cat.rooms) rowsArr.push({ kind: 'room', room });
       }
     }
     return rowsArr;
-  }, [tree, collapsed]);
+  }, [tree, collapsed, catCollapsed]);
 
   // Брони и блоки по номерам.
   const barsByRoom = useMemo(() => {
@@ -369,10 +376,11 @@ export default function ShakhmatkaPage() {
       {moveError ? <p className="mb-3 flex items-center gap-3 text-sm text-red-600">{moveError}<button type="button" onClick={() => setMoveError('')} className="text-xs underline">скрыть</button></p> : null}
 
       <Card className="overflow-hidden p-0">
+        <div className="max-h-[calc(100vh-250px)] overflow-auto">
         <div className="flex">
-          {/* Левая колонка — объект/категория/номер */}
-          <div className="shrink-0 border-r border-ink/10" style={{ width: LEFTW }}>
-            <div className="flex items-end border-b border-ink/10 px-3 pb-1.5 text-xs font-medium text-dark-gray" style={{ height: HEADH }}>Объект / категория / номер</div>
+          {/* Левая колонка — объект/категория/номер (залипает по горизонтали) */}
+          <div className="sticky left-0 z-30 shrink-0 border-r border-ink/10 bg-white" style={{ width: LEFTW }}>
+            <div className="sticky top-0 z-40 flex items-end border-b border-ink/10 bg-white px-3 pb-1.5 text-xs font-medium text-dark-gray" style={{ height: HEADH }}>Объект / категория / номер</div>
             {flatRows.length === 0 ? <div className="px-3 py-4 text-sm text-dark-gray">Номеров нет.</div> : null}
             {flatRows.map((row, i) => {
               if (row.kind === 'property') {
@@ -386,10 +394,14 @@ export default function ShakhmatkaPage() {
               }
               if (row.kind === 'category') {
                 const un = unassignedByCat.get(row.cat.roomTypeId)?.length ?? 0;
-                return <div key={`c${row.cat.roomTypeId}${i}`} className="flex items-center gap-1.5 bg-white px-3 pl-6 text-xs uppercase tracking-wide text-dark-gray" style={{ height: ROWH }}>
-                  <span className="truncate">{row.cat.name}</span><span className="text-ink/30">· {row.cat.rooms.length}</span>
-                  {un > 0 ? <span className="rounded-full bg-amber-100 px-1.5 text-[10px] normal-case text-amber-700" title="Брони без назначенного номера — на строке категории">не распр.: {un}</span> : null}
-                  <button type="button" onClick={() => setPreviewRtId(row.cat.roomTypeId)} title="Просмотр категории" className="text-ink/40 hover:text-ink">👁</button>
+                const cOpen = !catIsCollapsed(row.cat);
+                return <div key={`c${row.cat.roomTypeId}${i}`} className="flex items-center gap-1 bg-white px-3 pl-4 text-xs uppercase tracking-wide text-dark-gray" style={{ height: ROWH }}>
+                  <button type="button" onClick={() => setCatCollapsed((s) => ({ ...s, [row.cat.roomTypeId]: cOpen }))} title={cOpen ? 'Свернуть категорию' : 'Развернуть категорию'} className="shrink-0 text-ink/40 hover:text-ink">
+                    <span className={`inline-block transition ${cOpen ? '' : '-rotate-90'}`}>▾</span>
+                  </button>
+                  <span className="truncate">{row.cat.name}</span><span className="shrink-0 text-ink/30">· {row.cat.rooms.length}</span>
+                  {un > 0 ? <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] normal-case text-amber-700" title="Брони без назначенного номера — на строке категории">не распр.: {un}</span> : null}
+                  <button type="button" onClick={() => setPreviewRtId(row.cat.roomTypeId)} title="Просмотр категории" className="shrink-0 text-ink/40 hover:text-ink">👁</button>
                 </div>;
               }
               {
@@ -426,10 +438,10 @@ export default function ShakhmatkaPage() {
           </div>
 
           {/* Правая колонка — таймлайн */}
-          <div className="flex-1 overflow-x-auto">
+          <div className="shrink-0" style={{ width: boardW }}>
             <div className="relative" style={{ width: boardW }}>
-              {/* заголовок дат */}
-              <div className="flex border-b border-ink/10" style={{ height: HEADH }}>
+              {/* заголовок дат — залипает по вертикали при скролле (§3) */}
+              <div className="sticky top-0 z-30 flex border-b border-ink/10 bg-white" style={{ height: HEADH }}>
                 {dates.map((d, i) => (
                   <div key={d} className={`flex flex-col items-center justify-end pb-1 text-[11px] ${i === todayIdx ? 'bg-red-50 text-red-600' : isWeekend(d) ? 'bg-amber-50 text-amber-700' : 'text-dark-gray'}`} style={{ width: COLW }}>
                     <span>{d.slice(8)}</span><span className="text-ink/40">{wdOf(d)}</span>
@@ -437,7 +449,7 @@ export default function ShakhmatkaPage() {
                 ))}
               </div>
               {/* линия «сейчас» */}
-              {lineLeft != null ? <div className="pointer-events-none absolute bottom-0 z-30 w-0.5 bg-red-500/80" style={{ left: lineLeft, top: HEADH }}><span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded bg-red-500 px-1 text-[8px] leading-tight text-white">сейчас</span></div> : null}
+              {lineLeft != null ? <div className="pointer-events-none absolute bottom-0 z-20 w-0.5 bg-red-500/80" style={{ left: lineLeft, top: HEADH }}><span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded bg-red-500 px-1 text-[8px] leading-tight text-white">сейчас</span></div> : null}
 
               {/* строки */}
               {flatRows.map((row, i) => {
@@ -451,11 +463,17 @@ export default function ShakhmatkaPage() {
                   // числа свободных номеров по датам (§3), приём переноса в категорию (§1).
                   const list = unassignedByCat.get(row.cat.roomTypeId) ?? [];
                   const free = freeByCat.get(row.cat.roomTypeId);
-                  const isCatTarget = move != null && move.moved && move.overCatId === row.cat.roomTypeId;
-                  const ghost = isCatTarget ? ghostGeom() : null;
+                  const catOpen = !catIsCollapsed(row.cat);
+                  // 1 номер в свёрнутой категории → его брони показываем на категории; 2+ свёрнуты → без броней (§4).
+                  const solo = !catOpen && row.cat.rooms.length === 1 ? row.cat.rooms[0]! : null;
+                  const soloItems = solo ? (barsByRoom.get(solo.id) ?? []) : [];
+                  const hideBars = !catOpen && row.cat.rooms.length > 1;
+                  const isCatTarget = move != null && move.moved && !solo && move.overCatId === row.cat.roomTypeId;
+                  const soloTarget = solo != null && move != null && move.moved && move.overRoomId === solo.id;
+                  const ghost = isCatTarget || soloTarget ? ghostGeom() : null;
                   return (
-                    <div key={`c${row.cat.roomTypeId}${i}`} className={`relative flex ${isCatTarget ? 'bg-primary-50' : 'bg-white'}`} style={{ height: ROWH }}
-                      onMouseEnter={() => { if (move) setOverCat(row.cat.roomTypeId); }}>
+                    <div key={`c${row.cat.roomTypeId}${i}`} className={`relative flex ${isCatTarget || soloTarget ? 'bg-primary-50' : 'bg-white'}`} style={{ height: ROWH }}
+                      onMouseEnter={() => { if (move) { if (solo) setOverRoom(solo.id); else setOverCat(row.cat.roomTypeId); } }}>
                       {dates.map((d, di) => {
                         const f = free?.[di];
                         // Число свободных номеров — в НИЖНЕЙ полосе ячейки, чтобы бронь-плашка сверху его не перекрывала (§2).
@@ -466,7 +484,37 @@ export default function ShakhmatkaPage() {
                         );
                       })}
                       {ghost ? <div className="pointer-events-none absolute top-0.5 z-[6] h-4 rounded-md border-2 border-dashed border-primary bg-primary/10" style={{ left: ghost.left + 1, width: ghost.width - 2 }} /> : null}
-                      {list.map((b) => {
+                      {/* Свёрнутая категория с 1 номером — брони/блоки номера прямо на категории (§4) */}
+                      {solo ? soloItems.map((it, k) => {
+                        if (it.block) {
+                          const g = barGeom(it.block.from.slice(0, 10), it.block.to.slice(0, 10), 0, 0);
+                          if (!g) return null;
+                          return <div key={`sbl${k}`} title={`Блок: ${it.block.type}`} className="absolute top-1 bottom-1 z-10 flex items-center overflow-hidden rounded-md border border-ink/30 bg-ink/20 px-2 text-[11px] text-ink/70" style={{ left: g.left + 1, width: g.width - 2 }}>Недоступ.</div>;
+                        }
+                        const b = it.b!;
+                        const isMoving = move?.booking.id === b.id;
+                        const g = barGeom(b.checkIn.slice(0, 10), b.checkOut.slice(0, 10), timeFrac(b.arrivalTime, 0.5), timeFrac(b.departureTime, 0.5), 0);
+                        if (!g) return null;
+                        const sm = statusMeta(b.status);
+                        const bal = balanceBadge(b, todayIso());
+                        const canMove = !['CHECKED_OUT', 'CANCELLED'].includes(b.status) && !b.roomLocked;
+                        return (
+                          <div key={b.id}
+                            onMouseDown={(e) => { if (canMove) startMove(e, b, solo.id); }}
+                            onClick={(e) => { e.stopPropagation(); if (!canMove) { setFullBooking(b); setHover(null); } }}
+                            onMouseEnter={(e) => { if (!move) setHover({ booking: b, x: e.clientX, y: e.clientY }); }}
+                            onMouseMove={(e) => setHover((h) => (h && h.booking.id === b.id ? { ...h, x: e.clientX, y: e.clientY } : h))}
+                            onMouseLeave={() => setHover(null)}
+                            title={`№${solo.number}${b.roomLocked ? ' · номер зафиксирован' : ''}`}
+                            className={`absolute top-1 bottom-1 z-10 flex items-center overflow-hidden rounded-md border-l-4 ${sm.border} ${sm.bg} pl-2 pr-1 shadow-sm ring-1 ring-ink/10 hover:ring-ink/30 ${canMove ? 'cursor-grab' : 'cursor-pointer'} ${isMoving ? 'pointer-events-none opacity-50 ring-2 ring-primary' : ''}`}
+                            style={{ left: g.left + 1, width: g.width - 2 }}>
+                            <span className="truncate text-[11px] font-medium text-ink">{gName(b)}</span>
+                            {b.tags?.length ? <span className="ml-1 flex shrink-0 items-center gap-0.5">{b.tags.slice(0, 4).map((t) => <span key={t.id} title={t.name} className="h-2 w-2 rounded-full ring-1 ring-white/70" style={{ backgroundColor: tagHex(t.color) }} />)}</span> : null}
+                            {bal ? <span className={`ml-auto shrink-0 rounded px-1 text-[9px] font-semibold ${bal.kind === 'green' ? 'bg-emerald-500 text-white' : 'bg-red-500 text-white'}`}>{Math.round(bal.amount / 1000)}к</span> : null}
+                          </div>
+                        );
+                      }) : null}
+                      {!hideBars ? list.map((b) => {
                         const isMoving = move?.booking.id === b.id;
                         // Исходная бронь остаётся на месте (без сдвига по dayDelta) — цель показывает пунктир (§1).
                         const g = barGeom(b.checkIn.slice(0, 10), b.checkOut.slice(0, 10), timeFrac(b.arrivalTime, 0.5), timeFrac(b.departureTime, 0.5), 0);
@@ -485,7 +533,7 @@ export default function ShakhmatkaPage() {
                             {b.tags?.length ? <span className="ml-1 flex shrink-0 items-center gap-0.5">{b.tags.slice(0, 3).map((t) => <span key={t.id} title={t.name} className="h-1.5 w-1.5 rounded-full ring-1 ring-white/70" style={{ backgroundColor: tagHex(t.color) }} />)}</span> : null}
                           </div>
                         );
-                      })}
+                      }) : null}
                     </div>
                   );
                 }
@@ -573,6 +621,7 @@ export default function ShakhmatkaPage() {
               })}
             </div>
           </div>
+        </div>
         </div>
       </Card>
 

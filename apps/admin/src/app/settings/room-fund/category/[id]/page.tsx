@@ -127,8 +127,10 @@ export default function CategoryEditorPage() {
   function save() {
     if (!form.name.trim()) { setError('Укажите название'); return; }
     if (isNew && !form.propertyId) { setError('Выберите объект'); return; }
+    if (!form.propertyId) { setError('Выберите объект'); return; }
     setError(''); setSaving(true);
     const body = {
+      propertyId: form.propertyId,
       name: form.name.trim(), shortName: form.shortName || undefined, typeLabel: form.typeLabel || undefined,
       roomsInUnit: num(form.roomsInUnit), mainPlaces: num(form.mainPlaces), extraPlaces: num(form.extraPlaces) ?? 0,
       securityDeposit: num(form.securityDeposit),
@@ -140,7 +142,7 @@ export default function CategoryEditorPage() {
       showInBooking: form.showInBooking, showInOta: form.showInOta,
     };
     const p = isNew
-      ? adminApi.createRoomFundCategory({ propertyId: form.propertyId, ...body })
+      ? adminApi.createRoomFundCategory(body)
       : adminApi.updateRoomFundCategory(params.id, body);
     p.then(() => router.push('/settings/room-fund')).catch((e) => { setError(e instanceof Error ? e.message : 'Ошибка сохранения'); setSaving(false); });
   }
@@ -159,14 +161,12 @@ export default function CategoryEditorPage() {
       <div className="max-w-3xl">
         <Section title="Основное">
           <div className="grid gap-3 sm:grid-cols-2">
-            {isNew && (
-              <label className="block sm:col-span-2"><span className="mb-1.5 block text-sm text-dark-gray">Объект</span>
-                <select value={form.propertyId} onChange={(e) => set({ propertyId: e.target.value })} className={selectCls}>
-                  <option value="">— выберите —</option>
-                  {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                </select>
-              </label>
-            )}
+            <label className="block sm:col-span-2"><span className="mb-1.5 block text-sm text-dark-gray">Объект{!isNew ? <span className="ml-1 text-xs text-dark-gray">— смена перенесёт номера и брони категории на выбранный объект</span> : null}</span>
+              <select value={form.propertyId} onChange={(e) => set({ propertyId: e.target.value })} className={selectCls}>
+                <option value="">— выберите —</option>
+                {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </label>
             <Input id="name" label="Название" value={form.name} onChange={(e) => set({ name: e.target.value })} />
             <Input id="short" label="Сокращённое название" value={form.shortName} onChange={(e) => set({ shortName: e.target.value })} />
             <label className="block"><span className="mb-1.5 block text-sm text-dark-gray">Тип</span>

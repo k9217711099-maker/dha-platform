@@ -41,6 +41,7 @@ export class CreateRoomTypeDto {
 
 /** Обновление категории (все поля опциональны; объект не меняем). */
 export class UpdateRoomTypeDto {
+  @ApiPropertyOptional({ description: 'Сменить объект категории (переносит её номера и брони на новый объект)' }) @IsOptional() @IsString() propertyId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() name?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() shortName?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() typeLabel?: string;

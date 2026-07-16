@@ -89,9 +89,38 @@ export class BnovoImportService {
     return rows.map((r) => ({ id: r.id, name: r.name, property: r.property.name, rooms: r._count.rooms, bookings: r._count.bookings, fromBnovo: !!r.bnovoId }));
   }
 
+  /** Нормализация текста для сопоставления удобств (без регистра/знаков). */
+  private norm(s: string): string {
+    return s.toLowerCase().replace(/[^a-zа-яё0-9 ]/gi, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * Bnovo не отдаёт фото/структурные удобства, но в `description` есть площадь и список
+   * удобств текстом. Парсим площадь (Площадь N м²) и сопоставляем пункты «•» с нашим
+   * справочником удобств (по совпадению названий) — best-effort обогащение категории.
+   */
+  private parseDescription(desc: string | undefined, amenityByLabel: Map<string, string>): { areaSqm?: number; amenities: string[] } {
+    if (!desc) return { amenities: [] };
+    const area = desc.match(/Площад[ьи]\s+([\d.,]+)\s*м/i);
+    const areaSqm = area?.[1] ? Number(area[1].replace(',', '.')) : undefined;
+    const codes = new Set<string>();
+    for (const raw of desc.split(/[•\n]/)) {
+      const n = this.norm(raw);
+      if (n.length < 3) continue;
+      for (const [label, code] of amenityByLabel) {
+        if (label.length < 3) continue;
+        if (n === label || (label.length >= 4 && n.includes(label)) || (n.length >= 4 && label.includes(n))) { codes.add(code); break; }
+      }
+    }
+    return { areaSqm: Number.isFinite(areaSqm) ? areaSqm : undefined, amenities: [...codes] };
+  }
+
   async apply(tenantId: string, mode: DeleteExistingMode, actorId?: string): Promise<BnovoImportResult> {
     const { properties, roomTypes, rooms } = await this.fetchBnovo();
     const baseName = properties[0]?.name ?? 'D H&A (Bnovo)';
+    // Справочник удобств для сопоставления с текстом Bnovo (нормализованное название → код).
+    const amenities = await this.prisma.amenity.findMany({ where: { active: true }, select: { code: true, label: true } });
+    const amenityByLabel = new Map(amenities.map((a) => [this.norm(a.label), a.code] as const));
     const propMeta = new Map(properties.map((p) => [p.id, p]));
 
     // Только родительские категории; дети (варианты по числу гостей) → карта childId→parentId для номеров.
@@ -122,10 +151,19 @@ export class BnovoImportService {
       const dbProp = propDbId.get(rt.propertyId) ?? fallbackPropDbId;
       if (!dbProp) continue;
       importedPropDbIds.add(dbProp);
+      // Обогащение из описания (площадь + удобства) — только при первом создании, чтобы
+      // повторный импорт не затирал ручные правки контента.
+      const parsed = this.parseDescription(rt.description, amenityByLabel);
       const cat = await this.prisma.roomType.upsert({
         where: { bnovoId: rt.id },
         update: { name: rt.name, capacity: Math.max(1, rt.capacity), propertyId: dbProp },
-        create: { tenantId, bnovoId: rt.id, propertyId: dbProp, name: rt.name, capacity: Math.max(1, rt.capacity), mainPlaces: Math.max(1, rt.capacity), description: rt.description ?? null },
+        create: {
+          tenantId, bnovoId: rt.id, propertyId: dbProp, name: rt.name,
+          capacity: Math.max(1, rt.capacity), mainPlaces: Math.max(1, rt.capacity),
+          description: rt.description ?? null,
+          areaSqm: parsed.areaSqm ?? null,
+          amenities: parsed.amenities,
+        },
       });
       rtDbId.set(rt.id, cat.id);
     }

@@ -64,6 +64,21 @@ export class RoomTypeService {
       const extraPlaces = dto.extraPlaces ?? current.extraPlaces;
       data.capacity = Math.max(1, mainPlaces + extraPlaces);
     }
+    // Смена объекта категории: переносим саму категорию + её номера и брони на новый объект
+    // (чтобы propertyId везде оставался согласованным).
+    const moveProperty = dto.propertyId !== undefined && dto.propertyId !== current.propertyId;
+    if (moveProperty) {
+      const prop = await this.prisma.property.findFirst({ where: { id: dto.propertyId, tenantId }, select: { id: true } });
+      if (!prop) throw new NotFoundException('Объект не найден');
+      data.propertyId = dto.propertyId;
+      await this.prisma.$transaction([
+        this.prisma.roomType.update({ where: { id }, data }),
+        this.prisma.room.updateMany({ where: { roomTypeId: id }, data: { propertyId: dto.propertyId } }),
+        this.prisma.booking.updateMany({ where: { roomTypeId: id }, data: { propertyId: dto.propertyId } }),
+      ]);
+      await this.audit.record({ tenantId, actorId, action: 'updated', entity: 'RoomType', entityId: id, payload: { ...dto, movedProperty: true } });
+      return this.get(tenantId, id);
+    }
     const rt = await this.prisma.roomType.update({ where: { id }, data });
     await this.audit.record({ tenantId, actorId, action: 'updated', entity: 'RoomType', entityId: id, payload: { ...dto } });
     return rt;
