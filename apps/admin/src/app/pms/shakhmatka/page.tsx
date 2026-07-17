@@ -62,6 +62,13 @@ const MopIcon = ({ className = 'h-2.5 w-2.5' }: { className?: string }) => (
   </svg>
 );
 
+/** Иконка «просмотр категории» — лупа (вместо глазика). */
+const PreviewIcon = ({ className = 'h-3.5 w-3.5' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+  </svg>
+);
+
 /** Маркеры плана уборок в режиме «Уборка» (§7-A): выезд-под-заезд (приоритет) / выезд / заезд / проживание. */
 type CleanKind = 'b2b' | 'out' | 'in' | 'stay';
 const CLEAN_MARK: Record<CleanKind, { label: string; color: string; icon: string }> = {
@@ -385,8 +392,8 @@ export default function ShakhmatkaPage() {
             {flatRows.map((row, i) => {
               if (row.kind === 'property') {
                 const isC = collapsed[row.node.propertyId] ?? false;
-                return <div key={`p${row.node.propertyId}`} className="flex items-center bg-ink/[0.04] px-3" style={{ height: ROWH }}>
-                  <button type="button" onClick={() => setCollapsed((s) => ({ ...s, [row.node.propertyId]: !isC }))} className="flex items-center gap-1.5 text-left text-sm font-medium text-ink">
+                return <div key={`p${row.node.propertyId}`} className="flex items-center border-b border-ink/15 bg-ink/[0.07] px-3" style={{ height: ROWH }}>
+                  <button type="button" onClick={() => setCollapsed((s) => ({ ...s, [row.node.propertyId]: !isC }))} className="flex w-full items-center gap-1.5 text-left text-sm font-semibold text-ink">
                     <span className={`text-ink/40 transition ${isC ? '-rotate-90' : ''}`}>▾</span>{row.node.name}
                     <span className="text-xs font-normal text-dark-gray">· {row.node.roomCount}</span>
                   </button>
@@ -395,13 +402,17 @@ export default function ShakhmatkaPage() {
               if (row.kind === 'category') {
                 const un = unassignedByCat.get(row.cat.roomTypeId)?.length ?? 0;
                 const cOpen = !catIsCollapsed(row.cat);
-                return <div key={`c${row.cat.roomTypeId}${i}`} className="flex items-center gap-1 bg-white px-3 pl-4 text-xs uppercase tracking-wide text-dark-gray" style={{ height: ROWH }}>
-                  <button type="button" onClick={() => setCatCollapsed((s) => ({ ...s, [row.cat.roomTypeId]: cOpen }))} title={cOpen ? 'Свернуть категорию' : 'Развернуть категорию'} className="shrink-0 text-ink/40 hover:text-ink">
-                    <span className={`inline-block transition ${cOpen ? '' : '-rotate-90'}`}>▾</span>
+                const solo = !cOpen && row.cat.rooms.length === 1 ? row.cat.rooms[0]! : null; // 1 номер свёрнут — показываем статус уборки справа (§3)
+                const soloHk = solo ? HK[solo.housekeepingStatus] : null;
+                return <div key={`c${row.cat.roomTypeId}${i}`} className="flex items-center gap-1 border-b border-ink/10 bg-slate-100 px-3 pl-4 text-xs uppercase tracking-wide text-dark-gray" style={{ height: ROWH }}>
+                  {/* Клик по всему названию сворачивает/разворачивает (§1) */}
+                  <button type="button" onClick={() => setCatCollapsed((s) => ({ ...s, [row.cat.roomTypeId]: cOpen }))} title={cOpen ? 'Свернуть категорию' : 'Развернуть категорию'} className="flex min-w-0 flex-1 items-center gap-1 text-left hover:text-ink">
+                    <span className={`shrink-0 text-ink/40 transition ${cOpen ? '' : '-rotate-90'}`}>▾</span>
+                    <span className="truncate font-medium">{row.cat.name}</span><span className="shrink-0 text-ink/30">· {row.cat.rooms.length}</span>
                   </button>
-                  <span className="truncate">{row.cat.name}</span><span className="shrink-0 text-ink/30">· {row.cat.rooms.length}</span>
                   {un > 0 ? <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] normal-case text-amber-700" title="Брони без назначенного номера — на строке категории">не распр.: {un}</span> : null}
-                  <button type="button" onClick={() => setPreviewRtId(row.cat.roomTypeId)} title="Просмотр категории" className="shrink-0 text-ink/40 hover:text-ink">👁</button>
+                  <button type="button" onClick={() => setPreviewRtId(row.cat.roomTypeId)} title="Просмотр категории" className="shrink-0 text-ink/40 hover:text-primary"><PreviewIcon /></button>
+                  {solo && soloHk ? <button type="button" title={`Уборка: ${soloHk.label} · открыть номер`} onClick={() => setRoomPanel(solo)} className="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full ring-1 ring-inset ring-black/10 transition hover:scale-110" style={{ backgroundColor: soloHk.color }}><MopIcon className="h-2.5 w-2.5" /></button> : null}
                 </div>;
               }
               {
@@ -409,7 +420,7 @@ export default function ShakhmatkaPage() {
                 const hk = HK[room.housekeepingStatus];
                 const hkOpen = hkMenu === room.id;
                 return (
-                  <div key={room.id} className="relative flex items-center gap-1.5 whitespace-nowrap bg-white px-3 pl-6 text-sm text-ink" style={{ height: ROWH }}>
+                  <div key={room.id} className="relative flex items-center gap-1.5 whitespace-nowrap border-b border-ink/5 bg-white px-3 pl-6 text-sm text-ink" style={{ height: ROWH }}>
                     {/* Статус уборки (§6, §12): цветной шар со шваброй, клик — сменить */}
                     <button
                       type="button" title={`Уборка: ${hk.label}`}
@@ -454,7 +465,7 @@ export default function ShakhmatkaPage() {
               {/* строки */}
               {flatRows.map((row, i) => {
                 if (row.kind === 'property') {
-                  return <div key={`s${i}`} className="flex bg-ink/[0.04]" style={{ height: ROWH }}>
+                  return <div key={`s${i}`} className="flex border-b border-ink/15 bg-ink/[0.07]" style={{ height: ROWH }}>
                     {dates.map((d) => <div key={d} className={`border-l border-ink/[0.06] ${isWeekend(d) ? 'bg-amber-50/40' : ''}`} style={{ width: COLW }} />)}
                   </div>;
                 }
@@ -472,7 +483,7 @@ export default function ShakhmatkaPage() {
                   const soloTarget = solo != null && move != null && move.moved && move.overRoomId === solo.id;
                   const ghost = isCatTarget || soloTarget ? ghostGeom() : null;
                   return (
-                    <div key={`c${row.cat.roomTypeId}${i}`} className={`relative flex ${isCatTarget || soloTarget ? 'bg-primary-50' : 'bg-white'}`} style={{ height: ROWH }}
+                    <div key={`c${row.cat.roomTypeId}${i}`} className={`relative flex border-b border-ink/10 ${isCatTarget || soloTarget ? 'bg-primary-50' : 'bg-slate-100'}`} style={{ height: ROWH }}
                       onMouseEnter={() => { if (move) { if (solo) setOverRoom(solo.id); else setOverCat(row.cat.roomTypeId); } }}>
                       {dates.map((d, di) => {
                         const f = free?.[di];
@@ -543,7 +554,7 @@ export default function ShakhmatkaPage() {
                 const roomGhost = isDropTarget ? ghostGeom() : null;
                 const cleanCells = boardMode === 'housekeeping' ? cleaningByRoom.get(room.id) : undefined;
                 return (
-                  <div key={room.id} className={`relative border-t border-ink/5 ${isDropTarget ? 'bg-primary-50' : ''}`} style={{ height: ROWH }}
+                  <div key={room.id} className={`relative border-b border-ink/5 ${isDropTarget ? 'bg-primary-50' : 'bg-white'}`} style={{ height: ROWH }}
                     onMouseEnter={() => { if (move) setOverRoom(room.id); }}>
                     {/* фон-клетки (drag-создание) */}
                     <div className="flex h-full">
