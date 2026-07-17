@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@dha/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth-context';
@@ -13,7 +13,7 @@ import { RoomDetailsModal } from '../../components/RoomDetailsModal';
 import { TariffModal } from '../../components/TariffModal';
 import { YandexMap } from '../../components/YandexMap';
 import { AmenityIcon } from '../../lib/amenity-icons';
-import type { FiltersMeta, PropertySearchResult, RoomAvailability, SearchInput } from '../../lib/api-types';
+import type { FiltersMeta, PropertySearchResult, RatePlan, RoomAvailability, SearchInput } from '../../lib/api-types';
 
 function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
@@ -73,6 +73,58 @@ function FilterDropdown({ label, count, children }: { label: string; count: numb
       {open && (
         <div className="absolute left-0 top-full z-40 mt-2 max-h-[22rem] w-64 overflow-y-auto rounded-xl border border-ink/15 bg-white p-2 shadow-xl">
           {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Меню «Поделиться»: скопировать ссылку и (если доступно) системный шэринг. */
+function ShareMenu({
+  onCopy,
+  onShare,
+  canShare,
+  copied,
+}: {
+  onCopy: () => void;
+  onShare: () => void;
+  canShare: boolean;
+  copied: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-1.5 rounded-lg border border-ink/20 px-3 py-1.5 text-sm text-ink hover:bg-beige">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+        {copied ? 'Ссылка скопирована' : 'Поделиться'}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-40 mt-2 w-56 rounded-xl border border-ink/15 bg-white p-1.5 shadow-xl">
+          <button
+            onClick={() => { onCopy(); setOpen(false); }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-ink hover:bg-beige/60"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h8" /></svg>
+            Скопировать ссылку
+          </button>
+          {canShare && (
+            <button
+              onClick={() => { onShare(); setOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-ink hover:bg-beige/60"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" /><path d="M12 15V3M8 7l4-4 4 4" /></svg>
+              Поделиться…
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -163,6 +215,18 @@ export default function SearchPage() {
 
   const hasDates = !!(checkIn && checkOut);
 
+  // Ближайшая ночь (сегодня→завтра) — для предварительных цен, пока гость не выбрал даты.
+  const { defaultCheckIn, defaultCheckOut } = useMemo(() => {
+    const ymd = (d: Date) => {
+      const p = (n: number) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    };
+    const now = new Date();
+    return { defaultCheckIn: ymd(now), defaultCheckOut: ymd(new Date(now.getTime() + 86_400_000)) };
+  }, []);
+  const effCheckIn = checkIn || defaultCheckIn;
+  const effCheckOut = checkOut || defaultCheckOut;
+
   const runSearch = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -183,8 +247,19 @@ export default function SearchPage() {
         res = await api.search(body);
         ymGoal('search', { checkIn, checkOut, rooms: rooms.length, adults: primary.adults, children: primary.children, found: res.length });
       } else {
-        // Без дат — каталог целиком (цены появятся после выбора дат)
-        res = await api.browse({ propertyTypes, districts, amenities, features });
+        // Без выбранных дат: каталог целиком + предварительные цены на ближайшую ночь.
+        // Каталог (browse) держит ВСЕ категории; превью-поиск на сегодня→завтра
+        // подмешивает цены в те, что свободны, — остальные остаются «Выберите даты».
+        const all = await api.browse({ propertyTypes, districts, amenities, features });
+        const preview = await api
+          .search({ checkIn: defaultCheckIn, checkOut: defaultCheckOut, guests: primary.adults, children: primary.children, propertyTypes, districts, amenities, features, priceRanges })
+          .catch(() => [] as PropertySearchResult[]);
+        const rateByRt = new Map<string, RatePlan[]>();
+        for (const p of preview) for (const r of p.rooms) if (r.ratePlans.length) rateByRt.set(r.roomTypeId, r.ratePlans);
+        res = all.map((p) => ({
+          ...p,
+          rooms: p.rooms.map((r) => (rateByRt.has(r.roomTypeId) ? { ...r, ratePlans: rateByRt.get(r.roomTypeId)! } : r)),
+        }));
       }
       setResults(res);
     } catch (e) {
@@ -215,8 +290,8 @@ export default function SearchPage() {
       perNight: rate.perNight,
       totalPrice: rate.totalPrice,
       photo: room.photos[0] ?? null,
-      checkIn,
-      checkOut,
+      checkIn: effCheckIn,
+      checkOut: effCheckOut,
       guests: primary.adults,
       children: primary.children,
       roomsCount: 1,
@@ -230,8 +305,8 @@ export default function SearchPage() {
   const amenityLabels: Record<string, string> = {};
   filters?.amenityCategories.forEach((c) => c.items.forEach((i) => { amenityLabels[i.code] = i.label; }));
   const ctx: SearchCtx = {
-    checkIn,
-    checkOut,
+    checkIn: effCheckIn,
+    checkOut: effCheckOut,
     guests: primary.adults,
     childrenCount: primary.children,
     onDatesChange: (ci, co) => {
@@ -303,18 +378,28 @@ export default function SearchPage() {
   }, [checkIn, checkOut, primary.adults, primary.children, promo, propertyTypes, districts, amenities, features, priceRanges]);
 
   const [copied, setCopied] = useState(false);
+  const [canShare, setCanShare] = useState(false);
+  useEffect(() => {
+    setCanShare(typeof navigator !== 'undefined' && typeof navigator.share === 'function');
+  }, []);
+
+  async function copyLink() {
+    ymGoal('share_link', { method: 'copy', filters: activeFilters, hasDates });
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+    } catch {
+      /* буфер недоступен (не-HTTPS/старый браузер) — покажем всё равно «скопировано» по best-effort */
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   async function shareLink() {
-    ymGoal('share_link', { filters: activeFilters, hasDates });
-    const url = window.location.href;
+    ymGoal('share_link', { method: 'native', filters: activeFilters, hasDates });
     try {
       const nav = navigator as Navigator & { share?: (d: { title?: string; url?: string }) => Promise<void> };
-      if (nav.share) {
-        await nav.share({ title: 'D Hotels & Apartments', url });
-      } else {
-        await navigator.clipboard.writeText(url);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
+      if (nav.share) await nav.share({ title: 'D Hotels & Apartments', url: window.location.href });
+      else await copyLink();
     } catch {
       /* пользователь отменил шаринг — это не ошибка */
     }
@@ -359,7 +444,7 @@ export default function SearchPage() {
                     key={i.code}
                     checked={amenities.includes(i.code)}
                     onChange={() => toggleAmenity(i.code)}
-                    icon={<AmenityIcon label={i.label} icon={i.icon} className="h-4 w-4" />}
+                    icon={<AmenityIcon label={i.label} icon={i.icon} code={i.code} className="h-4 w-4" />}
                   >
                     {i.label}
                   </OptionRow>
@@ -372,10 +457,7 @@ export default function SearchPage() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
             Все фильтры{activeFilters > 0 ? ` · ${activeFilters}` : ''}
           </button>
-          <button onClick={() => void shareLink()} className="flex items-center gap-1.5 rounded-lg border border-ink/20 px-3 py-1.5 text-sm text-ink hover:bg-beige" title="Скопировать ссылку на эту выдачу">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
-            {copied ? 'Ссылка скопирована' : 'Поделиться'}
-          </button>
+          <ShareMenu onCopy={() => void copyLink()} onShare={() => void shareLink()} canShare={canShare} copied={copied} />
           {activeFilters > 0 && (
             <button onClick={resetFilters} className="text-sm text-dark-gray underline hover:text-ink">сбросить</button>
           )}
@@ -393,7 +475,7 @@ export default function SearchPage() {
 
       {!hasDates && (
         <div className="mt-5 rounded-xl border border-ink/15 bg-white px-4 py-3 text-sm text-dark-gray">
-          Показаны все варианты. Выберите <b className="text-ink">даты заезда и выезда</b> — появятся цены, тарифы и бронирование.
+          Цены показаны <b className="text-ink">на ближайшую ночь</b> (сегодня–завтра). Выберите свои <b className="text-ink">даты заезда и выезда</b> — увидите точные цены и тарифы под них.
         </div>
       )}
 
@@ -434,6 +516,7 @@ export default function SearchPage() {
               onOpenDetails={() => ymGoal('view_room', { room: room.roomTypeName })}
               onSelect={() => ymGoal('select_room', { room: room.roomTypeName })}
               soloInProperty={p.rooms.length === 1}
+              pricePreview={!hasDates}
             />
           )),
         )}

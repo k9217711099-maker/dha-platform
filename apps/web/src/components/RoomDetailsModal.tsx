@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AMENITIES, AMENITY_CATEGORY_LABELS } from '@dha/domain';
-import type { RoomAvailability } from '../lib/api-types';
+import { api } from '../lib/api';
+import type { RatePlan, RoomAvailability } from '../lib/api-types';
 import type { CartExtra } from '../lib/cart-context';
 import { Lightbox } from './Lightbox';
 import { DateRangeCalendar } from './DateRangeCalendar';
@@ -44,11 +45,41 @@ export function RoomDetailsModal({
   const [showAll, setShowAll] = useState(false);
   const [photo, setPhoto] = useState(0);
   const [lightbox, setLightbox] = useState(false);
-  // Локальные даты календаря доступности — НЕ меняют даты на странице поиска
+  // Даты календаря именно этой категории. Когда гость выбирает их здесь (а не в общем
+  // поиске) — подгружаем тарифы под эти даты и синхронизируем их со страницей поиска,
+  // чтобы «Выбрать» добавляло бронь именно на выбранные даты.
   const [calIn, setCalIn] = useState(ctx.checkIn);
   const [calOut, setCalOut] = useState(ctx.checkOut);
+  const [userPicked, setUserPicked] = useState(false);
+  const [fetchedRates, setFetchedRates] = useState<RatePlan[] | null>(null);
+  const [ratesLoading, setRatesLoading] = useState(false);
   const [tariffOpen, setTariffOpen] = useState(false);
   const photos = room.photos ?? [];
+
+  // Тарифы: пока гость не выбрал даты в модалке — из общего поиска/превью (room.ratePlans);
+  // как только выбрал — подгруженные под эти даты (fetchedRates).
+  const effectiveRates = userPicked ? (fetchedRates ?? []) : room.ratePlans;
+
+  useEffect(() => {
+    if (!userPicked || !calIn || !calOut) return;
+    // Синхронизируем даты со страницей — корзина берёт даты со страницы поиска.
+    if (calIn !== ctx.checkIn || calOut !== ctx.checkOut) ctx.onDatesChange(calIn, calOut);
+    let alive = true;
+    setRatesLoading(true);
+    api
+      .search({ checkIn: calIn, checkOut: calOut, guests: ctx.guests, children: ctx.childrenCount })
+      .then((props) => {
+        if (!alive) return;
+        const found = props.flatMap((p) => p.rooms).find((r) => r.roomTypeId === room.roomTypeId);
+        setFetchedRates(found?.ratePlans ?? []);
+      })
+      .catch(() => alive && setFetchedRates([]))
+      .finally(() => alive && setRatesLoading(false));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calIn, calOut, userPicked, room.roomTypeId]);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -68,7 +99,7 @@ export function RoomDetailsModal({
   }
   const allLabels = room.amenities.map((c) => lbl(c));
   const topLabels = allLabels.slice(0, 6);
-  const cheapest = room.ratePlans.length ? room.ratePlans.reduce((a, b) => (a.perNight <= b.perNight ? a : b)) : null;
+  const cheapest = effectiveRates.length ? effectiveRates.reduce((a, b) => (a.perNight <= b.perNight ? a : b)) : null;
 
   return (
     <div className="fixed inset-0 z-[55] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-6" onClick={onClose}>
@@ -135,11 +166,11 @@ export function RoomDetailsModal({
           {room.description && <p className="text-sm leading-relaxed text-dark-gray">{room.description}</p>}
 
           {/* Тарифы — выбор перед добавлением в подбор */}
-          {room.ratePlans.length > 0 && (
+          {effectiveRates.length > 0 && (
           <div>
             <h3 className="mb-2 text-sm font-medium text-ink">Тарифы</h3>
             <div className="space-y-2">
-              {room.ratePlans.map((rp) => (
+              {effectiveRates.map((rp) => (
                 <div key={rp.id} className="flex items-center justify-between gap-3 rounded-lg border border-ink/10 px-3 py-2">
                   <div>
                     <p className="text-sm text-ink">{rp.name}</p>
@@ -172,6 +203,7 @@ export function RoomDetailsModal({
               onChange={(ci, co) => {
                 setCalIn(ci);
                 setCalOut(co);
+                setUserPicked(true);
               }}
               roomTypeId={room.roomTypeId}
               guests={ctx.guests}
@@ -224,6 +256,10 @@ export function RoomDetailsModal({
               </span>
               <span className="text-xs text-dark-gray">Выберите тариф в блоке «Тарифы»</span>
             </>
+          ) : userPicked && ratesLoading ? (
+            <span className="text-sm text-dark-gray">Загрузка цен на выбранные даты…</span>
+          ) : userPicked ? (
+            <span className="text-sm text-dark-gray">На выбранные даты свободных тарифов нет — попробуйте другие даты</span>
           ) : (
             <span className="text-sm text-dark-gray">Выберите даты заезда и выезда, чтобы увидеть цены и тарифы</span>
           )}
@@ -235,11 +271,11 @@ export function RoomDetailsModal({
       )}
       {tariffOpen && (
         <TariffModal
-          room={room}
+          room={{ ...room, ratePlans: effectiveRates }}
           propertyName={propertyName}
           cashbackPercent={cashbackPercent}
           isGuest={isGuest}
-          ctx={ctx}
+          ctx={{ ...ctx, checkIn: calIn || ctx.checkIn, checkOut: calOut || ctx.checkOut }}
           onAdd={(r, id, ex) => {
             onAdd(r, id, ex);
             onSelect?.();

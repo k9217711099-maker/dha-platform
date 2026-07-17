@@ -660,7 +660,22 @@ function LockConsole({ ttlockLockId }: { ttlockLockId: string }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => void run(async () => { await adminApi.ttlockUnlock(ttlockLockId); setMsg('Команда на открытие отправлена'); pushToast('ok', `Замок #${ttlockLockId}: команда на открытие отправлена`); })} disabled={busy}>
+        <Button
+          onClick={() => void run(async () => {
+            // Открытие идёт через шлюз: TTLock отвечает успехом только если замок реально
+            // открылся (иначе адаптер бросает ошибку → тост об ошибке). Значит успех = открыт.
+            await adminApi.ttlockUnlock(ttlockLockId);
+            setMsg('Замок открыт ✓ (подтверждено TTLock)');
+            pushToast('ok', `Замок #${ttlockLockId} открыт ✓`);
+            // Подтягиваем журнал — в нём появляется событие «Удалённое открытие» как доказательство.
+            try {
+              setRecords(await adminApi.ttlockRecords(ttlockLockId));
+            } catch {
+              /* журнал не критичен для подтверждения */
+            }
+          })}
+          disabled={busy}
+        >
           Открыть удалённо
         </Button>
         <Button variant="secondary" onClick={() => void run(async () => { const r = await adminApi.ttlockRecords(ttlockLockId); setRecords(r); pushToast('info', `Журнал загружен: ${r.length} записей`); })} disabled={busy}>

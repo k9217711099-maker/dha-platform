@@ -80,6 +80,8 @@ interface Props {
   onSelect?: () => void;
   /** У объекта единственная категория (и один номер) — не дублируем имя объекта над названием. */
   soloInProperty?: boolean;
+  /** Цена показана предварительно (на ближайшую ночь), т.к. гость ещё не выбрал даты. */
+  pricePreview?: boolean;
 }
 
 /** Карточка категории: крупное фото сверху, инфо снизу, выбор тарифа по «Выбрать». */
@@ -97,6 +99,7 @@ export function RoomResultCard({
   onOpenDetails,
   onSelect,
   soloInProperty,
+  pricePreview,
 }: Props) {
   const photos = room.photos.length ? room.photos : [];
   const [idx, setIdx] = useState(0);
@@ -195,6 +198,7 @@ export function RoomResultCard({
               <p className="text-lg text-ink">
                 от {cheapest.perNight.toLocaleString('ru')} ₽<span className="text-xs text-dark-gray"> / ночь</span>
               </p>
+              {pricePreview && <p className="text-xs text-dark-gray">на сегодня–завтра · выберите свои даты</p>}
               <div className="mt-2 flex items-center gap-2">
                 <button onClick={openDetails} className="text-sm text-dark-gray underline hover:text-ink">Детали</button>
                 <Button className="ml-auto" onClick={() => setTariffOpen(true)}>Выбрать</Button>

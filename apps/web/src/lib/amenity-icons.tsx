@@ -25,6 +25,12 @@ type IconKey =
   | 'gym'
   | 'fridge'
   | 'workspace'
+  | 'bed'
+  | 'key'
+  | 'wine'
+  | 'iron'
+  | 'microwave'
+  | 'fan'
   | 'generic';
 
 /** SVG-«тела» иконок (24×24, штрих currentColor). */
@@ -136,11 +142,71 @@ const PATHS: Record<IconKey, ReactNode> = {
       <path d="M8 20h8M12 15v5" />
     </>
   ),
+  bed: (
+    <>
+      <path d="M3 8v10M3 12h18v6M21 18v-4a2 2 0 0 0-2-2" />
+      <path d="M7 12v-2a1.5 1.5 0 0 1 1.5-1.5h4A1.5 1.5 0 0 1 14 10v2" />
+    </>
+  ),
+  key: (
+    <>
+      <circle cx="8" cy="8" r="4" />
+      <path d="M10.8 10.8 20 20M17 17l2-2M14.5 14.5l2-2" />
+    </>
+  ),
+  wine: (
+    <>
+      <path d="M8 3h8" />
+      <path d="M9 3c0 5 1 7.5 3 7.5S15 8 15 3" />
+      <path d="M12 10.5V18M9 21h6" />
+    </>
+  ),
+  iron: (
+    <>
+      <path d="M3 16v-3a5 5 0 0 1 5-5h8l4 4v4z" />
+      <path d="M3 16h18M8 8V6a1 1 0 0 1 1-1h3" />
+    </>
+  ),
+  microwave: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <rect x="6" y="8" width="8" height="8" rx="1" />
+      <path d="M17.5 9v.5M17.5 12v.5M17.5 15v.5" />
+    </>
+  ),
+  fan: (
+    <>
+      <circle cx="12" cy="12" r="1.6" />
+      <path d="M12 10.4c-1-3-1-6 0-7 2 .5 2 3.5 1 5.6M13.6 12c3-1 6-1 7 0-.5 2-3.5 2-5.6 1M12 13.6c1 3 1 6 0 7-2-.5-2-3.5-1-5.6M10.4 12c-3 1-6 1-7 0 .5-2 3.5-2 5.6-1" />
+    </>
+  ),
   generic: (
     <>
       <path d="M20 6L9 17l-5-5" />
     </>
   ),
+};
+
+/** Точный маппинг по коду удобства из домена (@dha/domain AMENITIES). */
+const CODE_ICON: Record<string, IconKey> = {
+  kitchen: 'kitchen', kitchenette: 'kitchen', dishwasher: 'kitchen', cooktop: 'kitchen', oven: 'kitchen',
+  coffee_machine: 'coffee', microwave: 'microwave',
+  bathtub: 'bath', shower: 'bath', hairdryer: 'fan',
+  washer: 'washer', ironing_board: 'iron', iron: 'iron',
+  air_conditioner: 'ac', smart_tv: 'tv', wifi: 'wifi', workspace: 'workspace',
+  premium_mattress: 'bed', baby_cot: 'bed', safe: 'safe', wine_glasses: 'wine',
+  elevator: 'elevator', parking: 'parking', contactless_checkin: 'key', digital_key: 'key',
+};
+
+/** Маппинг по имени иконки из настроек (Amenity.icon — курируемый набор админки). */
+const ICONNAME_ICON: Record<string, IconKey> = {
+  wifi: 'wifi', tv: 'tv', coffee: 'coffee', utensils: 'kitchen', kitchen: 'kitchen', cooking: 'kitchen',
+  bath: 'bath', shower: 'bath', water: 'bath', car: 'parking', parking: 'parking', ac: 'ac', fan: 'fan',
+  ventilation: 'ac', heater: 'ac', pool: 'pool', gym: 'gym', wine: 'wine', beer: 'coffee', minibar: 'coffee',
+  baby: 'bed', bed: 'bed', 'bed-double': 'bed', sofa: 'bed', fridge: 'fridge', freezer: 'fridge',
+  microwave: 'microwave', laundry: 'washer', safe: 'safe', keys: 'key', elevator: 'elevator',
+  balcony: 'balcony', 'mountain-view': 'balcony', garden: 'balcony', terrace: 'balcony',
+  monitor: 'workspace', iron: 'iron', pets: 'pets', dog: 'pets',
 };
 
 /** Правила подбора иконки: ключевые слова подписи → иконка. */
@@ -163,25 +229,29 @@ const RULES: [RegExp, IconKey][] = [
   [/рабоч|стол|коворкинг|desk|workspace/i, 'workspace'],
 ];
 
-function pickIcon(label: string, icon?: string | null): IconKey {
+function pickIcon(label: string, icon?: string | null, code?: string | null): IconKey {
+  if (code && CODE_ICON[code]) return CODE_ICON[code];
+  if (icon && ICONNAME_ICON[icon]) return ICONNAME_ICON[icon];
   const hay = `${label} ${icon ?? ''}`;
   for (const [re, key] of RULES) if (re.test(hay)) return key;
   return 'generic';
 }
 
-/** Иконка удобства по подписи (и, если есть, имени Lucide). */
+/** Иконка удобства: точный подбор по коду/имени иконки, иначе — по ключевым словам подписи. */
 export function AmenityIcon({
   label,
   icon,
+  code,
   className = 'h-4 w-4',
 }: {
   label: string;
   icon?: string | null;
+  code?: string | null;
   className?: string;
 }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
-      {PATHS[pickIcon(label, icon)]}
+      {PATHS[pickIcon(label, icon, code)]}
     </svg>
   );
 }

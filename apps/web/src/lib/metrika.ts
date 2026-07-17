@@ -27,7 +27,9 @@ export type YmGoal =
   | 'filter_reset'
   | 'filter_open'
   // Шаринг ссылки на выдачу.
-  | 'share_link';
+  | 'share_link'
+  // Установка PWA (плашка «Установить приложение»).
+  | 'app_install';
 
 /** Достижение цели Метрики (reachGoal). */
 export function ymGoal(target: YmGoal, params?: Record<string, unknown>): void {

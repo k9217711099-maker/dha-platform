@@ -30,6 +30,21 @@ export interface RoomTypePatch {
 }
 
 /**
+ * Иконки удобств по коду домена (значение = ключ из курируемого набора админки
+ * packages/ui / AmenityIcon). Проставляются автоматически, чтобы фильтры и карточки
+ * показывали удобства иконками без ручной настройки каждого удобства.
+ */
+const AMENITY_ICON_BY_CODE: Record<string, string> = {
+  kitchen: 'kitchen', kitchenette: 'kitchen', dishwasher: 'utensils', coffee_machine: 'coffee',
+  cooktop: 'cooking', oven: 'cooking', microwave: 'microwave',
+  bathtub: 'bath', shower: 'shower', hairdryer: 'fan',
+  washer: 'laundry', ironing_board: 'iron', iron: 'iron',
+  air_conditioner: 'ac', smart_tv: 'tv', wifi: 'wifi', workspace: 'monitor',
+  premium_mattress: 'bed-double', safe: 'safe', wine_glasses: 'wine', baby_cot: 'baby',
+  elevator: 'elevator', parking: 'parking', contactless_checkin: 'keys', digital_key: 'keys',
+};
+
+/**
  * Управление словарём удобств (фильтры) и контентом карточек номеров — для админки.
  * Словарь сидируется из packages/domain при первом запуске и далее редактируется в БД.
  */
@@ -41,12 +56,27 @@ export class CatalogAdminService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     const count = await this.prisma.amenity.count();
-    if (count > 0) return;
-    await this.prisma.amenity.createMany({
-      data: AMENITIES.map((a, i) => ({ code: a.code, label: a.label, category: a.category, sortOrder: i })),
-      skipDuplicates: true,
-    });
-    this.logger.log(`Словарь удобств засеян из домена: ${AMENITIES.length}`);
+    if (count === 0) {
+      await this.prisma.amenity.createMany({
+        data: AMENITIES.map((a, i) => ({
+          code: a.code,
+          label: a.label,
+          category: a.category,
+          icon: AMENITY_ICON_BY_CODE[a.code] ?? null,
+          sortOrder: i,
+        })),
+        skipDuplicates: true,
+      });
+      this.logger.log(`Словарь удобств засеян из домена: ${AMENITIES.length}`);
+    }
+    // Бэкфилл иконок для удобств без иконки (в т.ч. засеянных/импортированных ранее без неё).
+    // Ручные настройки в админке не трогаем — обновляем только там, где icon пуст.
+    let filled = 0;
+    for (const [code, icon] of Object.entries(AMENITY_ICON_BY_CODE)) {
+      const r = await this.prisma.amenity.updateMany({ where: { code, icon: null }, data: { icon } });
+      filled += r.count;
+    }
+    if (filled > 0) this.logger.log(`Проставлены иконки удобств (пустые): ${filled}`);
   }
 
   /** Группы удобств для /catalog/filters — только помеченные как фильтр (isFilter), с иконкой. */
