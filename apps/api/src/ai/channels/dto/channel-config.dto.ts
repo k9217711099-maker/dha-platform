@@ -131,6 +131,13 @@ export class TestUmnicoConfigDto {
   token?: string;
 }
 
+/** Регистрация вебхука Umnico на наш адрес (в UI Umnico настройки нет — только через API). */
+export class RegisterUmnicoWebhookDto {
+  @ApiProperty({ description: 'Публичный URL нашего вебхука, напр. https://api.nomero.online/api/ai/umnico/webhook' })
+  @IsString() @MaxLength(500)
+  url!: string;
+}
+
 /** Telegram Direct: вход по QR (как Telegram Web) — нужны только реквизиты. */
 export class TgDirectStartQrDto {
   @ApiProperty({ description: 'api_id с my.telegram.org' })

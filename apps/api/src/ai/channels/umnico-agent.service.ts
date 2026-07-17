@@ -10,6 +10,7 @@ export interface UmnicoIncoming {
   leadId: string;
   source?: string;
   userId?: string;
+  saId?: string;
   text: string;
 }
 
@@ -43,7 +44,10 @@ export class UmnicoAgentService {
         text,
       });
       if (!existing) await this.conversations.setExternalId(res.conversationId, msg.leadId);
-      await this.umnico.sendMessage({ leadId: msg.leadId, source: msg.source, userId: msg.userId }, res.reply);
+      await this.umnico.sendMessage(
+        { leadId: msg.leadId, source: msg.source, userId: msg.userId, saId: msg.saId },
+        res.reply,
+      );
     } catch (err) {
       this.logger.error(`Ошибка обработки входящего: ${(err as Error).message}`);
     }

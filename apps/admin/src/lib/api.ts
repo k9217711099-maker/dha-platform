@@ -2429,6 +2429,10 @@ export const adminApi = {
   aiUmnicoChannels: () => request<UmnicoChannel[]>('/ai/channels/umnico/channels'),
   aiSaveUmnico: (body: { token?: string }) => request<UmnicoAdminConfig>('/ai/channels/umnico', { method: 'PUT', body }),
   aiTestUmnico: (token?: string) => request<{ ok: boolean; message: string }>('/ai/channels/umnico/test', { method: 'POST', body: { token } }),
+  aiUmnicoWebhooks: () => request<{ id: number; url: string; name?: string; status?: number }[]>('/ai/channels/umnico/webhooks'),
+  aiRegisterUmnicoWebhook: (url: string) => request<{ ok: boolean; message: string; id?: number }>('/ai/channels/umnico/webhook-register', { method: 'POST', body: { url } }),
+  /** Полный публичный URL нашего вебхука Umnico (тот же API-base, что и все запросы). */
+  aiUmnicoWebhookUrl: () => `${API_BASE}/ai/umnico/webhook`,
   aiEmailConfig: () => request<EmailAdminConfig>('/ai/channels/email'),
   aiSaveEmail: (body: { host?: string; port?: number; secure?: boolean; user?: string; pass?: string; from?: string; proxy?: string }) =>
     request<EmailAdminConfig>('/ai/channels/email', { method: 'PUT', body }),

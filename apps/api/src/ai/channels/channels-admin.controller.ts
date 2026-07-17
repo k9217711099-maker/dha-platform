@@ -22,6 +22,7 @@ import {
   SaveEmailConfigDto,
   SaveUmnicoConfigDto,
   TestUmnicoConfigDto,
+  RegisterUmnicoWebhookDto,
   TgDirectCodeDto,
   TgDirectPasswordDto,
   TgDirectStartDto,
@@ -224,7 +225,7 @@ export class ChannelsAdminController {
           '1. В Umnico подключите нужные мессенджеры (WhatsApp, Telegram и т.д.).\n' +
           '2. В Umnico → Настройки → API создайте/скопируйте API-токен.\n' +
           '3. Вставьте токен в поле и нажмите «Проверить подключение» — покажем список подключённых каналов.\n' +
-          '4. В Umnico добавьте вебхук на событие «Входящее сообщение» с адресом: <ПУБЛИЧНЫЙ_URL>/api/ai/umnico/webhook\n' +
+          '4. Нажмите «Зарегистрировать вебхук» — мы сами пропишем адрес в Umnico через API (в кабинете Umnico этой настройки нет).\n' +
           '5. Готово — входящие из мессенджеров пойдут в AI-агента, ответы вернутся тем же каналом.',
       },
       {
@@ -482,5 +483,27 @@ export class ChannelsAdminController {
   @ApiOperation({ summary: 'Проверить подключение Umnico (GET /integrations)' })
   testUmnico(@Body() dto: TestUmnicoConfigDto) {
     return this.umnico.testConnection(dto.token);
+  }
+
+  @Get('umnico/webhooks')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Список вебхуков, зарегистрированных в Umnico' })
+  umnicoWebhooks() {
+    return this.umnico.listWebhooks();
+  }
+
+  @Post('umnico/webhook-register')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Зарегистрировать наш вебхук в Umnico (в UI Umnico настройки нет)' })
+  async registerUmnicoWebhook(@Body() dto: RegisterUmnicoWebhookDto, @CurrentAdminId() adminId: string) {
+    const res = await this.umnico.registerWebhook(dto.url);
+    await this.audit.record({
+      actorId: adminId,
+      action: 'updated',
+      entity: 'AiChannel',
+      entityId: 'umnico',
+      payload: { webhookRegistered: res.ok, url: dto.url },
+    });
+    return res;
   }
 }

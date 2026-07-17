@@ -26,6 +26,14 @@ export interface UmnicoPublicConfig {
   channels: UmnicoChannel[];
 }
 
+/** Зарегистрированный в Umnico вебхук (GET/POST /v1.3/webhooks). */
+export interface UmnicoWebhookEntry {
+  id: number;
+  url: string;
+  name?: string;
+  status?: number;
+}
+
 /** Русские подписи типов каналов Umnico. */
 const TYPE_LABEL: Record<string, string> = {
   whatsapp: 'WhatsApp',
@@ -110,6 +118,52 @@ export class UmnicoConfigService {
     return { tokenSet: has, connected: has, channels };
   }
 
+  /** Список зарегистрированных вебхуков (GET /v1.3/webhooks). */
+  async listWebhooks(): Promise<UmnicoWebhookEntry[]> {
+    const token = await this.token();
+    if (!token) return [];
+    try {
+      const res = await fetch(`${this.base}/v1.3/webhooks`, { headers: this.authHeaders(token) });
+      if (!res.ok) return [];
+      const data = (await res.json()) as UmnicoWebhookEntry[];
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      this.logger.warn(`listWebhooks: ${(e as Error).message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Регистрирует наш URL вебхука в Umnico (в кабинете Umnico такой настройки нет —
+   * только через API, POST /v1.3/webhooks). Идемпотентно: если вебхук с таким URL
+   * уже есть — не дублируем (лимит Umnico — 10 штук).
+   */
+  async registerWebhook(url: string, name = 'D H&A AI'): Promise<{ ok: boolean; message: string; id?: number }> {
+    const token = await this.token();
+    if (!token) return { ok: false, message: 'Не задан токен Umnico — сначала сохраните токен.' };
+    const target = url.trim();
+    if (!/^https:\/\//i.test(target)) return { ok: false, message: 'URL вебхука должен быть по HTTPS.' };
+    try {
+      const existing = await this.listWebhooks();
+      const dup = existing.find((w) => (w.url ?? '').trim() === target);
+      if (dup) return { ok: true, message: 'Вебхук уже зарегистрирован в Umnico.', id: dup.id };
+      const res = await fetch(`${this.base}/v1.3/webhooks`, {
+        method: 'POST',
+        headers: this.authHeaders(token),
+        body: JSON.stringify({ url: target, name }),
+      });
+      if (res.ok) {
+        const w = (await res.json().catch(() => ({}))) as UmnicoWebhookEntry;
+        return { ok: true, message: 'Вебхук зарегистрирован в Umnico.', id: w.id };
+      }
+      if (res.status === 401 || res.status === 403) return { ok: false, message: 'Токен отклонён (401/403).' };
+      const detail = await res.text().catch(() => '');
+      return { ok: false, message: `Umnico вернул ${res.status}: ${detail.slice(0, 200)}` };
+    } catch (e) {
+      return { ok: false, message: `Сеть/адрес недоступны: ${(e as Error).message}` };
+    }
+  }
+
   /** Проверка подключения: GET /v1.3/integrations. */
   async testConnection(token?: string): Promise<{ ok: boolean; message: string }> {
     const t = (token && token.trim()) || (await this.token());
@@ -129,15 +183,20 @@ export class UmnicoConfigService {
   }
 
   /** Отправка сообщения: POST /v1.3/messaging/<leadId>/send. */
-  async sendMessage(target: { leadId: string; source?: string; userId?: string }, text: string): Promise<void> {
+  async sendMessage(
+    target: { leadId: string; source?: string; userId?: string; saId?: string },
+    text: string,
+  ): Promise<void> {
     const token = await this.token();
     if (!token || !target.leadId) {
       this.logger.warn('Umnico: нет токена или leadId — сообщение не отправлено.');
       return;
     }
+    // Umnico ждёт source (source.realId) и userId (число, идентификатор клиента); saId — опционально.
     const body: Record<string, unknown> = { message: { text } };
     if (target.source) body.source = target.source;
-    if (target.userId) body.userId = target.userId;
+    if (target.userId) body.userId = /^\d+$/.test(target.userId) ? Number(target.userId) : target.userId;
+    if (target.saId) body.saId = /^\d+$/.test(target.saId) ? Number(target.saId) : target.saId;
     const res = await fetch(`${this.base}/v1.3/messaging/${encodeURIComponent(target.leadId)}/send`, {
       method: 'POST',
       headers: this.authHeaders(token),

@@ -398,8 +398,24 @@ function UmnicoSettingsModal({ onClose, onSaved }: { onClose: () => void; onSave
   const [err, setErr] = useState('');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [hooks, setHooks] = useState<{ id: number; url: string; name?: string; status?: number }[] | null>(null);
+  const [hookBusy, setHookBusy] = useState(false);
+  const [hookResult, setHookResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const webhookUrl = adminApi.aiUmnicoWebhookUrl();
 
+  const loadHooks = () => { void adminApi.aiUmnicoWebhooks().then(setHooks).catch(() => setHooks([])); };
   useEffect(() => { void adminApi.aiUmnicoConfig().then(setCfg).catch(() => setErr('Не удалось загрузить настройки')); }, []);
+  useEffect(() => { if (cfg?.tokenSet) loadHooks(); }, [cfg?.tokenSet]);
+
+  const registerHook = async () => {
+    setHookBusy(true); setHookResult(null);
+    try {
+      const r = await adminApi.aiRegisterUmnicoWebhook(webhookUrl);
+      setHookResult(r);
+      if (r.ok) loadHooks();
+    } catch (e) { setHookResult({ ok: false, message: e instanceof Error ? e.message : 'Ошибка регистрации' }); }
+    finally { setHookBusy(false); }
+  };
 
   const save = async () => {
     setBusy(true); setErr('');
@@ -458,9 +474,27 @@ function UmnicoSettingsModal({ onClose, onSaved }: { onClose: () => void; onSave
             </div>
 
             <div className="mt-5 rounded-md bg-ink/[0.03] px-3 py-3 text-xs leading-relaxed text-dark-gray">
-              <p className="mb-1 font-medium text-ink">Вебхук для входящих (один раз)</p>
-              <p>В Umnico добавьте вебхук на событие «Входящее сообщение» с адресом:</p>
-              <code className="mt-1 block break-all rounded bg-white px-2 py-1">https://api.nomero.online/api/ai/umnico/webhook</code>
+              <p className="mb-1 font-medium text-ink">Вебхук для входящих сообщений</p>
+              <p>В личном кабинете Umnico такой настройки нет — вебхук регистрируется через API. Нажмите кнопку ниже: мы сами зарегистрируем этот адрес в Umnico (событие «входящее сообщение»).</p>
+              <code className="mt-1 block break-all rounded bg-white px-2 py-1">{webhookUrl}</code>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <Button variant="secondary" onClick={registerHook} disabled={hookBusy || !cfg.tokenSet}>
+                  {hookBusy ? 'Регистрация…' : 'Зарегистрировать вебхук'}
+                </Button>
+                {!cfg.tokenSet ? <span className="text-[11px] text-amber-700">Сначала сохраните токен.</span> : null}
+              </div>
+              {hookResult ? <p className={`mt-2 ${hookResult.ok ? 'text-emerald-700' : 'text-red-600'}`}>{hookResult.ok ? '✓ ' : '✕ '}{hookResult.message}</p> : null}
+              {hooks && hooks.length > 0 ? (
+                <div className="mt-2">
+                  <p className="font-medium text-ink">Зарегистрированные вебхуки ({hooks.length}):</p>
+                  {hooks.map((h) => (
+                    <div key={h.id} className="mt-0.5 flex items-center gap-2 break-all">
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${h.status === 0 ? 'bg-ink/30' : 'bg-emerald-500'}`} />
+                      <span>{h.url}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : hooks ? <p className="mt-2">Вебхуки ещё не зарегистрированы.</p> : null}
             </div>
           </>
         )}

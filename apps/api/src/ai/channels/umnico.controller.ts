@@ -2,19 +2,24 @@ import { Body, Controller, HttpCode, Logger, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UmnicoAgentService } from './umnico-agent.service.js';
 
-/** Сырой вебхук Umnico — поля message разбираем защитно (точную схему уточним по факту). */
+/**
+ * Вебхук Umnico (событие message.incoming). Схема по офиц. документации:
+ * https://api.umnico.com/docs/ru/apiMethods/events.html + history.html.
+ * В корне: type, accountId, leadId, isNewLead, isNewCustomer, message.
+ * В message: text, incoming (true=входящее), source{realId,saId,type}, sender{id,customerId}.
+ */
 interface UmnicoWebhook {
   type?: string;
+  accountId?: number;
   leadId?: number | string;
+  isNewLead?: boolean;
+  isNewCustomer?: boolean;
   message?: {
     text?: string;
-    body?: string;
-    direction?: string;
-    isOutgoing?: boolean;
-    userId?: number | string;
-    user?: { id?: number | string };
-    saId?: number | string;
-    source?: { realId?: string; id?: number | string } | string | number;
+    incoming?: boolean;
+    source?: { realId?: string | number; saId?: number | string; type?: string };
+    sender?: { id?: number | string; customerId?: number | string; login?: string; type?: string };
+    sa?: { id?: number | string; type?: string; login?: string };
   };
 }
 
@@ -41,26 +46,29 @@ export class UmnicoController {
     );
     if (body?.type === 'message.incoming' && body.leadId != null) {
       const m = body.message ?? {};
-      // Пропускаем исходящие (эхо наших ответов), если такой флаг придёт.
-      if (!m.isOutgoing && m.direction !== 'outgoing') {
+      // incoming === false → исходящее (эхо нашего ответа), не обрабатываем.
+      if (m.incoming !== false) {
         const src = m.source;
+        // source для ответа = source.realId (обяз. в Umnico), запас — saId.
         const source =
-          typeof src === 'object' && src !== null
-            ? (src.realId ?? (src.id != null ? String(src.id) : undefined))
-            : src != null
-              ? String(src)
-              : m.saId != null
-                ? String(m.saId)
-                : undefined;
-        const userId = m.userId != null ? String(m.userId) : m.user?.id != null ? String(m.user.id) : undefined;
+          src?.realId != null ? String(src.realId) : src?.saId != null ? String(src.saId) : undefined;
+        const saId = src?.saId != null ? String(src.saId) : m.sa?.id != null ? String(m.sa.id) : undefined;
+        // userId — идентификатор клиента (sender.id / customerId).
+        const userId =
+          m.sender?.id != null
+            ? String(m.sender.id)
+            : m.sender?.customerId != null
+              ? String(m.sender.customerId)
+              : undefined;
         void this.agent.handleIncoming({
           leadId: String(body.leadId),
           source,
           userId,
-          text: m.text ?? m.body ?? '',
+          saId,
+          text: m.text ?? '',
         });
       } else {
-        this.logger.log(`пропущено исходящее (эхо) leadId=${body.leadId}`);
+        this.logger.log(`пропущено исходящее (incoming=false) leadId=${body.leadId}`);
       }
     } else {
       this.logger.warn(
