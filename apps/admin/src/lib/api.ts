@@ -144,7 +144,7 @@ export interface CheckinQueueItem {
 }
 /** Канал коммуникации гостевого AI-агента (вкладка «Интеграции»). */
 export interface AiChannel {
-  id: 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'avito';
+  id: 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'email' | 'avito';
   name: string;
   category: 'guest' | 'notifications';
   description: string;
@@ -190,6 +190,17 @@ export interface TgUserbotState {
   phone: string | null;
   me: string | null;
   message: string;
+}
+
+/** Публичная конфигурация SMTP (без пароля). */
+export interface EmailAdminConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  from: string;
+  passSet: boolean;
+  configured: boolean;
 }
 
 export interface Promocode {
@@ -2393,6 +2404,10 @@ export const adminApi = {
   aiTgDirectPassword: (password: string) =>
     request<TgUserbotState>('/ai/channels/tg-direct/password', { method: 'POST', body: { password } }),
   aiTgDirectLogout: () => request<TgUserbotState>('/ai/channels/tg-direct/logout', { method: 'POST' }),
+  aiEmailConfig: () => request<EmailAdminConfig>('/ai/channels/email'),
+  aiSaveEmail: (body: { host?: string; port?: number; secure?: boolean; user?: string; pass?: string; from?: string }) =>
+    request<EmailAdminConfig>('/ai/channels/email', { method: 'PUT', body }),
+  aiTestEmail: () => request<{ ok: boolean; message: string }>('/ai/channels/email/test', { method: 'POST' }),
 
   searchGuests: (q: string) =>
     request<GuestSearchResult[]>(`/admin/guests?q=${encodeURIComponent(q)}`),

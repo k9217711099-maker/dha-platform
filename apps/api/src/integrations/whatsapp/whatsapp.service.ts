@@ -68,6 +68,7 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
   private connecting = false;
   private enabledCached = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastDetail = '';
   private handler: ((from: string, text: string) => Promise<void>) | null = null;
 
   constructor(
@@ -118,7 +119,7 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
     const msg: Record<WaStatus, string> = {
       disabled: 'Канал выключен — включите переключателем, затем нажмите «Подключить».',
       disconnected: 'Не подключено. Нажмите «Подключить» и отсканируйте QR в WhatsApp.',
-      connecting: 'Подключение…',
+      connecting: `Подключение…${this.lastDetail ? ` Последнее: ${this.lastDetail}` : ''}`,
       qr: 'Отсканируйте QR-код в приложении WhatsApp: Настройки → Связанные устройства.',
       connected: `Подключено${this.me ? ` как ${this.me}` : ''}.`,
     };
@@ -253,11 +254,14 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
       this.logger.log(`WhatsApp подключён${this.me ? ` как ${this.me}` : ''}.`);
     }
     if (u.connection === 'close') {
-      const code = (u.lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
+      const err = u.lastDisconnect?.error as { output?: { statusCode?: number }; message?: string } | undefined;
+      const code = err?.output?.statusCode;
       const loggedOut = code === DisconnectReason.loggedOut;
       // 515 restartRequired — штатный разрыв сразу после сканирования QR: нужно
       // быстро переподключиться на сохранённой сессии (это НЕ ошибка пейринга).
       const restartRequired = code === DisconnectReason.restartRequired;
+      this.lastDetail = `разрыв (код ${code ?? '—'}${err?.message ? `: ${err.message.slice(0, 80)}` : ''})`;
+      this.logger.warn(`WhatsApp close: statusCode=${code ?? '—'} ${err?.message ?? ''}`);
       this.sock = null;
       if (loggedOut) {
         this.clearSession();

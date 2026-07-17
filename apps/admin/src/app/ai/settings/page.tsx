@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Card } from '@dha/ui';
-import { adminApi, type AiChannel, type MaxAdminConfig, type TelegramAdminConfig, type TgUserbotState, type WaState } from '../../../lib/api';
+import { adminApi, type AiChannel, type EmailAdminConfig, type MaxAdminConfig, type TelegramAdminConfig, type TgUserbotState, type WaState } from '../../../lib/api';
 import { useRequireAdmin } from '../../../lib/use-admin';
 import { useEsc } from '../../../lib/use-esc';
 
@@ -81,6 +81,9 @@ function IntegrationsTab() {
                 {i.id === 'tg_direct' && i.available && i.enabled ? (
                   <Button variant="secondary" onClick={() => setConfiguring('tg_direct')}>Настроить</Button>
                 ) : null}
+                {i.id === 'email' && i.available ? (
+                  <Button variant="secondary" onClick={() => setConfiguring('email')}>Настроить</Button>
+                ) : null}
                 {i.setup ? (
                   <Button variant="secondary" onClick={() => setOpenSetup(openSetup === i.id ? null : i.id)}>
                     {openSetup === i.id ? 'Скрыть инструкцию' : 'Инструкция'}
@@ -114,6 +117,7 @@ function IntegrationsTab() {
       {configuring === 'max' ? <MaxSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
       {configuring === 'whatsapp' ? <WhatsAppSettingsModal onClose={() => { setConfiguring(null); void load(); }} /> : null}
       {configuring === 'tg_direct' ? <TgDirectSettingsModal onClose={() => { setConfiguring(null); void load(); }} /> : null}
+      {configuring === 'email' ? <EmailSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
     </div>
   );
 }
@@ -351,6 +355,98 @@ function WhatsAppSettingsModal({ onClose }: { onClose: () => void }) {
                 <Button onClick={start} disabled={busy || st.status === 'connecting'}>{busy ? '…' : st.status === 'qr' ? 'Обновить' : 'Подключить'}</Button>
               )}
               <Button variant="secondary" onClick={onClose} disabled={busy}>Закрыть</Button>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Настройка Email (SMTP) ───
+function EmailSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  useEsc(onClose);
+  const [cfg, setCfg] = useState<EmailAdminConfig | null>(null);
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState('465');
+  const [secure, setSecure] = useState(true);
+  const [user, setUser] = useState('');
+  const [pass, setPass] = useState('');
+  const [from, setFrom] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    void adminApi.aiEmailConfig().then((c) => {
+      setCfg(c); setHost(c.host); setPort(String(c.port)); setSecure(c.secure); setUser(c.user); setFrom(c.from);
+    }).catch(() => setErr('Не удалось загрузить настройки'));
+  }, []);
+
+  const save = async () => {
+    setBusy(true); setErr('');
+    try {
+      await adminApi.aiSaveEmail({ host, port: Number(port), secure, user, pass: pass || undefined, from });
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка сохранения'); } finally { setBusy(false); }
+  };
+  const test = async () => {
+    setTesting(true); setErr(''); setTestResult(null);
+    try {
+      await adminApi.aiSaveEmail({ host, port: Number(port), secure, user, pass: pass || undefined, from });
+      setTestResult(await adminApi.aiTestEmail());
+    } catch (e) { setTestResult({ ok: false, message: e instanceof Error ? e.message : 'Ошибка проверки' }); } finally { setTesting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <Card className="max-h-[90vh] w-full max-w-lg overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-xl font-light text-ink">Email (SMTP)</p>
+          {cfg ? <span className={`rounded-full px-2 py-0.5 text-xs ${cfg.configured ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{cfg.configured ? 'Настроено' : 'Не настроено'}</span> : null}
+        </div>
+        <p className="mb-5 text-sm text-dark-gray">Реквизиты SMTP вашего почтового ящика. Пока не заданы — письма гостю (приглашения воронки, ссылки) не уходят, только пишутся в лог.</p>
+
+        {!cfg ? <p className="text-sm text-dark-gray">Загрузка…</p> : (
+          <>
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>SMTP-хост</label>
+                <input value={host} onChange={(e) => setHost(e.target.value)} className={fieldCls} placeholder="smtp.yandex.ru" autoComplete="off" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Порт</label>
+                  <input value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" className={fieldCls} placeholder="465" />
+                </div>
+                <label className="flex items-end gap-2 pb-2 text-sm text-dark-gray">
+                  <input type="checkbox" checked={secure} onChange={(e) => setSecure(e.target.checked)} /> SSL (порт 465)
+                </label>
+              </div>
+              <div>
+                <label className={labelCls}>Логин (адрес ящика)</label>
+                <input value={user} onChange={(e) => setUser(e.target.value)} className={fieldCls} placeholder="noreply@nomero.online" autoComplete="off" />
+              </div>
+              <div>
+                <label className={labelCls}>Пароль приложения</label>
+                <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} className={fieldCls} autoComplete="new-password"
+                  placeholder={cfg.passSet ? '•••••••• (задан — оставьте пустым, чтобы не менять)' : 'пароль приложения'} />
+                <p className="mt-1 text-xs text-dark-gray">Именно «пароль приложения» из настроек почты, не основной пароль. Хранится в зашифрованном виде.</p>
+              </div>
+              <div>
+                <label className={labelCls}>Отправитель (From)</label>
+                <input value={from} onChange={(e) => setFrom(e.target.value)} className={fieldCls} placeholder="D H&A <noreply@nomero.online>" autoComplete="off" />
+              </div>
+            </div>
+
+            {testResult ? <p className={`mt-4 rounded-md px-3 py-2 text-sm ${testResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{testResult.ok ? '✓ ' : '✕ '}{testResult.message}</p> : null}
+            {err ? <p className="mt-3 text-sm text-red-600">{err}</p> : null}
+
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              <Button onClick={save} disabled={busy || testing}>{busy ? 'Сохранение…' : 'Сохранить'}</Button>
+              <Button variant="secondary" onClick={test} disabled={busy || testing}>{testing ? 'Проверка…' : 'Сохранить и проверить'}</Button>
+              <Button variant="secondary" onClick={onClose} disabled={busy || testing}>Отмена</Button>
             </div>
           </>
         )}

@@ -10,6 +10,7 @@ import {
   TelegramUserbotService,
   type TgUserbotState,
 } from '../../integrations/telegram-userbot/telegram-userbot.service.js';
+import { EmailConfigService } from '../../notifications/email/email-config.service.js';
 import { AuditService } from '../../warehouse/audit/audit.service.js';
 import {
   SaveMaxConfigDto,
@@ -17,6 +18,7 @@ import {
   TestMaxConfigDto,
   TestTelegramConfigDto,
   ToggleChannelDto,
+  SaveEmailConfigDto,
   TgDirectCodeDto,
   TgDirectPasswordDto,
   TgDirectStartDto,
@@ -30,7 +32,7 @@ import {
 /** Категория канала: гостевой AI-агент или уведомления. */
 type ChannelCategory = 'guest' | 'notifications';
 
-type ChannelId = 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'avito';
+type ChannelId = 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'email' | 'avito';
 
 interface ChannelCardBase {
   id: ChannelId;
@@ -73,6 +75,7 @@ export class ChannelsAdminController {
     private readonly max: MaxConfigService,
     private readonly whatsapp: WhatsAppService,
     private readonly userbot: TelegramUserbotService,
+    private readonly emailCfg: EmailConfigService,
     private readonly toggle: ChannelToggleService,
     private readonly audit: AuditService,
   ) {}
@@ -88,6 +91,7 @@ export class ChannelsAdminController {
     ]);
     const wa = this.whatsapp.getState();
     const ub = this.userbot.getState();
+    const email = await this.emailCfg.getPublicConfig();
     const base: ChannelCardBase[] = [
       {
         id: 'web',
@@ -183,6 +187,23 @@ export class ChannelsAdminController {
           '3. Нажмите «Подключить» — появится QR-код.\n' +
           '4. В WhatsApp на телефоне: Настройки → Связанные устройства → Привязка устройства → отсканируйте QR.\n' +
           '5. Статус сменится на «Подключено». Сессия хранится на сервере и переживает перезапуск.',
+      },
+      {
+        id: 'email',
+        name: 'Email (SMTP)',
+        category: 'notifications',
+        description:
+          'Отправка писем гостям: приглашения воронки заселения, подтверждения, ссылки на регистрацию. Укажите SMTP вашего почтового ящика. Пока не настроено — письма только логируются, гостю не уходят.',
+        available: true,
+        connected: email.configured,
+        needsSetup: true,
+        setup:
+          'Как подключить:\n' +
+          '1. Возьмите SMTP-реквизиты вашего почтового провайдера (Яндекс/Mail/Google/корпоративный).\n' +
+          '2. Хост и порт: напр. smtp.yandex.ru, порт 465 (SSL) или 587 (STARTTLS).\n' +
+          '3. Логин — полный адрес ящика; пароль — пароль приложения (не основной пароль аккаунта).\n' +
+          '4. Отправитель (From) — тот же адрес, напр. «D H&A <noreply@nomero.online>».\n' +
+          '5. Сохраните и нажмите «Проверить подключение».',
       },
       {
         id: 'avito',
@@ -354,5 +375,34 @@ export class ChannelsAdminController {
     const state = await this.userbot.logout();
     await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'tg_direct', payload: { action: 'logout' } });
     return state;
+  }
+
+  @Get('email')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Текущая конфигурация SMTP (без пароля)' })
+  emailConfig() {
+    return this.emailCfg.getPublicConfig();
+  }
+
+  @Put('email')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Сохранить реквизиты SMTP' })
+  async saveEmail(@Body() dto: SaveEmailConfigDto, @CurrentAdminId() adminId: string) {
+    await this.emailCfg.save(dto);
+    await this.audit.record({
+      actorId: adminId,
+      action: 'updated',
+      entity: 'AiChannel',
+      entityId: 'email',
+      payload: { hostSet: dto.host !== undefined, passChanged: !!dto.pass },
+    });
+    return this.emailCfg.getPublicConfig();
+  }
+
+  @Post('email/test')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Проверить подключение SMTP (verify)' })
+  testEmail() {
+    return this.emailCfg.testConnection();
   }
 }

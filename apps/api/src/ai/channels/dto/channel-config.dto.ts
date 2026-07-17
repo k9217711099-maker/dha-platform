@@ -1,5 +1,32 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+
+/** Сохранение реквизитов SMTP из админки (пустой пароль — не менять). */
+export class SaveEmailConfigDto {
+  @ApiPropertyOptional({ description: 'SMTP-хост, напр. smtp.yandex.ru' })
+  @IsOptional() @IsString() @MaxLength(200)
+  host?: string;
+
+  @ApiPropertyOptional({ description: 'Порт (465 SSL / 587 STARTTLS)' })
+  @IsOptional() @IsInt() @Min(1) @Max(65535)
+  port?: number;
+
+  @ApiPropertyOptional({ description: 'SSL (true для 465)' })
+  @IsOptional() @IsBoolean()
+  secure?: boolean;
+
+  @ApiPropertyOptional({ description: 'Логин (адрес ящика)' })
+  @IsOptional() @IsString() @MaxLength(200)
+  user?: string;
+
+  @ApiPropertyOptional({ description: 'Пароль приложения. Пусто — не менять.' })
+  @IsOptional() @IsString() @MaxLength(300)
+  pass?: string;
+
+  @ApiPropertyOptional({ description: 'Отправитель, напр. "D H&A <noreply@nomero.online>"' })
+  @IsOptional() @IsString() @MaxLength(200)
+  from?: string;
+}
 
 /** Включить/выключить канал. */
 export class ToggleChannelDto {
