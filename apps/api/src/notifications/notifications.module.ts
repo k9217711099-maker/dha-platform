@@ -5,6 +5,7 @@ import { DevSmsSender } from './sms/dev-sms.sender.js';
 import { SmscSmsSender } from './sms/smsc-sms.sender.js';
 import { EmailSender } from './email/email.port.js';
 import { DevEmailSender } from './email/dev-email.sender.js';
+import { SmtpEmailSender } from './email/smtp-email.sender.js';
 import { PushSender } from './push/push.port.js';
 import { MockPushSender } from './push/mock-push.sender.js';
 import { NotificationsService } from './notifications.service.js';
@@ -32,7 +33,14 @@ import type { Env } from '../config/env.schema.js';
       useFactory: (config: ConfigService<Env, true>, dev: DevSmsSender, smsc: SmscSmsSender) =>
         config.get('SMS_PROVIDER', { infer: true }) === 'smsc' ? smsc : dev,
     },
-    { provide: EmailSender, useClass: DevEmailSender },
+    DevEmailSender,
+    SmtpEmailSender,
+    {
+      provide: EmailSender,
+      inject: [ConfigService, DevEmailSender, SmtpEmailSender],
+      useFactory: (config: ConfigService<Env, true>, dev: DevEmailSender, smtp: SmtpEmailSender) =>
+        config.get('SMTP_HOST', { infer: true }) ? smtp : dev,
+    },
     { provide: PushSender, useClass: MockPushSender },
     NotificationsService,
   ],

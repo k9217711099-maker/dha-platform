@@ -242,6 +242,21 @@ export const envSchema = z.object({
   WA_PROXY_URL: z.string().optional(),
 
   /**
+   * SMTP для реальной отправки email (приглашения воронки, подтверждения). Если
+   * SMTP_HOST задан — письма уходят через SMTP; иначе DevEmailSender (только лог).
+   * SMTP_FROM — адрес отправителя (напр. "D H&A <noreply@nomero.online>").
+   */
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().default(587),
+  SMTP_SECURE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().default('D H&A <noreply@nomero.online>'),
+
+  /**
    * Telegram Direct (userbot, GramJS/MTProto) — общение с ЛИЧНОГО аккаунта, а не
    * бота. TG_USERBOT_ENABLED=true подключает сохранённую сессию при старте.
    * api_id/api_hash (my.telegram.org) и телефон вводятся в админке (Setting,
