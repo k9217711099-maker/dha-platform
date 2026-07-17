@@ -87,6 +87,7 @@ describe('GuestAgentService', () => {
       new PiiMaskingService(),
       svc as unknown as ConversationService,
       new ToolRegistry([]),
+      { get: async () => null } as unknown as import('../../common/settings/settings.service.js').SettingsService,
     );
 
     const res = await agent.handle({
@@ -114,6 +115,7 @@ describe('GuestAgentService', () => {
       new PiiMaskingService(),
       svc as unknown as ConversationService,
       new ToolRegistry([escalate]),
+      { get: async () => null } as unknown as import('../../common/settings/settings.service.js').SettingsService,
     );
 
     const res = await agent.handle({
@@ -143,6 +145,7 @@ describe('GuestAgentService', () => {
       new PiiMaskingService(),
       conversations,
       new ToolRegistry([]),
+      { get: async () => null } as unknown as import('../../common/settings/settings.service.js').SettingsService,
     );
     const res = await agent.handle({
       conversationId: 'esc1',

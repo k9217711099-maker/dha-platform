@@ -85,6 +85,22 @@ export class ChannelsAdminController {
     private readonly audit: AuditService,
   ) {}
 
+  @Get('ai-agent')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Включён ли AI-агент (отвечает автоматически)' })
+  async aiAgent(): Promise<{ enabled: boolean }> {
+    return { enabled: await this.toggle.isAiEnabled() };
+  }
+
+  @Put('ai-agent')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Включить/выключить AI-агента (при выкл — диалоги идут оператору)' })
+  async setAiAgent(@Body() dto: ToggleChannelDto, @CurrentAdminId() adminId: string): Promise<{ enabled: boolean }> {
+    await this.toggle.setAiEnabled(dto.enabled);
+    await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'ai_agent', payload: { enabled: dto.enabled } });
+    return { enabled: dto.enabled };
+  }
+
   @Get()
   @RequirePermission('ai_agent')
   @ApiOperation({ summary: 'Список каналов коммуникации и их статус' })

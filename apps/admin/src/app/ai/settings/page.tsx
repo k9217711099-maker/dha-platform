@@ -41,16 +41,38 @@ function IntegrationsTab() {
   const [configuring, setConfiguring] = useState<AiChannel['id'] | null>(null);
   const [openSetup, setOpenSetup] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [aiOn, setAiOn] = useState<boolean | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
   const load = () => adminApi.aiChannels().then(setItems).catch(() => setItems([]));
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); void adminApi.aiAgentEnabled().then((r) => setAiOn(r.enabled)).catch(() => setAiOn(true)); }, []);
 
   const setEnabled = async (id: string, enabled: boolean) => {
     setToggling(id);
     try { setItems(await adminApi.aiSetChannelEnabled(id, enabled)); } catch { /* игнор */ } finally { setToggling(null); }
   };
+  const toggleAi = async () => {
+    if (aiOn === null) return;
+    setAiBusy(true);
+    try { const r = await adminApi.aiSetAgentEnabled(!aiOn); setAiOn(r.enabled); } catch { /* игнор */ } finally { setAiBusy(false); }
+  };
 
   return (
     <div className="max-w-2xl space-y-4">
+      <Card className="flex items-center justify-between gap-4 p-5">
+        <div className="min-w-0">
+          <p className="text-lg font-medium text-ink">AI-агент {aiOn === false ? <span className="text-amber-700">выключен</span> : <span className="text-emerald-700">включён</span>}</p>
+          <p className="mt-1 text-sm text-dark-gray">
+            {aiOn === false
+              ? 'AI не отвечает автоматически. Все входящие из всех каналов идут оператору в «ленту эскалаций» — отвечаете вручную.'
+              : 'AI отвечает гостям автоматически во всех каналах. Выключите, чтобы переписки шли только оператору.'}
+          </p>
+        </div>
+        <button type="button" role="switch" aria-checked={!!aiOn} aria-label="AI-агент вкл/выкл" disabled={aiBusy || aiOn === null}
+          onClick={() => void toggleAi()}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-50 ${aiOn ? 'bg-emerald-500' : 'bg-ink/20'}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${aiOn ? 'left-[22px]' : 'left-0.5'}`} />
+        </button>
+      </Card>
       {items.map((i) => (
         <Card key={i.id} className="p-5">
           <div className="flex items-start justify-between gap-4">

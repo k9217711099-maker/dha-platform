@@ -3,6 +3,7 @@ import { AiActorKind, AiChannel, AiConversationStatus, AiMessageRole } from '@pr
 import { LlmPort } from '../llm/llm.port.js';
 import type { LlmMessage } from '../llm/llm.types.js';
 import { PiiMaskingService } from '../pii/pii-masking.service.js';
+import { SettingsService } from '../../common/settings/settings.service.js';
 import { ConversationService } from '../conversations/conversation.service.js';
 import { ToolRegistry } from '../tools/tool-registry.js';
 import type { ToolContext } from '../tools/agent-tool.js';
@@ -37,7 +38,14 @@ export class GuestAgentService {
     private readonly pii: PiiMaskingService,
     private readonly conversations: ConversationService,
     private readonly tools: ToolRegistry,
+    private readonly settings: SettingsService,
   ) {}
+
+  /** Глобальный тумблер AI-агента (админка → «AI и коммуникации»). По умолчанию включён. */
+  private async aiEnabled(): Promise<boolean> {
+    const v = await this.settings.get('ai.agent.enabled');
+    return v === null || v === undefined || v === '' ? true : v === 'true';
+  }
 
   async handle(input: GuestMessageInput): Promise<GuestMessageResult> {
     const convo =
@@ -61,6 +69,18 @@ export class GuestAgentService {
       role: AiMessageRole.USER,
       content: input.text,
     });
+
+    // Глобальный тумблер AI выключен — модель не вызываем, диалог сразу к оператору.
+    if (!(await this.aiEnabled())) {
+      if (convo.status !== AiConversationStatus.ESCALATED) {
+        await this.conversations.setStatus(convo.id, AiConversationStatus.ESCALATED);
+      }
+      return {
+        conversationId: convo.id,
+        reply: 'Ваше сообщение получено — администратор скоро ответит.',
+        escalated: true,
+      };
+    }
 
     // Диалог передан человеку — модель молчит, сообщения копятся для оператора (лента эскалаций §4.7).
     if (convo.status === AiConversationStatus.ESCALATED) {

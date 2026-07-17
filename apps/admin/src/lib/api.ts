@@ -2397,6 +2397,8 @@ export const adminApi = {
     request(`/admin/checkin/registrations/${bookingId}/reject`, { method: 'POST', body: { reason, needsFix } }),
 
   // AI и коммуникации · каналы (интеграции)
+  aiAgentEnabled: () => request<{ enabled: boolean }>('/ai/channels/ai-agent'),
+  aiSetAgentEnabled: (enabled: boolean) => request<{ enabled: boolean }>('/ai/channels/ai-agent', { method: 'PUT', body: { enabled } }),
   aiChannels: () => request<AiChannel[]>('/ai/channels'),
   aiSetChannelEnabled: (id: string, enabled: boolean) =>
     request<AiChannel[]>(`/ai/channels/${id}/enabled`, { method: 'PUT', body: { enabled } }),

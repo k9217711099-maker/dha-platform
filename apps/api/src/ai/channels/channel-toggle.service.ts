@@ -41,6 +41,16 @@ export class ChannelToggleService {
     await this.settings.set(ChannelToggleService.key(id), on ? 'true' : 'false');
   }
 
+  /** Глобальный тумблер AI-агента: отвечает ли модель автоматически (по умолчанию да). */
+  async isAiEnabled(): Promise<boolean> {
+    const v = await this.settings.get('ai.agent.enabled');
+    return v === null || v === undefined || v === '' ? true : v === 'true';
+  }
+
+  async setAiEnabled(on: boolean): Promise<void> {
+    await this.settings.set('ai.agent.enabled', on ? 'true' : 'false');
+  }
+
   /** Карта включённости всех переключаемых каналов — для списка в админке. */
   async map(): Promise<Record<ToggleChannelId, boolean>> {
     const entries = await Promise.all(
