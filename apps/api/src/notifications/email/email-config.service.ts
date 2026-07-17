@@ -115,11 +115,21 @@ export class EmailConfigService {
         port: c.port,
         secure: c.secure,
         auth: c.user ? { user: c.user, pass: c.pass } : undefined,
+        // Быстрый отказ вместо зависания, если порт закрыт/хост недоступен.
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 15_000,
       });
       await tx.verify();
       return { ok: true, message: `Подключение успешно: ${c.host}:${c.port}` };
     } catch (e) {
-      return { ok: false, message: `Не удалось подключиться: ${(e as Error).message}` };
+      const m = (e as Error).message || '';
+      const hint = /timeout|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN/i.test(m)
+        ? ' — сервер не смог подключиться к SMTP (проверьте хост/порт/SSL; порт может быть закрыт на сервере).'
+        : /auth|535|credential|password|login/i.test(m)
+          ? ' — логин или пароль отклонены (нужен «пароль приложения», не основной).'
+          : '';
+      return { ok: false, message: `Не удалось подключиться: ${m}${hint}` };
     }
   }
 

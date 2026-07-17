@@ -42,6 +42,10 @@ export class SmtpEmailSender extends EmailSender {
       port: c.port,
       secure: c.secure,
       auth: c.user ? { user: c.user, pass: c.pass } : undefined,
+      // Не зависаем на недоступном SMTP — быстрый отказ (ошибка попадёт в лог/статус).
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
     });
     this.cached = { key, tx };
     return tx;

@@ -69,6 +69,8 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
   private enabledCached = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private lastDetail = '';
+  /** Подряд идущие обрывы без выхода в 'open' — сигнал проблемы прокси/IP. */
+  private connectFailures = 0;
   private handler: ((from: string, text: string) => Promise<void>) | null = null;
 
   constructor(
@@ -250,6 +252,8 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
     if (u.connection === 'open') {
       this.state = 'connected';
       this.qr = null;
+      this.connectFailures = 0;
+      this.lastDetail = '';
       this.me = this.sock?.user?.id?.split(':')[0]?.replace(/@.*/, '') ?? null;
       this.logger.log(`WhatsApp подключён${this.me ? ` как ${this.me}` : ''}.`);
     }
@@ -260,7 +264,12 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
       // 515 restartRequired — штатный разрыв сразу после сканирования QR: нужно
       // быстро переподключиться на сохранённой сессии (это НЕ ошибка пейринга).
       const restartRequired = code === DisconnectReason.restartRequired;
+      this.connectFailures += 1;
       this.lastDetail = `разрыв (код ${code ?? '—'}${err?.message ? `: ${err.message.slice(0, 80)}` : ''})`;
+      // Устойчивый цикл обрывов (не logout) — почти всегда прокси/IP заблокирован WhatsApp.
+      if (this.connectFailures >= 3 && !loggedOut) {
+        this.lastDetail += '. Похоже, прокси/IP не пропускает WhatsApp — нужен другой (жилой/мобильный) прокси или хост вне РФ.';
+      }
       this.logger.warn(`WhatsApp close: statusCode=${code ?? '—'} ${err?.message ?? ''}`);
       this.sock = null;
       if (loggedOut) {
