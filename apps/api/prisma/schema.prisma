@@ -769,6 +769,10 @@ model Amenity {
   label     String
   /// Код категории удобства (AmenityCategory из домена).
   category  String
+  /// Имя иконки Lucide (напр. "wifi", "tv") — показывается в карточках и фильтрах.
+  icon      String?
+  /// Показывать как фильтр в поиске (гостевой каталог/модуль бронирования).
+  isFilter  Boolean  @default(false)
   sortOrder Int      @default(0)
   active    Boolean  @default(true)
   createdAt DateTime @default(now())

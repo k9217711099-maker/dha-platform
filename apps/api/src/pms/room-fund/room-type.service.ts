@@ -157,10 +157,10 @@ export class RoomTypeService {
   /** Каталог оснащения (удобства) для редактора: сгруппировано по категориям (домен + TravelLine). */
   async amenitiesCatalog() {
     const all = await this.prisma.amenity.findMany({ where: { active: true }, orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }] });
-    const byCat = new Map<string, { code: string; label: string }[]>();
+    const byCat = new Map<string, { code: string; label: string; icon: string | null; isFilter: boolean }[]>();
     for (const a of all) {
       const list = byCat.get(a.category) ?? [];
-      list.push({ code: a.code, label: a.label });
+      list.push({ code: a.code, label: a.label, icon: a.icon, isFilter: a.isFilter });
       byCat.set(a.category, list);
     }
     // Подписи групп: доменные + расширенные TravelLine (порядок — сначала доменные).
@@ -173,6 +173,7 @@ export class RoomTypeService {
     const ordered = [...new Set([...order, ...byCat.keys()])];
     return ordered.filter((cat) => byCat.has(cat)).map((cat) => ({ value: cat, label: labels[cat] ?? cat, items: byCat.get(cat) ?? [] }));
   }
+
 
   /** Журнал изменений раздела (категории + номера), новые сверху; с фильтрами. Имя автора резолвим по actorId. */
   async changelog(tenantId: string, opts: { entity?: string; action?: string; from?: string; to?: string; take?: number } = {}) {

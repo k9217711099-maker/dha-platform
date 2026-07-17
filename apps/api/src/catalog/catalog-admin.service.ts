@@ -6,11 +6,15 @@ export interface AmenityInput {
   code: string;
   label: string;
   category: string;
+  icon?: string | null;
+  isFilter?: boolean;
   sortOrder?: number;
 }
 export interface AmenityPatch {
   label?: string;
   category?: string;
+  icon?: string | null;
+  isFilter?: boolean;
   sortOrder?: number;
   active?: boolean;
 }
@@ -45,18 +49,21 @@ export class CatalogAdminService implements OnModuleInit {
     this.logger.log(`Словарь удобств засеян из домена: ${AMENITIES.length}`);
   }
 
-  /** Группы удобств для /catalog/filters (только активные). */
+  /** Группы удобств для /catalog/filters — только помеченные как фильтр (isFilter), с иконкой. */
   async amenityCategoriesForFilters(): Promise<
-    { value: string; label: string; items: { code: string; label: string }[] }[]
+    { value: string; label: string; items: { code: string; label: string; icon: string | null }[] }[]
   > {
+    // Пока ни одно удобство не помечено как фильтр — показываем все активные
+    // (совместимость: не обнуляем фильтры до первой настройки в админке).
+    const anyFilter = await this.prisma.amenity.count({ where: { active: true, isFilter: true } });
     const all = await this.prisma.amenity.findMany({
-      where: { active: true },
+      where: anyFilter > 0 ? { active: true, isFilter: true } : { active: true },
       orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
     });
-    const byCat = new Map<string, { code: string; label: string }[]>();
+    const byCat = new Map<string, { code: string; label: string; icon: string | null }[]>();
     for (const a of all) {
       const list = byCat.get(a.category) ?? [];
-      list.push({ code: a.code, label: a.label });
+      list.push({ code: a.code, label: a.label, icon: a.icon });
       byCat.set(a.category, list);
     }
     return Object.entries(AMENITY_CATEGORY_LABELS)
@@ -79,6 +86,8 @@ export class CatalogAdminService implements OnModuleInit {
         code: dto.code.trim(),
         label: dto.label.trim(),
         category: dto.category,
+        icon: dto.icon ?? null,
+        isFilter: dto.isFilter ?? false,
         sortOrder: dto.sortOrder ?? 0,
       },
     });

@@ -357,6 +357,8 @@ export interface Amenity {
   code: string;
   label: string;
   category: string;
+  icon: string | null;
+  isFilter: boolean;
   sortOrder: number;
   active: boolean;
 }
@@ -796,7 +798,7 @@ export interface RoomFundChangeEntry {
 export interface AmenityGroup {
   value: string;
   label: string;
-  items: { code: string; label: string }[];
+  items: { code: string; label: string; icon?: string | null; isFilter?: boolean }[];
 }
 export interface UploadResult {
   url: string;
@@ -2455,9 +2457,9 @@ export const adminApi = {
   // Словарь удобств (фильтры)
   amenities: () => request<Amenity[]>('/admin/amenities'),
   amenityCategories: () => request<AmenityCategoryOption[]>('/admin/amenity-categories'),
-  createAmenity: (body: { code: string; label: string; category: string; sortOrder?: number }) =>
+  createAmenity: (body: { code: string; label: string; category: string; icon?: string | null; isFilter?: boolean; sortOrder?: number }) =>
     request<Amenity>('/admin/amenities', { method: 'POST', body }),
-  updateAmenity: (id: string, body: Partial<Pick<Amenity, 'label' | 'category' | 'sortOrder' | 'active'>>) =>
+  updateAmenity: (id: string, body: Partial<Pick<Amenity, 'label' | 'category' | 'icon' | 'isFilter' | 'sortOrder' | 'active'>>) =>
     request<Amenity>(`/admin/amenities/${id}`, { method: 'PATCH', body }),
   deleteAmenity: (id: string) => request(`/admin/amenities/${id}`, { method: 'DELETE' }),
 

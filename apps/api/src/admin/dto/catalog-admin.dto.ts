@@ -15,6 +15,16 @@ export class CreateAmenityDto {
   @IsString()
   category!: string;
 
+  @ApiPropertyOptional({ description: 'Имя иконки Lucide (напр. wifi, tv)' })
+  @IsOptional()
+  @IsString()
+  icon?: string | null;
+
+  @ApiPropertyOptional({ description: 'Показывать как фильтр поиска' })
+  @IsOptional()
+  @IsBoolean()
+  isFilter?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
@@ -32,6 +42,16 @@ export class UpdateAmenityDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @ApiPropertyOptional({ description: 'Имя иконки Lucide' })
+  @IsOptional()
+  @IsString()
+  icon?: string | null;
+
+  @ApiPropertyOptional({ description: 'Показывать как фильтр поиска' })
+  @IsOptional()
+  @IsBoolean()
+  isFilter?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

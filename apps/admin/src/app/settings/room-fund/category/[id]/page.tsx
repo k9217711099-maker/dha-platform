@@ -7,6 +7,7 @@ import { adminApi, fileUrl, type AmenityGroup, type PmsRoomOption } from '../../
 import { BED_TYPE_OPTIONS, ROOM_TYPE_OPTIONS, VIEW_OPTIONS } from '../../../../../lib/room-fund-catalogs';
 import { optimizeImage } from '../../../../../lib/image';
 import { MapPicker } from '../../../../../components/MapPicker';
+import { AmenityIcon } from '../../../../../components/AmenityIcon';
 import { useRequireAdmin } from '../../../../../lib/use-admin';
 
 const selectCls = 'w-full rounded-md border border-ink/20 bg-white px-3 py-2 text-sm';
@@ -222,7 +223,9 @@ export default function CategoryEditorPage() {
                         <label key={it.code} className="flex items-center gap-2 py-0.5 text-sm text-ink">
                           <input type="checkbox" checked={form.amenities.includes(it.code)}
                             onChange={(e) => set({ amenities: e.target.checked ? [...form.amenities, it.code] : form.amenities.filter((x) => x !== it.code) })} />
+                          <AmenityIcon name={it.icon} className="h-4 w-4 text-dark-gray" />
                           {it.label}
+                          {it.isFilter ? <span className="ml-1 rounded bg-sky-100 px-1 text-[10px] text-sky-700">фильтр</span> : null}
                         </label>
                       ))}
                     </div>
