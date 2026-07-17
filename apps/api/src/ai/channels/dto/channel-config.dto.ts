@@ -113,6 +113,19 @@ export class TgDirectStartDto {
   phone!: string;
 }
 
+/** Telegram Direct: вход по QR (как Telegram Web) — нужны только реквизиты. */
+export class TgDirectStartQrDto {
+  @ApiProperty({ description: 'api_id с my.telegram.org' })
+  @IsString()
+  @MaxLength(32)
+  apiId!: string;
+
+  @ApiProperty({ description: 'api_hash с my.telegram.org' })
+  @IsString()
+  @MaxLength(64)
+  apiHash!: string;
+}
+
 /** Telegram Direct: шаг 2 — код из Telegram. */
 export class TgDirectCodeDto {
   @ApiProperty({ description: 'Код подтверждения из Telegram' })

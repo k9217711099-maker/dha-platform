@@ -22,6 +22,7 @@ import {
   TgDirectCodeDto,
   TgDirectPasswordDto,
   TgDirectStartDto,
+  TgDirectStartQrDto,
 } from './dto/channel-config.dto.js';
 import {
   ChannelToggleService,
@@ -351,6 +352,15 @@ export class ChannelsAdminController {
   async tgDirectStart(@Body() dto: TgDirectStartDto, @CurrentAdminId() adminId: string): Promise<TgUserbotState> {
     const state = await this.userbot.start(dto);
     await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'tg_direct', payload: { action: 'start' } });
+    return state;
+  }
+
+  @Post('tg-direct/start-qr')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Вход по QR (как Telegram Web): api_id/api_hash → QR-код' })
+  async tgDirectStartQr(@Body() dto: TgDirectStartQrDto, @CurrentAdminId() adminId: string): Promise<TgUserbotState> {
+    const state = await this.userbot.startQr(dto);
+    await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'tg_direct', payload: { action: 'start_qr' } });
     return state;
   }
 

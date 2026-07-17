@@ -4,6 +4,7 @@ import { TelegramClient, Api } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 import { NewMessage, type NewMessageEvent } from 'telegram/events';
 import { computeCheck } from 'telegram/Password';
+import QRCode from 'qrcode';
 import { SettingsService } from '../../common/settings/settings.service.js';
 import { CryptoService } from '../../common/crypto/crypto.service.js';
 import type { Env } from '../../config/env.schema.js';
@@ -23,6 +24,7 @@ const ENABLED_KEY = 'ai.channel.tg_direct.enabled';
 export type TgUserbotStatus =
   | 'disabled'
   | 'disconnected'
+  | 'awaiting_qr'
   | 'awaiting_code'
   | 'awaiting_password'
   | 'connected';
@@ -31,6 +33,8 @@ export interface TgUserbotState {
   status: TgUserbotStatus;
   phone: string | null;
   me: string | null;
+  /** QR-код (data:image/png) для входа как в Telegram Web — пока status='awaiting_qr'. */
+  qr: string | null;
   message: string;
 }
 
@@ -79,7 +83,12 @@ export class TelegramUserbotService
   private pending: { client: TelegramClient; phone: string; phoneCodeHash: string } | null = null;
   private status: TgUserbotStatus = 'disconnected';
   private me: string | null = null;
+  private qr: string | null = null;
   private enabledCached = false;
+  /** Клиент, живущий во время QR-входа (до завершения login). */
+  private qrClient: TelegramClient | null = null;
+  /** Ожидание облачного пароля при QR-входе (2FA): резолвится submitPassword. */
+  private passwordDeferred: ((p: string) => void) | null = null;
   private handler: ((from: string, text: string) => Promise<void>) | null = null;
 
   constructor(
@@ -131,6 +140,7 @@ export class TelegramUserbotService
   onModuleDestroy(): void {
     void this.client?.disconnect().catch(() => undefined);
     void this.pending?.client.disconnect().catch(() => undefined);
+    void this.qrClient?.disconnect().catch(() => undefined);
   }
 
   registerHandler(fn: (from: string, text: string) => Promise<void>): void {
@@ -141,18 +151,91 @@ export class TelegramUserbotService
     const phone = null; // телефон резолвится асинхронно; в getState не блокируемся
     const msg: Record<TgUserbotStatus, string> = {
       disabled: 'Канал выключен — включите переключателем. Для подключения нужен SOCKS5-прокси (TG_USERBOT_PROXY в .env).',
-      disconnected: 'Не подключено. Введите api_id, api_hash (my.telegram.org) и телефон, затем «Подключить».',
+      disconnected: 'Не подключено. Введите api_id, api_hash (my.telegram.org), затем войдите по QR или телефону.',
+      awaiting_qr: 'Отсканируйте QR в приложении Telegram: Настройки → Устройства → Подключить устройство.',
       awaiting_code: 'Введите код, присланный в Telegram на этот номер.',
       awaiting_password: 'Включена двухэтапная проверка — введите облачный пароль (2FA).',
       connected: `Подключено${this.me ? ` как ${this.me}` : ''}.`,
     };
-    return { status: this.status, phone, me: this.me, message: msg[this.status] };
+    return { status: this.status, phone, me: this.me, qr: this.qr, message: msg[this.status] };
   }
 
   /** Полная публичная конфигурация (с телефоном) — отдельным запросом. */
   async getPublicState(): Promise<TgUserbotState> {
     const phone = (await this.settings.get(K.phone)) || null;
     return { ...this.getState(), phone };
+  }
+
+  /**
+   * Вход по QR-коду (как в Telegram Web): сервер получает login-токен, показывает
+   * QR, гость сканирует его в приложении Telegram. api_id/api_hash всё равно нужны
+   * (my.telegram.org) — QR заменяет только ввод кода по SMS. Работает через
+   * TG_USERBOT_PROXY. При 2FA — попросит облачный пароль (submitPassword).
+   */
+  async startQr(input: { apiId: string; apiHash: string }): Promise<TgUserbotState> {
+    if (!this.enabledCached) return this.getState();
+    const { apiId, apiHash } = await this.creds(input);
+    if (!apiId || !apiHash) {
+      return { ...this.getState(), message: 'Заполните api_id и api_hash.' };
+    }
+    await this.settings.set(K.apiId, String(apiId));
+    await this.settings.set(K.apiHash, this.crypto.encryptPii(apiHash));
+    // Закрываем предыдущую попытку QR, если была.
+    await this.qrClient?.disconnect().catch(() => undefined);
+    this.qr = null;
+    this.passwordDeferred = null;
+    try {
+      const client = this.newClient('', apiId, apiHash);
+      this.qrClient = client;
+      await client.connect();
+      this.status = 'awaiting_qr';
+      // signInUserWithQrCode работает в фоне: коллбэк qrCode обновляет картинку,
+      // промис резолвится, когда пользователь отсканирует и (при 2FA) введёт пароль.
+      void client
+        .signInUserWithQrCode(
+          { apiId, apiHash },
+          {
+            qrCode: async ({ token }) => {
+              const b64 = token.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+              this.qr = await QRCode.toDataURL(`tg://login?token=${b64}`).catch(() => null);
+              this.status = 'awaiting_qr';
+            },
+            password: async () => {
+              this.status = 'awaiting_password';
+              return new Promise<string>((resolve) => {
+                this.passwordDeferred = resolve;
+              });
+            },
+            onError: (err: Error) => {
+              this.logger.warn(`QR-вход: ${err.message}`);
+            },
+          },
+        )
+        .then(async () => {
+          this.qrClient = null;
+          this.client = client;
+          this.qr = null;
+          this.passwordDeferred = null;
+          const session = client.session.save() as unknown as string;
+          if (session) await this.settings.set(K.session, this.crypto.encryptPii(session));
+          await this.attach(client);
+          this.status = 'connected';
+          this.logger.log(`Userbot вошёл по QR${this.me ? ` как ${this.me}` : ''}.`);
+        })
+        .catch((e: unknown) => {
+          this.logger.error(`QR-вход не завершён: ${(e as Error).message}`);
+          void client.disconnect().catch(() => undefined);
+          this.qrClient = null;
+          this.qr = null;
+          this.passwordDeferred = null;
+          if (this.status !== 'connected') this.status = 'disconnected';
+        });
+    } catch (e) {
+      this.logger.error(`startQr: ${(e as Error).message}`);
+      this.status = 'disconnected';
+      return { ...this.getState(), message: `Не удалось начать QR-вход: ${(e as Error).message}` };
+    }
+    return this.getState();
   }
 
   private async creds(input?: { apiId?: string; apiHash?: string }): Promise<{ apiId: number; apiHash: string }> {
@@ -227,6 +310,13 @@ export class TelegramUserbotService
 
   /** Шаг 3: облачный пароль (2FA). */
   async submitPassword(password: string): Promise<TgUserbotState> {
+    // QR-вход: пароль ждёт коллбэк signInUserWithQrCode — просто резолвим его.
+    if (this.passwordDeferred) {
+      const resolve = this.passwordDeferred;
+      this.passwordDeferred = null;
+      resolve(password);
+      return this.getState();
+    }
     if (!this.pending) return { ...this.getState(), message: 'Сессия входа не запущена — начните заново.' };
     const { client } = this.pending;
     try {
@@ -248,8 +338,12 @@ export class TelegramUserbotService
       /* noop */
     }
     await this.client?.disconnect().catch(() => undefined);
+    await this.qrClient?.disconnect().catch(() => undefined);
     this.client = null;
     this.pending = null;
+    this.qrClient = null;
+    this.qr = null;
+    this.passwordDeferred = null;
     this.me = null;
     await this.settings.set(K.session, '');
     this.status = this.enabledCached ? 'disconnected' : 'disabled';

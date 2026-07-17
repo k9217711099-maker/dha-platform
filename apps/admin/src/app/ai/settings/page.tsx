@@ -459,6 +459,7 @@ function EmailSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved
 const UB_BADGE: Record<TgUserbotState['status'], { label: string; cls: string }> = {
   disabled: { label: 'Выключено', cls: 'bg-ink/10 text-dark-gray' },
   disconnected: { label: 'Не подключено', cls: 'bg-amber-100 text-amber-800' },
+  awaiting_qr: { label: 'Ожидает QR', cls: 'bg-sky-100 text-sky-800' },
   awaiting_code: { label: 'Ожидает код', cls: 'bg-sky-100 text-sky-800' },
   awaiting_password: { label: 'Ожидает пароль', cls: 'bg-sky-100 text-sky-800' },
   connected: { label: 'Подключено', cls: 'bg-emerald-100 text-emerald-800' },
@@ -478,6 +479,13 @@ function TgDirectSettingsModal({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void adminApi.aiTgDirectState().then((s) => { setSt(s); if (s.phone) setPhone(s.phone); }).catch(() => setErr('Не удалось загрузить статус'));
   }, []);
+
+  // При QR-входе QR и подключение приходят асинхронно — опрашиваем статус.
+  useEffect(() => {
+    if (st?.status !== 'awaiting_qr') return;
+    const id = setInterval(() => { void adminApi.aiTgDirectState().then(setSt).catch(() => {}); }, 2000);
+    return () => clearInterval(id);
+  }, [st?.status]);
 
   const run = async (fn: () => Promise<TgUserbotState>) => {
     setBusy(true); setErr('');
@@ -512,9 +520,18 @@ function TgDirectSettingsModal({ onClose }: { onClose: () => void }) {
                   <p className="mt-1 text-xs text-dark-gray">api_id и api_hash — на my.telegram.org → API development tools.</p>
                 </div>
                 <div>
-                  <label className={labelCls}>Телефон</label>
+                  <label className={labelCls}>Телефон (только для входа по телефону; для QR не нужен)</label>
                   <input value={phone} onChange={(e) => setPhone(e.target.value)} className={fieldCls} placeholder="+79990000000" autoComplete="off" />
                 </div>
+                <p className="text-xs text-dark-gray">Рекомендуем вход по QR (как в Telegram Web): нажмите «Войти по QR» и отсканируйте код в приложении Telegram → Настройки → Устройства.</p>
+              </div>
+            ) : st.status === 'awaiting_qr' ? (
+              <div className="flex flex-col items-center gap-2">
+                {st.qr ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={st.qr} alt="QR для входа в Telegram" className="h-60 w-60 rounded-md border border-ink/10" />
+                ) : <p className="text-sm text-dark-gray">Готовим QR…</p>}
+                <p className="text-center text-xs text-dark-gray">Telegram → Настройки → Устройства → «Подключить устройство» → отсканируйте код. Код обновляется автоматически.</p>
               </div>
             ) : st.status === 'awaiting_code' ? (
               <div>
@@ -535,7 +552,12 @@ function TgDirectSettingsModal({ onClose }: { onClose: () => void }) {
 
             <div className="mt-6 flex flex-wrap items-center gap-2">
               {st.status === 'disconnected' ? (
-                <Button onClick={() => run(() => adminApi.aiTgDirectStart({ apiId, apiHash, phone }))} disabled={busy || !apiId || !apiHash || !phone}>{busy ? '…' : 'Подключить'}</Button>
+                <>
+                  <Button onClick={() => run(() => adminApi.aiTgDirectStartQr({ apiId, apiHash }))} disabled={busy || !apiId || !apiHash}>{busy ? '…' : 'Войти по QR'}</Button>
+                  <Button variant="secondary" onClick={() => run(() => adminApi.aiTgDirectStart({ apiId, apiHash, phone }))} disabled={busy || !apiId || !apiHash || !phone}>{busy ? '…' : 'Войти по телефону'}</Button>
+                </>
+              ) : st.status === 'awaiting_qr' ? (
+                <Button variant="secondary" onClick={() => run(() => adminApi.aiTgDirectLogout())} disabled={busy}>Отмена входа</Button>
               ) : st.status === 'awaiting_code' ? (
                 <Button onClick={() => run(() => adminApi.aiTgDirectCode(code))} disabled={busy || !code}>{busy ? '…' : 'Отправить код'}</Button>
               ) : st.status === 'awaiting_password' ? (

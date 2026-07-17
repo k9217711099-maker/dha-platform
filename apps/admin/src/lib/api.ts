@@ -186,9 +186,10 @@ export interface WaState {
 
 /** Статус Telegram Direct (userbot, GramJS). */
 export interface TgUserbotState {
-  status: 'disabled' | 'disconnected' | 'awaiting_code' | 'awaiting_password' | 'connected';
+  status: 'disabled' | 'disconnected' | 'awaiting_qr' | 'awaiting_code' | 'awaiting_password' | 'connected';
   phone: string | null;
   me: string | null;
+  qr: string | null;
   message: string;
 }
 
@@ -2399,6 +2400,8 @@ export const adminApi = {
   aiTgDirectState: () => request<TgUserbotState>('/ai/channels/tg-direct'),
   aiTgDirectStart: (body: { apiId: string; apiHash: string; phone: string }) =>
     request<TgUserbotState>('/ai/channels/tg-direct/start', { method: 'POST', body }),
+  aiTgDirectStartQr: (body: { apiId: string; apiHash: string }) =>
+    request<TgUserbotState>('/ai/channels/tg-direct/start-qr', { method: 'POST', body }),
   aiTgDirectCode: (code: string) =>
     request<TgUserbotState>('/ai/channels/tg-direct/code', { method: 'POST', body: { code } }),
   aiTgDirectPassword: (password: string) =>
