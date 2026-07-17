@@ -62,19 +62,19 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* ── переопределение токенов на гостевую палитру ── */
+/* ── переопределение токенов на гостевую палитру («Туман», вариант 1d) ── */
 :root {
-  --color-bg: #f7f4ee; /* слоновая кость */
+  --color-bg: #faf8f3; /* слоновая кость */
   --color-surface: #ffffff;
-  --color-beige: #f7f4ee;
-  --color-sand: #efeae0; /* тёплый песок */
-  --color-ink: #1c1a17; /* тушь */
-  --color-black: #1c1a17;
-  --color-dark-gray: #55504a; /* дым */
+  --color-beige: #faf8f3;
+  --color-sand: #f2eee5; /* тёплый песок */
+  --color-ink: #524a40; /* умбра */
+  --color-black: #524a40;
+  --color-dark-gray: #7c7367; /* дым */
   --color-white: #ffffff;
-  --color-primary: #1c1a17;
+  --color-primary: #524a40;
   --color-accent: #a5794a; /* бронза */
-  --color-hairline: rgba(28, 26, 23, 0.16);
+  --color-hairline: rgba(82, 74, 64, 0.14);
 
   --font-sans: 'Jost', 'Helvetica Neue', Arial, sans-serif;
   --font-serif: 'Cormorant Garamond', Georgia, serif;

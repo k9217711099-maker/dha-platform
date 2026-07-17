@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D Hotels &amp; Apartments — Тихий люкс · Греж</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Jost:wght@300;400;500&display=swap');
+
+:root {
+  --ivory: #F7F4EE;
+  --ivory-deep: #EFEAE0;
+  --ink: #1C1A17;
+  --ink-soft: #55504A;
+  --bronze: #A5794A;
+  --hairline: rgba(28, 26, 23, .16);
+  --serif: 'Cormorant Garamond', 'Times New Roman', serif;
+  --sans: 'Jost', 'Helvetica Neue', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--ivory);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 40px; }
+
+a { color: inherit; text-decoration: none; }
+a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--bronze);
+  outline-offset: 3px;
+}
+
+.overline {
+  font-size: 12px;
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+/* ---------- header ---------- */
+header {
+  border-bottom: 1px solid var(--hairline);
+  position: sticky;
+  top: 0;
+  background: rgba(247, 244, 238, .92);
+  backdrop-filter: blur(8px);
+  z-index: 50;
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 76px;
+}
+
+.logo {
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: .04em;
+}
+.logo span { color: var(--bronze); }
+
+nav ul {
+  display: flex;
+  gap: 42px;
+  list-style: none;
+}
+nav a {
+  font-size: 13px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  font-weight: 400;
+  padding: 6px 0;
+  border-bottom: 1px solid transparent;
+  transition: border-color .2s ease;
+}
+nav a:hover { border-bottom-color: var(--ink); }
+
+.header-login {
+  font-size: 13px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  border: 1px solid var(--hairline);
+  padding: 10px 26px;
+  transition: background .2s ease, color .2s ease, border-color .2s ease;
+  cursor: pointer;
+  background: none;
+  font-family: var(--sans);
+  color: var(--ink);
+}
+.header-login:hover { background: var(--ink); color: var(--ivory); border-color: var(--ink); }
+
+/* ---------- hero ---------- */
+.hero {
+  display: grid;
+  grid-template-columns: 1.15fr .85fr;
+  gap: 64px;
+  padding: 96px 0 88px;
+  align-items: end;
+}
+
+.hero h1 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(48px, 6.2vw, 86px);
+  line-height: 1.04;
+  letter-spacing: -.01em;
+  margin: 28px 0 30px;
+}
+.hero h1 em {
+  font-style: italic;
+  color: var(--bronze);
+}
+
+.hero p.lead {
+  max-width: 480px;
+  color: var(--ink-soft);
+  font-size: 18px;
+}
+
+.hero-meta {
+  display: flex;
+  gap: 48px;
+  margin-top: 56px;
+  padding-top: 28px;
+  border-top: 1px solid var(--hairline);
+}
+.hero-meta div strong {
+  display: block;
+  font-family: var(--serif);
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 1;
+}
+.hero-meta div span {
+  font-size: 12px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.hero-visual {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  background:
+    linear-gradient(160deg, rgba(165,121,74,.24), rgba(28,26,23,.06) 45%, rgba(28,26,23,.28)),
+    linear-gradient(20deg, #D9CFBE, #B9AB93 55%, #8E7F68);
+}
+.hero-visual::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.16'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.hero-visual .glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-size: clamp(140px, 18vw, 260px);
+  font-style: italic;
+  color: rgba(247, 244, 238, .5);
+  user-select: none;
+}
+.hero-visual figcaption {
+  position: absolute;
+  left: 24px;
+  bottom: 20px;
+  font-size: 11px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: rgba(247, 244, 238, .85);
+}
+
+/* ---------- booking bar ---------- */
+.booking {
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  background: var(--ivory);
+}
+.booking form {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr .9fr auto;
+  align-items: stretch;
+}
+.booking .field {
+  padding: 22px 28px 20px;
+  border-right: 1px solid var(--hairline);
+  cursor: pointer;
+  transition: background .2s ease;
+}
+.booking .field:hover { background: var(--ivory-deep); }
+.booking .field:first-child { padding-left: 0; }
+.booking label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+.booking .value {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-weight: 500;
+  border: none;
+  background: none;
+  width: 100%;
+  color: var(--ink);
+  font-style: normal;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.booking .submit {
+  background: var(--ink);
+  color: var(--ivory);
+  border: none;
+  font-family: var(--sans);
+  font-size: 13px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  padding: 0 52px;
+  cursor: pointer;
+  transition: background .25s ease, letter-spacing .25s ease;
+}
+.booking .submit:hover { background: var(--bronze); letter-spacing: .3em; }
+
+/* ---------- sections ---------- */
+section { padding: 104px 0; }
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 64px;
+}
+.section-head h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(34px, 4vw, 52px);
+  line-height: 1.1;
+}
+.section-head a {
+  font-size: 13px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 4px;
+  transition: border-color .2s ease, color .2s ease;
+}
+.section-head a:hover { border-color: var(--bronze); color: var(--bronze); }
+
+/* ---------- properties: editorial rows ---------- */
+.prop-row {
+  display: grid;
+  grid-template-columns: 70px 380px 1fr auto;
+  gap: 48px;
+  align-items: center;
+  padding: 40px 0;
+  border-top: 1px solid var(--hairline);
+  transition: background .25s ease;
+}
+.prop-row:last-of-type { border-bottom: 1px solid var(--hairline); }
+.prop-row:hover { background: rgba(28, 26, 23, .025); }
+
+.prop-num {
+  font-family: var(--serif);
+  font-size: 22px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.prop-img {
+  aspect-ratio: 16 / 10;
+  position: relative;
+  overflow: hidden;
+}
+.prop-img i {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transition: transform .5s ease;
+}
+.prop-row:hover .prop-img i { transform: scale(1.045); }
+.prop-img::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.14'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.img-a { background: linear-gradient(150deg, #CBBFA9, #97876C 60%, #6E6049); }
+.img-b { background: linear-gradient(150deg, #D6CDC2, #A99C8C 55%, #7B6F5F); }
+.img-c { background: linear-gradient(150deg, #C4BCAE, #8E8674 55%, #5F5949); }
+.img-d { background: linear-gradient(150deg, #DDD3C0, #B3A488 55%, #857758); }
+
+.prop-info h3 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 30px;
+  margin-bottom: 8px;
+}
+.prop-info .kind {
+  font-size: 12px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--bronze);
+  margin-bottom: 10px;
+  display: block;
+}
+.prop-info p { color: var(--ink-soft); max-width: 420px; font-size: 15px; }
+
+.prop-price { text-align: right; }
+.prop-price strong {
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 500;
+  display: block;
+}
+.prop-price span {
+  font-size: 12px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.prop-price a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 13px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border-bottom: 1px solid var(--hairline);
+  padding-bottom: 3px;
+  transition: color .2s ease, border-color .2s ease;
+}
+.prop-price a:hover { color: var(--bronze); border-color: var(--bronze); }
+.prop-price a svg { transition: transform .2s ease; }
+.prop-price a:hover svg { transform: translateX(4px); }
+
+/* ---------- benefits ---------- */
+.benefits { background: var(--ivory-deep); }
+.benefit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 48px;
+}
+.benefit {
+  border-top: 1px solid var(--ink);
+  padding-top: 26px;
+}
+.benefit .b-num {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 20px;
+  color: var(--bronze);
+  display: block;
+  margin-bottom: 18px;
+}
+.benefit h3 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 24px;
+  margin-bottom: 12px;
+  line-height: 1.2;
+}
+.benefit p { font-size: 15px; color: var(--ink-soft); }
+
+/* ---------- loyalty strip ---------- */
+.loyalty {
+  padding: 72px 0;
+  border-top: 1px solid var(--hairline);
+}
+.loyalty-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+.loyalty h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 34px;
+  max-width: 380px;
+  line-height: 1.15;
+}
+.tiers { display: flex; gap: 0; }
+.tier {
+  padding: 18px 34px;
+  border: 1px solid var(--hairline);
+  border-left: none;
+  text-align: center;
+  transition: background .2s ease;
+}
+.tier:first-child { border-left: 1px solid var(--hairline); }
+.tier:hover { background: var(--ivory-deep); }
+.tier strong {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 500;
+  display: block;
+}
+.tier span {
+  font-size: 11px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* ---------- footer ---------- */
+footer {
+  border-top: 1px solid var(--ink);
+  padding: 56px 0 48px;
+}
+.footer-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+.footer-inner .logo { font-size: 30px; }
+.footer-cols { display: flex; gap: 72px; }
+.footer-cols h4 {
+  font-size: 11px;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+  font-weight: 400;
+}
+.footer-cols ul { list-style: none; }
+.footer-cols li { margin-bottom: 8px; font-size: 15px; }
+.footer-cols a:hover { color: var(--bronze); }
+.footer-note {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--hairline);
+  font-size: 13px;
+  color: var(--ink-soft);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* ---------- reveal animation ---------- */
+.reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s ease; }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1080px) {
+  .prop-row { grid-template-columns: 40px 280px 1fr; }
+  .prop-price { grid-column: 2 / 4; text-align: left; }
+  .benefit-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 860px) {
+  .wrap { padding: 0 24px; }
+  nav { display: none; }
+  .hero { grid-template-columns: 1fr; padding: 64px 0; gap: 40px; }
+  .hero-visual { aspect-ratio: 16 / 10; }
+  .booking form { grid-template-columns: 1fr 1fr; }
+  .booking .field { padding: 18px 20px 16px; }
+  .booking .field:first-child { padding-left: 20px; grid-column: 1 / 3; }
+  .booking .submit { grid-column: 1 / 3; padding: 20px; }
+  .prop-row { grid-template-columns: 1fr; gap: 20px; }
+  .prop-num { display: none; }
+  .tiers { flex-wrap: wrap; }
+}
+@media (max-width: 560px) {
+  .benefit-grid { grid-template-columns: 1fr; }
+  .booking form { grid-template-columns: 1fr; }
+  .booking .field:first-child, .booking .submit { grid-column: auto; }
+}
+</style>
+<style>
+/* ── шлифовка контраста: Вариант 1b · Греж ── */
+
+:root{--ink:#4A4238;--ink-soft:#7A7166;--hairline:rgba(74,66,56,.2);}
+.booking{border-top-color:rgba(74,66,56,.45);border-bottom-color:rgba(74,66,56,.45);}
+.booking .submit{background:var(--bronze);}
+.booking .submit:hover{background:#8F6636;}
+.header-login:hover{background:var(--bronze);border-color:var(--bronze);}
+.benefit{border-top-color:rgba(74,66,56,.4);}
+footer{border-top-color:rgba(74,66,56,.45);}
+
+.variant-badge{position:fixed;left:16px;bottom:16px;z-index:99;font-family:var(--sans);
+font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);
+background:var(--ivory);border:1px solid var(--hairline);padding:8px 14px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap header-inner">
+    <a class="logo" href="#">D <span>H&amp;A</span></a>
+    <nav aria-label="Основная навигация">
+      <ul>
+        <li><a href="#objects">Объекты</a></li>
+        <li><a href="#benefits">Преимущества</a></li>
+        <li><a href="#loyalty">Лояльность</a></li>
+        <li><a href="#contacts">Контакты</a></li>
+      </ul>
+    </nav>
+    <button class="header-login" type="button">Войти</button>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section class="hero" style="padding-top: 96px;">
+      <div>
+        <span class="overline">Сеть отелей и апартаментов</span>
+        <h1>Тишина — <br>главная <em>роскошь</em></h1>
+        <p class="lead">Отели и апартаменты D H&amp;A — там, где хочется остаться.
+        Бронируйте напрямую: лучшая цена, баллы за каждую ночь и заселение без ожидания.</p>
+        <div class="hero-meta">
+          <div><strong>12</strong><span>объектов сети</span></div>
+          <div><strong>4.9</strong><span>оценка гостей</span></div>
+          <div><strong>−15%</strong><span>оплата баллами</span></div>
+        </div>
+      </div>
+      <figure class="hero-visual" role="img" aria-label="Интерьер номера — фотография появится здесь">
+        <span class="glyph" aria-hidden="true">D</span>
+        <figcaption>D Hotel · номер Suite</figcaption>
+      </figure>
+    </section>
+  </div>
+
+  <div class="booking">
+    <div class="wrap">
+      <form aria-label="Поиск номера" onsubmit="return false">
+        <div class="field">
+          <label for="f-city">Объект или город</label>
+          <button class="value" type="button" id="f-city">Санкт-Петербург, все объекты</button>
+        </div>
+        <div class="field">
+          <label for="f-in">Заезд</label>
+          <button class="value" type="button" id="f-in">12 августа</button>
+        </div>
+        <div class="field">
+          <label for="f-out">Выезд</label>
+          <button class="value" type="button" id="f-out">15 августа</button>
+        </div>
+        <div class="field">
+          <label for="f-guests">Гости</label>
+          <button class="value" type="button" id="f-guests">2 взрослых</button>
+        </div>
+        <button class="submit" type="submit">Найти номер</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <section id="objects">
+      <div class="section-head reveal">
+        <h2>Объекты сети</h2>
+        <a href="#">Все объекты</a>
+      </div>
+
+      <article class="prop-row reveal">
+        <span class="prop-num">01</span>
+        <div class="prop-img"><i class="img-a"></i></div>
+        <div class="prop-info">
+          <span class="kind">Отель · Центр</span>
+          <h3>D Hotel Невский</h3>
+          <p>Классические номера с высокими потолками в двух минутах от Невского проспекта.</p>
+        </div>
+        <div class="prop-price">
+          <strong>от 8 900 ₽</strong>
+          <span>за ночь</span><br>
+          <a href="#">Смотреть
+            <svg width="16" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true"><path d="M0 5h14M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.2"/></svg>
+          </a>
+        </div>
+      </article>
+
+      <article class="prop-row reveal">
+        <span class="prop-num">02</span>
+        <div class="prop-img"><i class="img-b"></i></div>
+        <div class="prop-info">
+          <span class="kind">Апартаменты · Набережная</span>
+          <h3>D Apartments Мойка 8</h3>
+          <p>Апартаменты с кухней и видом на воду — для тех, кто приезжает надолго.</p>
+        </div>
+        <div class="prop-price">
+          <strong>от 6 400 ₽</strong>
+          <span>за ночь</span><br>
+          <a href="#">Смотреть
+            <svg width="16" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true"><path d="M0 5h14M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.2"/></svg>
+          </a>
+        </div>
+      </article>
+
+      <article class="prop-row reveal">
+        <span class="prop-num">03</span>
+        <div class="prop-img"><i class="img-c"></i></div>
+        <div class="prop-info">
+          <span class="kind">Отель · Острова</span>
+          <h3>D Hotel Каменный остров</h3>
+          <p>Камерный отель среди парков: тишина, спа и завтраки до полудня.</p>
+        </div>
+        <div class="prop-price">
+          <strong>от 12 500 ₽</strong>
+          <span>за ночь</span><br>
+          <a href="#">Смотреть
+            <svg width="16" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true"><path d="M0 5h14M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.2"/></svg>
+          </a>
+        </div>
+      </article>
+
+      <article class="prop-row reveal">
+        <span class="prop-num">04</span>
+        <div class="prop-img"><i class="img-d"></i></div>
+        <div class="prop-info">
+          <span class="kind">Апартаменты · Центр</span>
+          <h3>D Apartments Лиговский</h3>
+          <p>Современные студии рядом с вокзалом — удобно для коротких деловых поездок.</p>
+        </div>
+        <div class="prop-price">
+          <strong>от 5 800 ₽</strong>
+          <span>за ночь</span><br>
+          <a href="#">Смотреть
+            <svg width="16" height="10" viewBox="0 0 16 10" fill="none" aria-hidden="true"><path d="M0 5h14M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.2"/></svg>
+          </a>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <section class="benefits" id="benefits">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <h2>Почему бронировать напрямую</h2>
+      </div>
+      <div class="benefit-grid">
+        <div class="benefit reveal">
+          <span class="b-num">I</span>
+          <h3>Лучшая цена — гарантированно</h3>
+          <p>Прямое бронирование всегда не дороже, чем на сторонних площадках. Нашли дешевле — сравняем цену.</p>
+        </div>
+        <div class="benefit reveal">
+          <span class="b-num">II</span>
+          <h3>Баллы D за каждую ночь</h3>
+          <p>1 балл = 1 ₽. Возвращаем до 10% стоимости проживания и принимаем баллы в оплату до 15% следующей брони.</p>
+        </div>
+        <div class="benefit reveal">
+          <span class="b-num">III</span>
+          <h3>Заселение без стойки</h3>
+          <p>Онлайн-регистрация до приезда: паспортные данные — заранее, ключ — сразу по прибытии.</p>
+        </div>
+        <div class="benefit reveal">
+          <span class="b-num">IV</span>
+          <h3>Цифровой ключ</h3>
+          <p>Дверь открывается с телефона — PIN-код или Bluetooth. Действует ровно на время проживания.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="loyalty" id="loyalty" style="padding: 72px 0;">
+    <div class="wrap loyalty-inner reveal">
+      <h2>Четыре уровня. Привилегии растут с каждой поездкой.</h2>
+      <div class="tiers" role="list">
+        <div class="tier" role="listitem"><strong>3%</strong><span>Member</span></div>
+        <div class="tier" role="listitem"><strong>5%</strong><span>Silver</span></div>
+        <div class="tier" role="listitem"><strong>7%</strong><span>Gold</span></div>
+        <div class="tier" role="listitem"><strong>10%</strong><span>Platinum</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer id="contacts">
+  <div class="wrap">
+    <div class="footer-inner">
+      <div>
+        <a class="logo" href="#">D <span>H&amp;A</span></a>
+        <p style="margin-top: 16px; color: var(--ink-soft); font-size: 15px; max-width: 280px;">
+          Сеть отелей и апартаментов. Санкт-Петербург.
+        </p>
+      </div>
+      <div class="footer-cols">
+        <div>
+          <h4>Гостям</h4>
+          <ul>
+            <li><a href="#">Мои бронирования</a></li>
+            <li><a href="#">Программа лояльности</a></li>
+            <li><a href="#">Онлайн-заселение</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Сеть</h4>
+          <ul>
+            <li><a href="#">Отели</a></li>
+            <li><a href="#">Апартаменты</a></li>
+            <li><a href="#">Тарифы</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Связаться</h4>
+          <ul>
+            <li><a href="tel:+78120000000">+7 (812) 000-00-00</a></li>
+            <li><a href="mailto:stay@dhotels.ru">stay@dhotels.ru</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="footer-note">
+      <span>© 2026 D Hotels &amp; Apartments</span>
+      <span>Политика конфиденциальности · Договор оферты</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.12 });
+    document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  } else {
+    document.querySelectorAll('.reveal').forEach(el => el.classList.add('in'));
+  }
+</script>
+
+<div class="variant-badge">Вариант 1b · Греж</div>
+</body>
+</html>
