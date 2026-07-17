@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import nodemailer, { type Transporter } from 'nodemailer';
 import * as socks from 'socks';
@@ -49,6 +49,24 @@ export interface SmtpConnectionInput {
   pass?: string;
   from?: string;
   proxy?: string;
+}
+
+/**
+ * Прокси-URL к виду со схемой: «user:pass@host:port» → «socks5://…». Без этого
+ * nodemailer падает на null.protocol.replace («Cannot read properties of null»).
+ * Некорректный адрес → null (вызывающий решает: ошибка или игнор).
+ */
+function normalizeProxyUrl(raw: string): string | null {
+  const p = raw.trim();
+  if (!p) return '';
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(p) ? p : `socks5://${p}`;
+  try {
+    const u = new URL(withScheme);
+    if (!u.hostname || !u.port) return null;
+    return withScheme;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -103,11 +121,14 @@ export class EmailConfigService {
       greetingTimeout: 12_000,
       socketTimeout: 20_000,
     };
+    // Значение могло быть сохранено раньше без схемы (или прийти из env) —
+    // нормализуем здесь тоже, иначе nodemailer упадёт на разборе URL.
+    const proxy = c.proxy ? normalizeProxyUrl(c.proxy) || '' : '';
     // `proxy` поддерживается nodemailer в рантайме, но не типизирован в @types —
     // добавляем через приведение к базовому типу.
-    const opts = c.proxy ? ({ ...base, proxy: c.proxy } as typeof base) : base;
+    const opts = proxy ? ({ ...base, proxy } as typeof base) : base;
     const tx = nodemailer.createTransport(opts);
-    if (c.proxy && c.proxy.startsWith('socks')) tx.set('proxy_socks_module', socks);
+    if (proxy.startsWith('socks')) tx.set('proxy_socks_module', socks);
     return tx;
   }
 
@@ -137,7 +158,12 @@ export class EmailConfigService {
     if (input.pass) await this.settings.set(K.pass, this.crypto.encryptPii(input.pass));
     if (input.from !== undefined) await this.settings.set(K.from, input.from.trim());
     if (input.proxy !== undefined) {
-      const p = input.proxy.trim();
+      const p = normalizeProxyUrl(input.proxy);
+      if (p === null) {
+        throw new BadRequestException(
+          'Неверный формат прокси — ожидается socks5://логин:пароль@хост:порт (схему можно опустить).',
+        );
+      }
       await this.settings.set(K.proxy, p ? this.crypto.encryptPii(p) : '');
     }
   }
