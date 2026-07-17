@@ -70,13 +70,11 @@ echo "==> GUEST_PORTAL_BASE_URL=$PORTAL_URL (api)"
 # 4. Сборка (turbo соблюдает порядок: пакеты → apps).
 # TURBO_FORCE + чистка .next: гарантируем пересборку фронта на деплое (не полагаемся
 # на кэш turbo — при смене адреса API кэш мог отдать старый бандл). Для деплоя
-# корректность важнее скорости.
-# --concurrency=1: собираем по одному приложению за раз, чтобы пик памяти был
-# в пределах небольшого VPS (параллельная сборка 3 Next/Nest-приложений давала OOM
-# и падение деплоя). Таймаут SSH-шага поднят до 30 мин под более долгую сборку.
+# корректность важнее скорости. Параллельная сборка укладывается в command_timeout: 30m
+# (deploy.yml) — таймаут и есть настоящий фикс «деплой не доходит».
 export TURBO_FORCE=true
 rm -rf apps/web/.next apps/admin/.next
-pnpm exec turbo run build --concurrency=1
+pnpm build
 
 # 5. Перезапуск процессов (startOrReload — поднимет, если ещё не запущены)
 pm2 startOrReload infra/deploy/ecosystem.config.js --update-env
