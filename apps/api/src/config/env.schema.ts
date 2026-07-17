@@ -255,6 +255,12 @@ export const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().default('D H&A <noreply@nomero.online>'),
+  /**
+   * Прокси для SMTP, если хостинг блокирует исходящие порты 465/587. Пускаем
+   * почту через SOCKS5: socks5://user:pass@host:port (можно тот же, что для
+   * мессенджеров). Пусто → напрямую.
+   */
+  SMTP_PROXY_URL: z.string().optional(),
 
   /**
    * Telegram Direct (userbot, GramJS/MTProto) — общение с ЛИЧНОГО аккаунта, а не

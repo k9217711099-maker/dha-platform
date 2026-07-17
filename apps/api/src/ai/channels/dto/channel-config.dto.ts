@@ -26,6 +26,10 @@ export class SaveEmailConfigDto {
   @ApiPropertyOptional({ description: 'Отправитель, напр. "D H&A <noreply@nomero.online>"' })
   @IsOptional() @IsString() @MaxLength(200)
   from?: string;
+
+  @ApiPropertyOptional({ description: 'SOCKS5-прокси, если хостинг блокирует SMTP-порты (socks5://user:pass@host:port). Пусто — не менять.' })
+  @IsOptional() @IsString() @MaxLength(300)
+  proxy?: string;
 }
 
 /** Включить/выключить канал. */

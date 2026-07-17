@@ -201,6 +201,7 @@ export interface EmailAdminConfig {
   user: string;
   from: string;
   passSet: boolean;
+  proxySet: boolean;
   configured: boolean;
 }
 
@@ -2408,7 +2409,7 @@ export const adminApi = {
     request<TgUserbotState>('/ai/channels/tg-direct/password', { method: 'POST', body: { password } }),
   aiTgDirectLogout: () => request<TgUserbotState>('/ai/channels/tg-direct/logout', { method: 'POST' }),
   aiEmailConfig: () => request<EmailAdminConfig>('/ai/channels/email'),
-  aiSaveEmail: (body: { host?: string; port?: number; secure?: boolean; user?: string; pass?: string; from?: string }) =>
+  aiSaveEmail: (body: { host?: string; port?: number; secure?: boolean; user?: string; pass?: string; from?: string; proxy?: string }) =>
     request<EmailAdminConfig>('/ai/channels/email', { method: 'PUT', body }),
   aiTestEmail: () => request<{ ok: boolean; message: string }>('/ai/channels/email/test', { method: 'POST' }),
 

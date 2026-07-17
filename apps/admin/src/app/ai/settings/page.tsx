@@ -373,6 +373,7 @@ function EmailSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
   const [from, setFrom] = useState('');
+  const [proxy, setProxy] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [testing, setTesting] = useState(false);
@@ -384,17 +385,18 @@ function EmailSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved
     }).catch(() => setErr('Не удалось загрузить настройки'));
   }, []);
 
+  const payload = () => ({ host, port: Number(port), secure, user, pass: pass || undefined, from, proxy: proxy || undefined });
   const save = async () => {
     setBusy(true); setErr('');
     try {
-      await adminApi.aiSaveEmail({ host, port: Number(port), secure, user, pass: pass || undefined, from });
+      await adminApi.aiSaveEmail(payload());
       onSaved();
     } catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка сохранения'); } finally { setBusy(false); }
   };
   const test = async () => {
     setTesting(true); setErr(''); setTestResult(null);
     try {
-      await adminApi.aiSaveEmail({ host, port: Number(port), secure, user, pass: pass || undefined, from });
+      await adminApi.aiSaveEmail(payload());
       setTestResult(await adminApi.aiTestEmail());
     } catch (e) { setTestResult({ ok: false, message: e instanceof Error ? e.message : 'Ошибка проверки' }); } finally { setTesting(false); }
   };
@@ -437,6 +439,12 @@ function EmailSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved
               <div>
                 <label className={labelCls}>Отправитель (From)</label>
                 <input value={from} onChange={(e) => setFrom(e.target.value)} className={fieldCls} placeholder="D H&A <noreply@nomero.online>" autoComplete="off" />
+              </div>
+              <div>
+                <label className={labelCls}>SOCKS5-прокси (если хостинг блокирует SMTP-порты)</label>
+                <input type="password" value={proxy} onChange={(e) => setProxy(e.target.value)} className={fieldCls} autoComplete="new-password"
+                  placeholder={cfg.proxySet ? '•••••••• (задан — оставьте пустым, чтобы не менять)' : 'socks5://user:pass@host:port'} />
+                <p className="mt-1 text-xs text-dark-gray">Заполняйте, только если проверка выдаёт «порт закрыт хостингом». Можно тот же SOCKS5, что и для мессенджеров. Хранится в зашифрованном виде.</p>
               </div>
             </div>
 

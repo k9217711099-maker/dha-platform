@@ -1,13 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import nodemailer, { type Transporter } from 'nodemailer';
+import { type Transporter } from 'nodemailer';
 import { EmailSender, type EmailMessage } from './email.port.js';
 import { EmailConfigService, type SmtpCredentials } from './email-config.service.js';
 
 /**
  * Отправка email через SMTP (nodemailer). Реквизиты берутся динамически из
- * EmailConfigService (админка/env). Если SMTP не настроен (нет host) — фолбэк в
- * лог (dev-режим), как раньше. Транспорт кэшируется и пересоздаётся при смене
- * реквизитов. По аналогии с рантайм-диспетчером Telegram.
+ * EmailConfigService (админка/env), включая прокси. Если SMTP не настроен (нет
+ * host) — фолбэк в лог (dev-режим). Транспорт кэшируется и пересоздаётся при
+ * смене реквизитов. По аналогии с рантайм-диспетчером Telegram.
  */
 @Injectable()
 export class SmtpEmailSender extends EmailSender {
@@ -35,18 +35,9 @@ export class SmtpEmailSender extends EmailSender {
   }
 
   private transport(c: SmtpCredentials): Transporter {
-    const key = `${c.host}:${c.port}:${c.secure}:${c.user}`;
+    const key = `${c.host}:${c.port}:${c.secure}:${c.user}:${c.proxy}`;
     if (this.cached && this.cached.key === key) return this.cached.tx;
-    const tx = nodemailer.createTransport({
-      host: c.host,
-      port: c.port,
-      secure: c.secure,
-      auth: c.user ? { user: c.user, pass: c.pass } : undefined,
-      // Не зависаем на недоступном SMTP — быстрый отказ (ошибка попадёт в лог/статус).
-      connectionTimeout: 10_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 15_000,
-    });
+    const tx = this.cfg.buildTransport(c);
     this.cached = { key, tx };
     return tx;
   }
