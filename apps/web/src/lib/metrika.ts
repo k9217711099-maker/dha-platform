@@ -12,7 +12,7 @@ declare global {
 
 export const YM_ID = Number(process.env.NEXT_PUBLIC_YANDEX_METRIKA_ID ?? '') || 0;
 
-/** Цели воронки (§19 — этапы бронирования). */
+/** Цели воронки (§19 — этапы бронирования) + аналитика фильтров и шаринга. */
 export type YmGoal =
   | 'search'
   | 'view_property'
@@ -21,7 +21,13 @@ export type YmGoal =
   | 'booking_created'
   | 'checkout_payment'
   | 'payment_success'
-  | 'register_click';
+  | 'register_click'
+  // Аналитика фильтров: считаем, какими фильтрами пользуются.
+  | 'filter_apply'
+  | 'filter_reset'
+  | 'filter_open'
+  // Шаринг ссылки на выдачу.
+  | 'share_link';
 
 /** Достижение цели Метрики (reachGoal). */
 export function ymGoal(target: YmGoal, params?: Record<string, unknown>): void {

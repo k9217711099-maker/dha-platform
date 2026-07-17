@@ -55,7 +55,7 @@ export interface FiltersMeta {
   propertyTypes: LabeledOption[];
   districts: LabeledOption[];
   capacities: LabeledOption[];
-  amenityCategories: { value: string; label: string; items: { code: string; label: string }[] }[];
+  amenityCategories: { value: string; label: string; items: { code: string; label: string; icon?: string | null }[] }[];
   features: { code: string; label: string }[];
   priceRanges: PriceRangeMeta[];
   /** Кэшбэк баллами за регистрацию гостя, %. */

@@ -14,6 +14,10 @@ const CHANNEL_RU: Record<string, string> = {
   WEB: 'Сайт',
   APP: 'Приложение',
   TELEGRAM: 'Telegram',
+  TELEGRAM_DIRECT: 'Telegram (директ)',
+  MAX: 'MAX',
+  WHATSAPP: 'WhatsApp',
+  UMNICO: 'Умнико',
   ADMIN: 'Админка',
 };
 const STATUS_RU: Record<string, { label: string; cls: string }> = {

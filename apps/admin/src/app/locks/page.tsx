@@ -18,6 +18,48 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/* --- Всплывающие уведомления (тосты) об успехе/ошибке действий --- */
+type Toast = { id: number; kind: 'ok' | 'error' | 'info'; text: string };
+let toastSeq = 0;
+const toastListeners = new Set<(t: Toast) => void>();
+/** Показать уведомление из любого места модуля замков. */
+function pushToast(kind: Toast['kind'], text: string) {
+  const t: Toast = { id: ++toastSeq, kind, text };
+  toastListeners.forEach((l) => l(t));
+}
+
+function ToastHost() {
+  const [items, setItems] = useState<Toast[]>([]);
+  useEffect(() => {
+    const on = (t: Toast) => {
+      setItems((s) => [...s, t]);
+      setTimeout(() => setItems((s) => s.filter((x) => x.id !== t.id)), 4500);
+    };
+    toastListeners.add(on);
+    return () => void toastListeners.delete(on);
+  }, []);
+  return (
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2">
+      {items.map((t) => (
+        <div
+          key={t.id}
+          className={`pointer-events-auto flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm shadow-lg ${
+            t.kind === 'ok'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : t.kind === 'error'
+                ? 'border-red-200 bg-red-50 text-red-900'
+                : 'border-ink/15 bg-white text-ink'
+          }`}
+        >
+          <span className="mt-px shrink-0">{t.kind === 'ok' ? '✓' : t.kind === 'error' ? '✕' : 'ℹ'}</span>
+          <span className="flex-1 break-words">{t.text}</span>
+          <button onClick={() => setItems((s) => s.filter((x) => x.id !== t.id))} className="shrink-0 opacity-50 hover:opacity-100" aria-label="Закрыть">×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const TARGETS = [
   { value: 'ROOM', label: 'Дверь номера' },
   { value: 'ENTRANCE', label: 'Входная' },
@@ -139,6 +181,7 @@ export default function LocksPage() {
           </Card>
         </>
       )}
+      <ToastHost />
     </main>
   );
 }
@@ -289,8 +332,11 @@ function AddLockCard({
       setCoverageFloor('');
       onCreated();
       setMsg('Замок добавлен');
+      pushToast('ok', `Замок «${name.trim()}» добавлен`);
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Ошибка');
+      const m = e instanceof Error ? e.message : 'Ошибка';
+      setMsg(m);
+      pushToast('error', m);
     } finally {
       setBusy(false);
     }
@@ -400,6 +446,7 @@ function LockRow({
   const [coverageFloor, setCoverageFloor] = useState(lock.coverageFloor ?? '');
   const [roomSet, setRoomSet] = useState<Set<string>>(new Set(lock.roomLinks.map((r) => r.roomId)));
   const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
   async function save() {
@@ -416,10 +463,32 @@ function LockRow({
       });
       setEditing(false);
       onChanged();
+      pushToast('ok', `Покрытие замка «${lock.name}» сохранено`);
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Ошибка');
+      const m = e instanceof Error ? e.message : 'Ошибка';
+      setMsg(m);
+      pushToast('error', m);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (
+      !window.confirm(
+        `Отвязать замок «${lock.name}» от системы?\nЗамок останется в аккаунте TTLock — его можно будет добавить заново. Привязки к номерам будут сняты.`,
+      )
+    )
+      return;
+    setRemoving(true);
+    try {
+      await adminApi.deleteLock(lock.id);
+      onChanged();
+      pushToast('ok', `Замок «${lock.name}» отвязан от системы`);
+    } catch (e) {
+      pushToast('error', e instanceof Error ? e.message : 'Не удалось отвязать замок');
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -433,9 +502,14 @@ function LockRow({
             {lock.hasGateway ? ' · шлюз' : ''}
           </span>
         </p>
-        <button onClick={() => setEditing((v) => !v)} className="text-sm text-primary underline">
-          {editing ? 'свернуть' : 'изменить покрытие'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setEditing((v) => !v)} className="text-sm text-primary underline">
+            {editing ? 'свернуть' : 'изменить покрытие'}
+          </button>
+          <button onClick={() => void remove()} disabled={removing} className="text-sm text-red-700 underline disabled:opacity-50">
+            {removing ? 'Отвязка…' : 'Отвязать замок'}
+          </button>
+        </div>
       </div>
 
       {editing && (
@@ -515,9 +589,12 @@ function TtlockCredsCard() {
       await adminApi.setTtlockCreds(username.trim(), password || undefined);
       setPassword('');
       setMsg('Сохранено. Кэш токена сброшен — следующий запрос использует новую учётку.');
+      pushToast('ok', 'Учётная запись TTLock сохранена');
       await load();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Ошибка');
+      const m = e instanceof Error ? e.message : 'Ошибка';
+      setMsg(m);
+      pushToast('error', m);
     }
   }
 
@@ -559,7 +636,9 @@ function LockConsole({ ttlockLockId }: { ttlockLockId: string }) {
     try {
       await fn();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : 'Ошибка');
+      const m = e instanceof Error ? e.message : 'Ошибка';
+      setMsg(m);
+      pushToast('error', `Замок #${ttlockLockId}: ${m}`);
     } finally {
       setBusy(false);
     }
@@ -581,10 +660,10 @@ function LockConsole({ ttlockLockId }: { ttlockLockId: string }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => void run(async () => { await adminApi.ttlockUnlock(ttlockLockId); setMsg('Команда на открытие отправлена'); })} disabled={busy}>
+        <Button onClick={() => void run(async () => { await adminApi.ttlockUnlock(ttlockLockId); setMsg('Команда на открытие отправлена'); pushToast('ok', `Замок #${ttlockLockId}: команда на открытие отправлена`); })} disabled={busy}>
           Открыть удалённо
         </Button>
-        <Button variant="secondary" onClick={() => void run(async () => { setRecords(await adminApi.ttlockRecords(ttlockLockId)); })} disabled={busy}>
+        <Button variant="secondary" onClick={() => void run(async () => { const r = await adminApi.ttlockRecords(ttlockLockId); setRecords(r); pushToast('info', `Журнал загружен: ${r.length} записей`); })} disabled={busy}>
           Журнал входов
         </Button>
       </div>
@@ -618,6 +697,7 @@ function LockConsole({ ttlockLockId }: { ttlockLockId: string }) {
           onClick={() => void run(async () => {
             const r = await adminApi.ttlockPasscode({ ttlockLockId, name: pName, mode: pMode, pin: pMode === 'add' ? pin : undefined, startMs: ms(start), endMs: ms(end) });
             setMsg(`Пароль создан: ${r.pin}`);
+            pushToast('ok', `Пароль создан: ${r.pin}`);
           })}
         >
           Создать пароль
@@ -635,6 +715,7 @@ function LockConsole({ ttlockLockId }: { ttlockLockId: string }) {
               onClick={() => void run(async () => {
                 const r = await adminApi.ttlockEkey({ ttlockLockId, receiverUsername: receiver.trim(), name: pName, startMs: ms(start), endMs: ms(end) });
                 setMsg(`eKey отправлен (id ${r.keyId})`);
+                pushToast('ok', `eKey отправлен получателю ${receiver.trim()}`);
               })}
             >
               Отправить eKey

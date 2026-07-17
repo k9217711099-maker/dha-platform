@@ -186,6 +186,13 @@ export class AdminController {
     return this.locks.unlinkRoom(lockId, dto.roomId);
   }
 
+  @Delete('locks/:lockId')
+  @RequirePermission('locks')
+  @ApiOperation({ summary: 'Отвязать замок от системы (удалить запись Lock)' })
+  deleteLock(@Param('lockId') lockId: string) {
+    return this.locks.deleteLock(lockId);
+  }
+
   // --- Пульт TTLock (§9.2): пароли, eKey, удалённое открытие, журнал, учётка ---
   @Post('ttlock/passcode')
   @RequirePermission('locks')

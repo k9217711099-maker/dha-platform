@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Logger, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UmnicoAgentService } from './umnico-agent.service.js';
 
@@ -26,12 +26,19 @@ interface UmnicoWebhook {
 @ApiTags('ai')
 @Controller('ai/umnico')
 export class UmnicoController {
+  private readonly logger = new Logger('UmnicoWebhook');
+
   constructor(private readonly agent: UmnicoAgentService) {}
 
   @Post('webhook')
   @HttpCode(200)
   @ApiOperation({ summary: 'Webhook Umnico (гостевой AI-агент)' })
   webhook(@Body() body: UmnicoWebhook): { ok: true } {
+    // Диагностика: фиксируем сам факт вызова и форму события. Если в логах пусто —
+    // значит Umnico не шлёт к нам (не прописан URL вебхука в кабинете Umnico).
+    this.logger.log(
+      `hit type=${body?.type ?? '—'} leadId=${body?.leadId ?? '—'} keys=[${Object.keys(body ?? {}).join(',')}]`,
+    );
     if (body?.type === 'message.incoming' && body.leadId != null) {
       const m = body.message ?? {};
       // Пропускаем исходящие (эхо наших ответов), если такой флаг придёт.
@@ -52,7 +59,13 @@ export class UmnicoController {
           userId,
           text: m.text ?? m.body ?? '',
         });
+      } else {
+        this.logger.log(`пропущено исходящее (эхо) leadId=${body.leadId}`);
       }
+    } else {
+      this.logger.warn(
+        `не распознано как message.incoming (type=${body?.type ?? '—'}) — событие проигнорировано`,
+      );
     }
     return { ok: true };
   }

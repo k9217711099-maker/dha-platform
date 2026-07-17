@@ -18,18 +18,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        beige: '#FAF8F3', // слоновая кость — основной фон
-        ink: '#524A40', // умбра — текст и кнопки (палитра «Туман», вариант 1d)
-        'dark-gray': '#7C7367', // дым — приглушённый текст
+        beige: '#F7F4EE', // слоновая кость — основной фон
+        ink: '#3E362E', // эспрессо — тёплый тёмный текст и кнопки (вариант 1a)
+        'dark-gray': '#6B6156', // дым — приглушённый текст
         surface: '#FFFFFF',
-        canvas: '#FAF8F3',
-        sand: '#F2EEE5', // тёплый песок — вторые фоны
+        canvas: '#F7F4EE',
+        sand: '#EFEAE0', // тёплый песок — вторые фоны
         bronze: '#A5794A', // фирменный акцент
         primary: {
-          DEFAULT: '#524A40', // primary-кнопки — умбра
-          50: '#FAF8F3',
-          100: '#F2EEE5',
-          600: '#524A40',
+          DEFAULT: '#3E362E', // primary-кнопки — эспрессо
+          50: '#F7F4EE',
+          100: '#EFEAE0',
+          600: '#3E362E',
           700: '#A5794A', // hover primary — бронза (брендбук §6.2)
         },
         accent: {
@@ -51,7 +51,7 @@ const config: Config = {
         '3xl': '0px',
       },
       boxShadow: {
-        soft: '0 24px 60px rgba(82,74,64,0.08)',
+        soft: '0 24px 60px rgba(62,54,46,0.08)',
       },
       letterSpacing: {
         overline: '.22em',

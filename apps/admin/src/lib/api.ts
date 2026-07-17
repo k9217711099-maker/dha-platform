@@ -2480,6 +2480,8 @@ export const adminApi = {
     request(`/admin/locks/${lockId}/link`, { method: 'POST', body: { roomId } }),
   unlinkLock: (lockId: string, roomId: string) =>
     request(`/admin/locks/${lockId}/unlink`, { method: 'POST', body: { roomId } }),
+  deleteLock: (lockId: string) =>
+    request<{ ok: true }>(`/admin/locks/${lockId}`, { method: 'DELETE' }),
 
   // Пульт TTLock
   ttlockCreds: () => request<TtlockCreds>('/admin/ttlock/credentials'),

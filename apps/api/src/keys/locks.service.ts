@@ -122,6 +122,21 @@ export class LocksService {
     return { ok: true };
   }
 
+  /**
+   * Полностью отвязать замок от системы: снять все привязки к номерам и удалить
+   * запись Lock. Сам замок в аккаунте TTLock не трогаем — его можно привязать заново.
+   */
+  async deleteLock(lockId: string) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.roomLock.deleteMany({ where: { lockId } });
+      await tx.lock.delete({ where: { id: lockId } }).catch((e) => {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') return;
+        throw e;
+      });
+    });
+    return { ok: true };
+  }
+
   private async replaceRoomLinks(tx: Prisma.TransactionClient, lockId: string, roomIds: string[]) {
     await tx.roomLock.deleteMany({ where: { lockId } });
     if (roomIds.length) {

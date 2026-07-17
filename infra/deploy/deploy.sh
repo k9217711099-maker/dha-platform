@@ -55,6 +55,18 @@ upsert_env apps/admin/.env.local NEXT_PUBLIC_API_URL "$API_URL"
 export NEXT_PUBLIC_API_URL="$API_URL"
 echo "==> NEXT_PUBLIC_API_URL=$API_URL (web + admin)"
 
+# 3c. Публичный адрес гостевого портала для ссылок заселения (magic-link в письмах/
+# СМС/на стойке). Без него backend берёт дефолт localhost:3000 из env.schema и гость
+# получает нерабочую ссылку. Пишем в apps/api/.env (рантайм pm2, не бандл); файл не
+# в git, поэтому upsert после git reset безопасен. Переопределяется GUEST_PORTAL_URL.
+if [ "$BRANCH" = "main" ]; then
+  PORTAL_URL="${GUEST_PORTAL_URL:-https://nomero.online}"
+else
+  PORTAL_URL="${GUEST_PORTAL_URL:-http://localhost:3000}"
+fi
+upsert_env apps/api/.env GUEST_PORTAL_BASE_URL "$PORTAL_URL"
+echo "==> GUEST_PORTAL_BASE_URL=$PORTAL_URL (api)"
+
 # 4. Сборка (turbo соблюдает порядок: пакеты → apps).
 # TURBO_FORCE + чистка .next: гарантируем пересборку фронта на деплое (не полагаемся
 # на кэш turbo — при смене адреса API кэш мог отдать старый бандл). Для деплоя

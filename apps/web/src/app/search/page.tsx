@@ -12,23 +12,11 @@ import { RoomResultCard, type SearchCtx } from '../../components/RoomResultCard'
 import { RoomDetailsModal } from '../../components/RoomDetailsModal';
 import { TariffModal } from '../../components/TariffModal';
 import { YandexMap } from '../../components/YandexMap';
+import { AmenityIcon } from '../../lib/amenity-icons';
 import type { FiltersMeta, PropertySearchResult, RoomAvailability, SearchInput } from '../../lib/api-types';
 
 function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
-}
-
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-sm transition ${
-        active ? 'border-ink bg-ink text-white' : 'border-ink/20 text-ink hover:border-ink/40'
-      }`}
-    >
-      {children}
-    </button>
-  );
 }
 
 function CheckGroup({
@@ -54,6 +42,61 @@ function CheckGroup({
         ))}
       </div>
     </div>
+  );
+}
+
+/** Компактный фильтр-«таблетка» с выпадающим списком чекбоксов. */
+function FilterDropdown({ label, count, children }: { label: string; count: number; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition ${
+          count > 0 ? 'border-ink bg-ink text-white' : 'border-ink/20 text-ink hover:border-ink/40'
+        }`}
+      >
+        {label}{count > 0 ? ` · ${count}` : ''}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className={`transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-40 mt-2 max-h-[22rem] w-64 overflow-y-auto rounded-xl border border-ink/15 bg-white p-2 shadow-xl">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Строка-опция чекбокса с необязательной иконкой (для удобств). */
+function OptionRow({
+  checked,
+  onChange,
+  icon,
+  children,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink hover:bg-beige/60">
+      <input type="checkbox" checked={checked} onChange={onChange} className="shrink-0" />
+      {icon ? <span className="shrink-0 text-dark-gray">{icon}</span> : null}
+      <span className="flex-1">{children}</span>
+    </label>
   );
 }
 
@@ -204,9 +247,78 @@ export default function SearchPage() {
     setAmenities([]);
     setFeatures([]);
     setPriceRanges([]);
+    ymGoal('filter_reset');
   }
+
+  // Переключение фильтра + метрика (считаем, чем пользуются гости).
+  const flip =
+    (kind: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => (value: string) => {
+      setter((s) => toggle(s, value));
+      ymGoal('filter_apply', { kind, value });
+    };
+  const toggleType = flip('bedrooms', setTypes);
+  const togglePrice = flip('price', setPriceRanges);
+  const toggleAmenity = flip('amenity', setAmenities);
+  const toggleDistrict = flip('district', setDistricts);
+  const toggleFeature = flip('feature', setFeatures);
+
   const priceLabel = (r: { code: string; indicator: string; minRub: number; maxRub: number | null }) =>
     `${r.indicator} ${r.minRub.toLocaleString('ru')}${r.maxRub ? `–${r.maxRub.toLocaleString('ru')}` : '+'} ₽`;
+
+  // --- Ссылка на выдачу: синхронизация состояния поиска с URL (#шаринг) ---
+  const hydrated = useRef(false);
+  useEffect(() => {
+    if (hydrated.current) return;
+    hydrated.current = true;
+    const p = new URLSearchParams(window.location.search);
+    const csv = (k: string) => (p.get(k) ? p.get(k)!.split(',').filter(Boolean) : []);
+    if (p.get('ci')) setCheckIn(p.get('ci')!);
+    if (p.get('co')) setCheckOut(p.get('co')!);
+    const a = Number(p.get('a')) || 0;
+    const c = Number(p.get('c')) || 0;
+    if (a || c) setRooms([{ adults: a || 2, children: c }]);
+    if (p.get('promo')) setPromo(p.get('promo')!);
+    if (csv('pt').length) setTypes(csv('pt'));
+    if (csv('d').length) setDistricts(csv('d'));
+    if (csv('am').length) setAmenities(csv('am'));
+    if (csv('f').length) setFeatures(csv('f'));
+    if (csv('pr').length) setPriceRanges(csv('pr'));
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated.current) return;
+    const p = new URLSearchParams();
+    if (checkIn) p.set('ci', checkIn);
+    if (checkOut) p.set('co', checkOut);
+    if (primary.adults !== 2) p.set('a', String(primary.adults));
+    if (primary.children) p.set('c', String(primary.children));
+    if (promo) p.set('promo', promo);
+    if (propertyTypes.length) p.set('pt', propertyTypes.join(','));
+    if (districts.length) p.set('d', districts.join(','));
+    if (amenities.length) p.set('am', amenities.join(','));
+    if (features.length) p.set('f', features.join(','));
+    if (priceRanges.length) p.set('pr', priceRanges.join(','));
+    const qs = p.toString();
+    window.history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+  }, [checkIn, checkOut, primary.adults, primary.children, promo, propertyTypes, districts, amenities, features, priceRanges]);
+
+  const [copied, setCopied] = useState(false);
+  async function shareLink() {
+    ymGoal('share_link', { filters: activeFilters, hasDates });
+    const url = window.location.href;
+    try {
+      const nav = navigator as Navigator & { share?: (d: { title?: string; url?: string }) => Promise<void> };
+      if (nav.share) {
+        await nav.share({ title: 'D Hotels & Apartments', url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch {
+      /* пользователь отменил шаринг — это не ошибка */
+    }
+  }
 
   return (
     <main className="mx-auto max-w-[1440px] px-6 py-8">
@@ -225,19 +337,44 @@ export default function SearchPage() {
         </div>
       </div>
 
-      {/* Популярные фильтры + кнопка «Фильтры» */}
+      {/* Ключевые фильтры (выпадающие) + все фильтры + поделиться */}
       {filters && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          {filters.propertyTypes.map((t) => (
-            <Chip key={t.value} active={propertyTypes.includes(t.value)} onClick={() => setTypes((s) => toggle(s, t.value))}>{t.label}</Chip>
-          ))}
-          <span className="mx-1 h-5 w-px bg-ink/15" />
-          {filters.priceRanges.map((r) => (
-            <Chip key={r.code} active={priceRanges.includes(r.code)} onClick={() => setPriceRanges((s) => toggle(s, r.code))}>{r.indicator}</Chip>
-          ))}
-          <button onClick={() => setFiltersOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg border border-ink/20 px-3 py-1.5 text-sm text-ink hover:bg-beige">
+          <FilterDropdown label="Спальни" count={propertyTypes.length}>
+            {filters.propertyTypes.map((t) => (
+              <OptionRow key={t.value} checked={propertyTypes.includes(t.value)} onChange={() => toggleType(t.value)}>{t.label}</OptionRow>
+            ))}
+          </FilterDropdown>
+          <FilterDropdown label="Цена" count={priceRanges.length}>
+            {filters.priceRanges.map((r) => (
+              <OptionRow key={r.code} checked={priceRanges.includes(r.code)} onChange={() => togglePrice(r.code)}>{priceLabel(r)}</OptionRow>
+            ))}
+          </FilterDropdown>
+          <FilterDropdown label="Удобства" count={amenities.length}>
+            {filters.amenityCategories.map((cat) => (
+              <div key={cat.value} className="border-t border-ink/10 pt-2 first:border-0 first:pt-0">
+                <p className="px-2 pb-1 text-[11px] uppercase tracking-wide text-dark-gray">{cat.label}</p>
+                {cat.items.map((i) => (
+                  <OptionRow
+                    key={i.code}
+                    checked={amenities.includes(i.code)}
+                    onChange={() => toggleAmenity(i.code)}
+                    icon={<AmenityIcon label={i.label} icon={i.icon} className="h-4 w-4" />}
+                  >
+                    {i.label}
+                  </OptionRow>
+                ))}
+              </div>
+            ))}
+          </FilterDropdown>
+
+          <button onClick={() => { setFiltersOpen(true); ymGoal('filter_open'); }} className="ml-auto flex items-center gap-1.5 rounded-lg border border-ink/20 px-3 py-1.5 text-sm text-ink hover:bg-beige">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
-            Фильтры{activeFilters > 0 ? ` · ${activeFilters}` : ''}
+            Все фильтры{activeFilters > 0 ? ` · ${activeFilters}` : ''}
+          </button>
+          <button onClick={() => void shareLink()} className="flex items-center gap-1.5 rounded-lg border border-ink/20 px-3 py-1.5 text-sm text-ink hover:bg-beige" title="Скопировать ссылку на эту выдачу">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+            {copied ? 'Ссылка скопирована' : 'Поделиться'}
           </button>
           {activeFilters > 0 && (
             <button onClick={resetFilters} className="text-sm text-dark-gray underline hover:text-ink">сбросить</button>
@@ -296,6 +433,7 @@ export default function SearchPage() {
               onToggleFavorite={() => void toggleFavorite(room.roomTypeId)}
               onOpenDetails={() => ymGoal('view_room', { room: room.roomTypeName })}
               onSelect={() => ymGoal('select_room', { room: room.roomTypeName })}
+              soloInProperty={p.rooms.length === 1}
             />
           )),
         )}
@@ -310,13 +448,13 @@ export default function SearchPage() {
               <button onClick={() => setFiltersOpen(false)} className="text-2xl leading-none text-dark-gray hover:text-ink" aria-label="Закрыть">×</button>
             </div>
             <div className="px-5 py-3">
-              <CheckGroup title="Тип объекта" options={filters.propertyTypes} selected={propertyTypes} onToggle={(v) => setTypes((s) => toggle(s, v))} />
-              <CheckGroup title="Район" options={filters.districts} selected={districts} onToggle={(v) => setDistricts((s) => toggle(s, v))} />
-              <CheckGroup title="Цена за ночь" options={filters.priceRanges.map((r) => ({ value: r.code, label: priceLabel(r) }))} selected={priceRanges} onToggle={(v) => setPriceRanges((s) => toggle(s, v))} />
+              <CheckGroup title="Тип объекта" options={filters.propertyTypes} selected={propertyTypes} onToggle={toggleType} />
+              <CheckGroup title="Район" options={filters.districts} selected={districts} onToggle={toggleDistrict} />
+              <CheckGroup title="Цена за ночь" options={filters.priceRanges.map((r) => ({ value: r.code, label: priceLabel(r) }))} selected={priceRanges} onToggle={togglePrice} />
               {filters.amenityCategories.map((cat) => (
-                <CheckGroup key={cat.value} title={`Удобства · ${cat.label}`} options={cat.items.map((i) => ({ value: i.code, label: i.label }))} selected={amenities} onToggle={(v) => setAmenities((s) => toggle(s, v))} />
+                <CheckGroup key={cat.value} title={`Удобства · ${cat.label}`} options={cat.items.map((i) => ({ value: i.code, label: i.label }))} selected={amenities} onToggle={toggleAmenity} />
               ))}
-              <CheckGroup title="Характеристики" options={filters.features.map((f) => ({ value: f.code, label: f.label }))} selected={features} onToggle={(v) => setFeatures((s) => toggle(s, v))} />
+              <CheckGroup title="Характеристики" options={filters.features.map((f) => ({ value: f.code, label: f.label }))} selected={features} onToggle={toggleFeature} />
             </div>
             <div className="sticky bottom-0 flex gap-3 border-t border-ink/10 bg-white px-5 py-3">
               <Button variant="secondary" onClick={resetFilters} className="flex-1">Сбросить</Button>
