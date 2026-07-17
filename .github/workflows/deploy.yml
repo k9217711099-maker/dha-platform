@@ -26,6 +26,9 @@ jobs:
           host: ${{ steps.target.outputs.host }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Дефолт appleboy — 10 мин; чистая пересборка 3 приложений (TURBO_FORCE)
+          # на небольшом VPS в это не укладывалась → шаг убивался по таймауту.
+          command_timeout: 30m
           script: |
             cd /var/www/dha
             # Публичный адрес API для сборки фронта (HTTPS-домен). Задаётся здесь, а не
