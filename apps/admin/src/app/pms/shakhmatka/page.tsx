@@ -35,7 +35,7 @@ const wdOf = (iso: string) => WD[new Date(`${iso}T00:00:00Z`).getUTCDay()] ?? ''
 const isWeekend = (iso: string) => { const d = new Date(`${iso}T00:00:00Z`).getUTCDay(); return d === 0 || d === 6; };
 const fmtDM = (iso?: string) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : '');
 
-interface TreeNode { propertyId: string; name: string; cats: { roomTypeId: string; name: string; rooms: PmsRoom[] }[]; roomCount: number; }
+interface TreeNode { propertyId: string; name: string; cats: { roomTypeId: string; name: string; sortOrder: number; rooms: PmsRoom[] }[]; roomCount: number; }
 type FlatRow = { kind: 'property'; node: TreeNode } | { kind: 'category'; cat: TreeNode['cats'][number] } | { kind: 'room'; room: PmsRoom };
 interface DragState { roomId: string; room: PmsRoom; startIdx: number; endIdx: number; }
 interface Hover { booking: PmsBooking; x: number; y: number; }
@@ -155,9 +155,11 @@ export default function ShakhmatkaPage() {
     for (const r of [...rooms].sort((a, b) => (a.sortOrder - b.sortOrder) || a.number.localeCompare(b.number, 'ru', { numeric: true }))) {
       const node = byProp.get(r.property.id) ?? { propertyId: r.property.id, name: r.property.name, cats: [], roomCount: 0 };
       let cat = node.cats.find((c) => c.roomTypeId === r.roomType.id);
-      if (!cat) { cat = { roomTypeId: r.roomType.id, name: r.roomType.name, rooms: [] }; node.cats.push(cat); }
+      if (!cat) { cat = { roomTypeId: r.roomType.id, name: r.roomType.name, sortOrder: r.roomType.sortOrder ?? 0, rooms: [] }; node.cats.push(cat); }
       cat.rooms.push(r); node.roomCount++; byProp.set(r.property.id, node);
     }
+    // Порядок категорий = заданный перетаскиванием в «Номерном фонде» (sortOrder).
+    for (const n of byProp.values()) n.cats.sort((a, b) => a.sortOrder - b.sortOrder);
     return [...byProp.values()].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   }, [rooms]);
 

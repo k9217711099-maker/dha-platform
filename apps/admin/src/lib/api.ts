@@ -745,7 +745,7 @@ export interface PmsRoom {
   /** Фото-инструкция по заселению (публичные URL), режим апартаментов. */
   checkinPhotos?: string[];
   property: { id: string; name: string };
-  roomType: { id: string; name: string };
+  roomType: { id: string; name: string; sortOrder?: number };
 }
 
 /** Категория номеров (раздел «Номерной фонд», Путь B). */

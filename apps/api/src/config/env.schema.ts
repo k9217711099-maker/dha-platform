@@ -234,6 +234,12 @@ export const envSchema = z.object({
    * повторный QR. На сервере задайте абсолютный путь, напр. /var/www/dha-data/wa-auth.
    */
   WA_AUTH_DIR: z.string().default('.wa-auth'),
+  /**
+   * Прокси именно для WhatsApp-сокета (WebSocket). Если WS плохо идёт через
+   * HTTP-прокси (зависает «подключение» после сканирования QR) — задайте здесь
+   * SOCKS5: socks5://user:pass@host:port. Пусто → используется MESSENGER_PROXY_URL.
+   */
+  WA_PROXY_URL: z.string().optional(),
 
   /**
    * Telegram Direct (userbot, GramJS/MTProto) — общение с ЛИЧНОГО аккаунта, а не

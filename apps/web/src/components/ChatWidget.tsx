@@ -14,6 +14,9 @@ const GREETING: Msg = {
   text: 'Здравствуйте! Я AI-администратор D Hotels & Apartments 🙂 Помогу подобрать номер, рассчитать цену и оформить бронь. Чем могу помочь?',
 };
 
+/** Ключ localStorage — сохраняем id диалога, чтобы переписка переживала обновление страницы. */
+const CONV_KEY = 'dha_chat_conversation';
+
 /**
  * Плавающий чат с AI-администратором (гостевой агент, POST /ai/guest/message).
  * Доступен всем, включая анонимных гостей. Ответ приходит синхронно; сложные
@@ -34,6 +37,27 @@ export function ChatWidget() {
   useEffect(() => {
     if (open) endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, open, busy]);
+
+  // Восстанавливаем диалог после обновления страницы: подтягиваем историю по сохранённому id.
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem(CONV_KEY) : null;
+    if (!saved) return;
+    setConversationId(saved);
+    void api
+      .aiGuestConversation(saved)
+      .then((thread) => {
+        if (thread.length === 0) return;
+        setMessages([GREETING, ...thread.map((m) => ({ role: m.role, text: m.text }))]);
+        const staff = thread.filter((m) => m.role === 'staff');
+        staffShown.current = staff.length;
+        if (staff.length > 0) setEscalated(true);
+      })
+      .catch(() => {
+        // Диалог не найден/устарел — начинаем заново.
+        localStorage.removeItem(CONV_KEY);
+        setConversationId(undefined);
+      });
+  }, []);
 
   // После эскалации опрашиваем тред и подкладываем новые ответы оператора (STAFF).
   useEffect(() => {
@@ -70,6 +94,7 @@ export function ChatWidget() {
     try {
       const res = await api.aiGuestMessage(q, conversationId);
       setConversationId(res.conversationId);
+      if (typeof window !== 'undefined') localStorage.setItem(CONV_KEY, res.conversationId);
       setMessages((s) => [...s, { role: 'ai', text: res.reply }]);
       if (res.escalated) setEscalated(true);
     } catch {

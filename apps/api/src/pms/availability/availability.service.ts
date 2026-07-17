@@ -63,7 +63,8 @@ export class AvailabilityService {
     const roomTypes = await this.prisma.roomType.findMany({
       where: { tenantId, active: true, propertyId: q.propertyId, id: q.roomTypeId },
       include: { property: { select: { id: true, name: true } } },
-      orderBy: { name: 'asc' },
+      // Порядок категорий = заданный в «Номерном фонде» (перетаскивание), затем имя.
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
     if (roomTypes.length === 0) return [];
     const typeIds = roomTypes.map((rt) => rt.id);

@@ -37,7 +37,7 @@ export class RoomService {
         propertyId: filters.propertyId,
         roomTypeId: filters.roomTypeId,
       },
-      include: { property: { select: { id: true, name: true } }, roomType: { select: { id: true, name: true } } },
+      include: { property: { select: { id: true, name: true } }, roomType: { select: { id: true, name: true, sortOrder: true } } },
       orderBy: [{ propertyId: 'asc' }, { sortOrder: 'asc' }, { number: 'asc' }],
     });
   }

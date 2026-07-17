@@ -214,7 +214,11 @@ export class WhatsAppService extends WhatsAppPort implements OnModuleInit, OnMod
     this.sock = null;
     try {
       const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
-      const agent = wsProxyAgent(this.config.get('MESSENGER_PROXY_URL', { infer: true }));
+      // WA_PROXY_URL (можно SOCKS5) приоритетнее — WS надёжнее через SOCKS, чем через HTTP-прокси.
+      const proxyUrl =
+        this.config.get('WA_PROXY_URL', { infer: true }) ||
+        this.config.get('MESSENGER_PROXY_URL', { infer: true });
+      const agent = wsProxyAgent(proxyUrl);
       const sock = makeWASocket({
         auth: state,
         browser: Browsers.ubuntu('D H&A'),
