@@ -46,6 +46,8 @@ export function CheckinFunnelPanel({ bookingId, bookingStatus }: { bookingId: st
   const [data, setData] = useState<PanelData | null>(null);
   const [err, setErr] = useState(false);
   const [linkMsg, setLinkMsg] = useState('');
+  const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sending, setSending] = useState(false);
 
   /** Выпустить magic-link гостевого портала и скопировать в буфер (CHECK-IN-TZ §4). */
   const copyLink = () => {
@@ -56,6 +58,26 @@ export function CheckinFunnelPanel({ bookingId, bookingStatus }: { bookingId: st
         catch { setLinkMsg(url); }
       })
       .catch(() => setLinkMsg('Не удалось выпустить ссылку'));
+  };
+
+  /** Отправить гостю приглашение с анкетой прямо сейчас (email/СМС) + показать исход. */
+  const sendInvite = () => {
+    setSending(true); setInviteMsg(null);
+    void adminApi.pmsSendCheckinInvite(bookingId)
+      .then(({ results }) => {
+        const chLabel: Record<string, string> = { EMAIL: 'почта', SMS: 'СМС', PUSH: 'пуш', TELEGRAM: 'Telegram' };
+        const sent = results.filter((r) => r.status === 'sent').map((r) => chLabel[r.channel] ?? r.channel);
+        const failed = results.filter((r) => r.status === 'failed');
+        if (failed.length) {
+          setInviteMsg({ ok: false, text: `Ошибка: ${failed.map((r) => `${chLabel[r.channel] ?? r.channel} — ${r.error ?? 'не отправлено'}`).join('; ')}` });
+        } else if (sent.length) {
+          setInviteMsg({ ok: true, text: `Отправлено: ${sent.join(', ')}` });
+        } else {
+          setInviteMsg({ ok: false, text: 'Не отправлено: у гостя нет контактов для доступных каналов' });
+        }
+      })
+      .catch(() => setInviteMsg({ ok: false, text: 'Не удалось отправить приглашение' }))
+      .finally(() => setSending(false));
   };
 
   useEffect(() => {
@@ -117,12 +139,17 @@ export function CheckinFunnelPanel({ bookingId, bookingStatus }: { bookingId: st
       <div className="mt-3 space-y-0.5 border-t border-ink/10 pt-2 text-xs text-dark-gray">
         <p>Окно ключа: {fmtDT(data.window.start)} — {fmtDT(data.window.end)}</p>
         <p>Номер: {data.roomName ?? 'не назначен'}</p>
-        <div className="pt-1">
+        <div className="flex flex-wrap gap-1.5 pt-1">
           <button type="button" onClick={copyLink} className="rounded-md border border-ink/20 px-2 py-1 text-xs text-ink hover:bg-ink/5">
             🔗 Ссылка заселения (портал)
           </button>
-          {linkMsg ? <p className="mt-1 break-all text-[11px] text-indigo-600">{linkMsg}</p> : null}
+          <button type="button" onClick={sendInvite} disabled={sending}
+            className="rounded-md border border-ink/20 px-2 py-1 text-xs text-ink hover:bg-ink/5 disabled:opacity-50">
+            {sending ? 'Отправка…' : '✉️ Отправить приглашение гостю'}
+          </button>
         </div>
+        {linkMsg ? <p className="mt-1 break-all text-[11px] text-indigo-600">{linkMsg}</p> : null}
+        {inviteMsg ? <p className={`mt-1 break-words text-[11px] ${inviteMsg.ok ? 'text-emerald-600' : 'text-rose-600'}`}>{inviteMsg.text}</p> : null}
       </div>
 
       {/* Журнал ключей */}

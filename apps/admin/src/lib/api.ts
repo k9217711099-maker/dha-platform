@@ -2032,6 +2032,12 @@ export const adminApi = {
   // Воронка заселения (CHECK-IN-TZ): панель «Заселение» в окне брони
   pmsCheckinPanel: (bookingId: string) => request<CheckinFunnelPanel>(`/admin/checkin/${bookingId}/panel`),
   pmsCheckinLink: (bookingId: string) => request<{ token: string; url: string }>(`/admin/checkin/${bookingId}/link`, { method: 'POST' }),
+  // Ручная отправка приглашения гостю (email/СМС) с исходом по каналам.
+  pmsSendCheckinInvite: (bookingId: string, channels?: ('email' | 'sms' | 'push' | 'telegram')[]) =>
+    request<{ link: string | null; results: { channel: string; status: 'sent' | 'skipped' | 'failed'; error?: string }[] }>(
+      `/admin/checkin/${bookingId}/invite`,
+      { method: 'POST', body: channels ? { channels } : {} },
+    ),
   // Очередь заезда + отчёт воронки (CHECK-IN-TZ §11, право checkin_desk)
   checkinQueue: (date?: string, propertyId?: string) => {
     const qs = new URLSearchParams();

@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { NotificationChannel } from '@dha/domain';
 import { AdminAuthGuard } from '../../admin/admin-auth.guard.js';
 import { RequirePermission } from '../../admin/require-permission.decorator.js';
 import { TenantService } from '../../pms/tenant/tenant.service.js';
@@ -48,6 +49,26 @@ export class CheckinFunnelAdminController {
   @RequirePermission('pms_bookings')
   issueLink(@Param('bookingId') bookingId: string) {
     return this.links.issueFor(bookingId);
+  }
+
+  /**
+   * Отправить гостю приглашение с анкетой (email/СМС/пуш) прямо сейчас — ручная
+   * доставка/переотправка мимо дедупа воронки. Возвращает исход по каналам, чтобы
+   * оператор видел статус и ошибку SMTP. Тело: { channels?: ('email'|'sms'|'push'|'telegram')[] }.
+   */
+  @Post(':bookingId/invite')
+  @RequirePermission('pms_bookings')
+  sendInvite(@Param('bookingId') bookingId: string, @Body('channels') channels?: string[]) {
+    const map: Record<string, NotificationChannel> = {
+      email: NotificationChannel.EMAIL,
+      sms: NotificationChannel.SMS,
+      push: NotificationChannel.PUSH,
+      telegram: NotificationChannel.TELEGRAM,
+    };
+    const mapped = Array.isArray(channels)
+      ? channels.map((c) => map[c]).filter((c): c is NotificationChannel => Boolean(c))
+      : undefined;
+    return this.orchestrator.sendInviteNow(bookingId, mapped);
   }
 
   /** Ручной тик оркестратора (отладка/операционка); штатно — cron каждые 5 мин. */

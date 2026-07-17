@@ -52,23 +52,39 @@ export class NotificationsService {
     payload: NotificationPayload = {},
     channelsOverride?: NotificationChannel[],
   ): Promise<void> {
+    await this.notifyWithResult(guestId, scenario, payload, channelsOverride);
+  }
+
+  /**
+   * Как notify(), но возвращает исход по каждому каналу (для ручной отправки из
+   * админки — «Отправить приглашение», чтобы оператор видел статус и текст ошибки
+   * SMTP/СМС). skipped — нет контакта в этом канале; failed — ошибка отправки.
+   */
+  async notifyWithResult(
+    guestId: string,
+    scenario: Scenario,
+    payload: NotificationPayload = {},
+    channelsOverride?: NotificationChannel[],
+  ): Promise<{ channel: NotificationChannel; status: 'sent' | 'skipped' | 'failed'; error?: string }[]> {
     const def = SCENARIOS[scenario];
     const guest = await this.prisma.guest.findUnique({
       where: { id: guestId },
       include: { deviceTokens: true, consents: { orderBy: { grantedAt: 'desc' } } },
     });
-    if (!guest) return;
+    if (!guest) return [];
 
     // Маркетинговые сценарии — только при согласии (152-ФЗ)
     if (def.marketing) {
       const marketing = guest.consents.find((c) => c.type === ConsentType.MARKETING);
-      if (!marketing?.granted) return;
+      if (!marketing?.granted) return [];
     }
 
     const channels = channelsOverride?.length ? channelsOverride : def.channels;
+    const results: { channel: NotificationChannel; status: 'sent' | 'skipped' | 'failed'; error?: string }[] = [];
     for (const channel of channels) {
       const { title, body } = await this.renderScenario(guest.tenantId, scenario, payload, channel);
-      let status = 'sent';
+      let status: 'sent' | 'skipped' | 'failed' = 'sent';
+      let error: string | undefined;
       try {
         if (channel === NotificationChannel.EMAIL) {
           if (guest.email) await this.email.send({ to: guest.email, subject: title, text: body });
@@ -86,12 +102,15 @@ export class NotificationsService {
         }
       } catch (err) {
         status = 'failed';
-        this.logger.warn(`Уведомление ${scenario}/${channel} не отправлено: ${String(err)}`);
+        error = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Уведомление ${scenario}/${channel} не отправлено: ${error}`);
       }
       await this.prisma.notification.create({
         data: { guestId, scenario, channel, title, body, status },
       });
+      results.push({ channel, status, error });
     }
+    return results;
   }
 
   /** Зарегистрировать токен устройства для push. */

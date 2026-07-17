@@ -90,6 +90,32 @@ export class FunnelOrchestratorService {
     );
   }
 
+  /**
+   * Ручная отправка приглашения гостю (кнопка «Отправить приглашение» в карточке
+   * брони). В отличие от воронки — шлёт всегда (без дедупа FunnelEventLog), чтобы
+   * оператор мог доставить/переотправить анкету по требованию. Возвращает исход по
+   * каждому каналу (для показа статуса и ошибки SMTP в UI). channels — ограничить
+   * набор (напр. только email); пусто — дефолтные каналы сценария.
+   */
+  async sendInviteNow(
+    bookingId: string,
+    channels?: NotificationChannel[],
+  ): Promise<{ link: string | null; results: { channel: NotificationChannel; status: 'sent' | 'skipped' | 'failed'; error?: string }[] }> {
+    const b = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { guestId: true, property: { select: { name: true } } },
+    });
+    if (!b) return { link: null, results: [] };
+    const link = await this.links.issueFor(bookingId).catch(() => null);
+    const results = await this.notifications.notifyWithResult(
+      b.guestId,
+      'CHECKIN_INVITE',
+      { property: b.property.name, ...(link ? { link: link.url } : {}) },
+      channels?.length ? channels : undefined,
+    );
+    return { link: link?.url ?? null, results };
+  }
+
   // --- Внутреннее ---
 
   private async process(b: CandidateBooking, now: Date): Promise<void> {
