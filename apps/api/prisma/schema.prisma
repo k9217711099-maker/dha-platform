@@ -2940,6 +2940,7 @@ enum AiChannel {
   TELEGRAM_DIRECT
   MAX
   WHATSAPP
+  UMNICO
   ADMIN
 }
 

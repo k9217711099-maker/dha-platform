@@ -10,6 +10,7 @@ import { TenantService } from '../../pms/tenant/tenant.service.js';
 import { TelegramConfigService } from '../../integrations/telegram/telegram-config.service.js';
 import { MaxConfigService } from '../../integrations/max/max-config.service.js';
 import { WhatsAppService } from '../../integrations/whatsapp/whatsapp.service.js';
+import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
 import { FunnelConfigService } from './funnel-config.service.js';
 import { CreateStageDto, ReorderStagesDto, UpsertFunnelDto, UpsertStageDto } from './dto/funnel-config.dto.js';
 
@@ -25,6 +26,7 @@ export class FunnelConfigController {
     private readonly telegram: TelegramConfigService,
     private readonly max: MaxConfigService,
     private readonly whatsapp: WhatsAppService,
+    private readonly umnico: UmnicoConfigService,
   ) {}
 
   /** Словарь конструктора: условия, каналы, типовые этапы, шаблоны уведомлений (§2.1). */
@@ -39,10 +41,14 @@ export class FunnelConfigController {
       push: true, sms: true, email: true, guest_portal: true, ota_messaging: true,
       telegram: tgConfigured, whatsapp: waConnected, max: maxConfigured,
     };
-    const channels = [...FUNNEL_CHANNELS, { key: 'max', label: 'MAX' } as const].map((c) => ({
-      ...c,
-      active: active[c.key] ?? true,
-    }));
+    const channels: { key: string; label: string; active: boolean }[] = [
+      ...FUNNEL_CHANNELS,
+      { key: 'max', label: 'MAX' },
+    ].map((c) => ({ ...c, active: active[c.key] ?? true }));
+    // Каналы, подключённые в Umnico (WhatsApp/Telegram/VK/Avito): ключ umnico:<id>.
+    for (const ch of await this.umnico.listChannels()) {
+      channels.push({ key: `umnico:${ch.id}`, label: `Umnico · ${ch.label}`, active: ch.status === 'active' });
+    }
     return {
       conditions: FUNNEL_CONDITIONS,
       channels,

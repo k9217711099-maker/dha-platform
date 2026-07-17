@@ -144,7 +144,7 @@ export interface CheckinQueueItem {
 }
 /** Канал коммуникации гостевого AI-агента (вкладка «Интеграции»). */
 export interface AiChannel {
-  id: 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'email' | 'avito';
+  id: 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'umnico' | 'email' | 'avito';
   name: string;
   category: 'guest' | 'notifications';
   description: string;
@@ -191,6 +191,21 @@ export interface TgUserbotState {
   me: string | null;
   qr: string | null;
   message: string;
+}
+
+/** Канал, подключённый в Umnico. */
+export interface UmnicoChannel {
+  id: number;
+  type: string;
+  login: string;
+  status: string;
+  label: string;
+}
+/** Конфигурация Umnico (без токена) + подключённые каналы. */
+export interface UmnicoAdminConfig {
+  tokenSet: boolean;
+  connected: boolean;
+  channels: UmnicoChannel[];
 }
 
 /** Публичная конфигурация SMTP (без пароля). */
@@ -2408,6 +2423,10 @@ export const adminApi = {
   aiTgDirectPassword: (password: string) =>
     request<TgUserbotState>('/ai/channels/tg-direct/password', { method: 'POST', body: { password } }),
   aiTgDirectLogout: () => request<TgUserbotState>('/ai/channels/tg-direct/logout', { method: 'POST' }),
+  aiUmnicoConfig: () => request<UmnicoAdminConfig>('/ai/channels/umnico'),
+  aiUmnicoChannels: () => request<UmnicoChannel[]>('/ai/channels/umnico/channels'),
+  aiSaveUmnico: (body: { token?: string }) => request<UmnicoAdminConfig>('/ai/channels/umnico', { method: 'PUT', body }),
+  aiTestUmnico: (token?: string) => request<{ ok: boolean; message: string }>('/ai/channels/umnico/test', { method: 'POST', body: { token } }),
   aiEmailConfig: () => request<EmailAdminConfig>('/ai/channels/email'),
   aiSaveEmail: (body: { host?: string; port?: number; secure?: boolean; user?: string; pass?: string; from?: string; proxy?: string }) =>
     request<EmailAdminConfig>('/ai/channels/email', { method: 'PUT', body }),

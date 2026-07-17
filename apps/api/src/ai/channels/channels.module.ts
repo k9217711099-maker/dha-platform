@@ -13,6 +13,8 @@ import { MaxController } from './max.controller.js';
 import { MaxPollingService } from './max-polling.service.js';
 import { WhatsAppAgentService } from './whatsapp-agent.service.js';
 import { TgUserbotAgentService } from './tg-userbot-agent.service.js';
+import { UmnicoAgentService } from './umnico-agent.service.js';
+import { UmnicoController } from './umnico.controller.js';
 import { ChannelToggleService } from './channel-toggle.service.js';
 
 /**
@@ -24,7 +26,7 @@ import { ChannelToggleService } from './channel-toggle.service.js';
  */
 @Module({
   imports: [AgentsModule, ConversationsModule],
-  controllers: [TelegramController, MaxController, ChannelsAdminController],
+  controllers: [TelegramController, MaxController, UmnicoController, ChannelsAdminController],
   providers: [
     TelegramAgentService,
     TelegramLinkService,
@@ -33,6 +35,7 @@ import { ChannelToggleService } from './channel-toggle.service.js';
     MaxPollingService,
     WhatsAppAgentService,
     TgUserbotAgentService,
+    UmnicoAgentService,
     ChannelToggleService,
     AdminAuthGuard,
     AuditService,

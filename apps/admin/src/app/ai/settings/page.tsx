@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Card } from '@dha/ui';
-import { adminApi, type AiChannel, type EmailAdminConfig, type MaxAdminConfig, type TelegramAdminConfig, type TgUserbotState, type WaState } from '../../../lib/api';
+import { adminApi, type AiChannel, type EmailAdminConfig, type MaxAdminConfig, type TelegramAdminConfig, type TgUserbotState, type UmnicoAdminConfig, type WaState } from '../../../lib/api';
 import { useRequireAdmin } from '../../../lib/use-admin';
 import { useEsc } from '../../../lib/use-esc';
 
@@ -81,6 +81,9 @@ function IntegrationsTab() {
                 {i.id === 'tg_direct' && i.available && i.enabled ? (
                   <Button variant="secondary" onClick={() => setConfiguring('tg_direct')}>Настроить</Button>
                 ) : null}
+                {i.id === 'umnico' && i.available ? (
+                  <Button variant="secondary" onClick={() => setConfiguring('umnico')}>Настроить</Button>
+                ) : null}
                 {i.id === 'email' && i.available ? (
                   <Button variant="secondary" onClick={() => setConfiguring('email')}>Настроить</Button>
                 ) : null}
@@ -118,6 +121,7 @@ function IntegrationsTab() {
       {configuring === 'whatsapp' ? <WhatsAppSettingsModal onClose={() => { setConfiguring(null); void load(); }} /> : null}
       {configuring === 'tg_direct' ? <TgDirectSettingsModal onClose={() => { setConfiguring(null); void load(); }} /> : null}
       {configuring === 'email' ? <EmailSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
+      {configuring === 'umnico' ? <UmnicoSettingsModal onClose={() => setConfiguring(null)} onSaved={() => { setConfiguring(null); void load(); }} /> : null}
     </div>
   );
 }
@@ -355,6 +359,86 @@ function WhatsAppSettingsModal({ onClose }: { onClose: () => void }) {
                 <Button onClick={start} disabled={busy || st.status === 'connecting'}>{busy ? '…' : st.status === 'qr' ? 'Обновить' : 'Подключить'}</Button>
               )}
               <Button variant="secondary" onClick={onClose} disabled={busy}>Закрыть</Button>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Настройка Umnico (агрегатор) ───
+function UmnicoSettingsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  useEsc(onClose);
+  const [cfg, setCfg] = useState<UmnicoAdminConfig | null>(null);
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  useEffect(() => { void adminApi.aiUmnicoConfig().then(setCfg).catch(() => setErr('Не удалось загрузить настройки')); }, []);
+
+  const save = async () => {
+    setBusy(true); setErr('');
+    try { setCfg(await adminApi.aiSaveUmnico({ token: token || undefined })); onSaved(); }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Ошибка сохранения'); } finally { setBusy(false); }
+  };
+  const test = async () => {
+    setTesting(true); setErr(''); setTestResult(null);
+    try {
+      const r = await adminApi.aiTestUmnico(token || undefined);
+      setTestResult(r);
+      if (r.ok) { await adminApi.aiSaveUmnico({ token: token || undefined }); setCfg(await adminApi.aiUmnicoConfig()); }
+    } catch (e) { setTestResult({ ok: false, message: e instanceof Error ? e.message : 'Ошибка проверки' }); } finally { setTesting(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <Card className="max-h-[90vh] w-full max-w-lg overflow-auto p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <p className="text-xl font-light text-ink">Umnico (агрегатор)</p>
+          {cfg ? <span className={`rounded-full px-2 py-0.5 text-xs ${cfg.connected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{cfg.connected ? 'Подключено' : 'Не настроено'}</span> : null}
+        </div>
+        <p className="mb-5 text-sm text-dark-gray">Единое окно для мессенджеров через Umnico. Токен — в Umnico → Настройки → API. Подключением WhatsApp/Telegram и т.д. занимается сам Umnico (прокси и api_id не нужны).</p>
+
+        {!cfg ? <p className="text-sm text-dark-gray">Загрузка…</p> : (
+          <>
+            <div>
+              <label className={labelCls}>API-токен Umnico</label>
+              <input type="password" value={token} onChange={(e) => setToken(e.target.value)} className={fieldCls} autoComplete="new-password"
+                placeholder={cfg.tokenSet ? '•••••••• (задан — оставьте пустым, чтобы не менять)' : 'вставьте токен из настроек Umnico'} />
+              <p className="mt-1 text-xs text-dark-gray">Хранится в зашифрованном виде.</p>
+            </div>
+
+            {cfg.channels.length > 0 ? (
+              <div className="mt-4">
+                <p className="mb-1 text-sm font-medium text-ink">Подключённые каналы Umnico ({cfg.channels.length})</p>
+                <div className="overflow-hidden rounded-md border border-ink/10">
+                  {cfg.channels.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between border-b border-ink/5 px-3 py-1.5 text-sm last:border-b-0">
+                      <span className="text-ink">{c.label}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] ${c.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-ink/10 text-dark-gray'}`}>{c.status || '—'}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-dark-gray">Эти каналы можно выбирать в этапах воронки (в списке появятся как «Umnico · …»).</p>
+              </div>
+            ) : cfg.tokenSet ? <p className="mt-3 text-xs text-dark-gray">Каналы не найдены — проверьте, что в Umnico подключены мессенджеры и токен верный.</p> : null}
+
+            {testResult ? <p className={`mt-4 rounded-md px-3 py-2 text-sm ${testResult.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>{testResult.ok ? '✓ ' : '✕ '}{testResult.message}</p> : null}
+            {err ? <p className="mt-3 text-sm text-red-600">{err}</p> : null}
+
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              <Button onClick={save} disabled={busy || testing}>{busy ? 'Сохранение…' : 'Сохранить'}</Button>
+              <Button variant="secondary" onClick={test} disabled={busy || testing}>{testing ? 'Проверка…' : 'Проверить подключение'}</Button>
+              <Button variant="secondary" onClick={onClose} disabled={busy || testing}>Отмена</Button>
+            </div>
+
+            <div className="mt-5 rounded-md bg-ink/[0.03] px-3 py-3 text-xs leading-relaxed text-dark-gray">
+              <p className="mb-1 font-medium text-ink">Вебхук для входящих (один раз)</p>
+              <p>В Umnico добавьте вебхук на событие «Входящее сообщение» с адресом:</p>
+              <code className="mt-1 block break-all rounded bg-white px-2 py-1">https://api.nomero.online/api/ai/umnico/webhook</code>
             </div>
           </>
         )}

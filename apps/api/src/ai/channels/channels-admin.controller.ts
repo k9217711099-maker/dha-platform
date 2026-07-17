@@ -11,6 +11,7 @@ import {
   type TgUserbotState,
 } from '../../integrations/telegram-userbot/telegram-userbot.service.js';
 import { EmailConfigService } from '../../notifications/email/email-config.service.js';
+import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
 import { AuditService } from '../../warehouse/audit/audit.service.js';
 import {
   SaveMaxConfigDto,
@@ -19,6 +20,8 @@ import {
   TestTelegramConfigDto,
   ToggleChannelDto,
   SaveEmailConfigDto,
+  SaveUmnicoConfigDto,
+  TestUmnicoConfigDto,
   TgDirectCodeDto,
   TgDirectPasswordDto,
   TgDirectStartDto,
@@ -33,7 +36,7 @@ import {
 /** Категория канала: гостевой AI-агент или уведомления. */
 type ChannelCategory = 'guest' | 'notifications';
 
-type ChannelId = 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'email' | 'avito';
+type ChannelId = 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'umnico' | 'email' | 'avito';
 
 interface ChannelCardBase {
   id: ChannelId;
@@ -77,6 +80,7 @@ export class ChannelsAdminController {
     private readonly whatsapp: WhatsAppService,
     private readonly userbot: TelegramUserbotService,
     private readonly emailCfg: EmailConfigService,
+    private readonly umnico: UmnicoConfigService,
     private readonly toggle: ChannelToggleService,
     private readonly audit: AuditService,
   ) {}
@@ -93,6 +97,7 @@ export class ChannelsAdminController {
     const wa = this.whatsapp.getState();
     const ub = this.userbot.getState();
     const email = await this.emailCfg.getPublicConfig();
+    const um = await this.umnico.hasToken();
     const base: ChannelCardBase[] = [
       {
         id: 'web',
@@ -188,6 +193,23 @@ export class ChannelsAdminController {
           '3. Нажмите «Подключить» — появится QR-код.\n' +
           '4. В WhatsApp на телефоне: Настройки → Связанные устройства → Привязка устройства → отсканируйте QR.\n' +
           '5. Статус сменится на «Подключено». Сессия хранится на сервере и переживает перезапуск.',
+      },
+      {
+        id: 'umnico',
+        name: 'Umnico (агрегатор)',
+        category: 'guest',
+        description:
+          'Единое окно для WhatsApp, Telegram, VK, Avito и др. через Umnico. Гость пишет в любой подключённый в Umnico мессенджер — AI-агент отвечает. Не нужны прокси и api_id: подключением мессенджеров занимается Umnico. Нужен API-токен из настроек Umnico.',
+        available: true,
+        connected: um,
+        needsSetup: true,
+        setup:
+          'Как подключить:\n' +
+          '1. В Umnico подключите нужные мессенджеры (WhatsApp, Telegram и т.д.).\n' +
+          '2. В Umnico → Настройки → API создайте/скопируйте API-токен.\n' +
+          '3. Вставьте токен в поле и нажмите «Проверить подключение» — покажем список подключённых каналов.\n' +
+          '4. В Umnico добавьте вебхук на событие «Входящее сообщение» с адресом: <ПУБЛИЧНЫЙ_URL>/api/ai/umnico/webhook\n' +
+          '5. Готово — входящие из мессенджеров пойдут в AI-агента, ответы вернутся тем же каналом.',
       },
       {
         id: 'email',
@@ -414,5 +436,35 @@ export class ChannelsAdminController {
   @ApiOperation({ summary: 'Проверить подключение SMTP (verify)' })
   testEmail() {
     return this.emailCfg.testConnection();
+  }
+
+  @Get('umnico')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Конфигурация Umnico (без токена) + список подключённых каналов' })
+  umnicoConfig() {
+    return this.umnico.getPublicConfig();
+  }
+
+  @Get('umnico/channels')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Список подключённых в Umnico каналов (для выбора в воронке/брони)' })
+  umnicoChannels() {
+    return this.umnico.listChannels();
+  }
+
+  @Put('umnico')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Сохранить токен Umnico' })
+  async saveUmnico(@Body() dto: SaveUmnicoConfigDto, @CurrentAdminId() adminId: string) {
+    await this.umnico.save(dto);
+    await this.audit.record({ actorId: adminId, action: 'updated', entity: 'AiChannel', entityId: 'umnico', payload: { tokenChanged: !!dto.token } });
+    return this.umnico.getPublicConfig();
+  }
+
+  @Post('umnico/test')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Проверить подключение Umnico (GET /integrations)' })
+  testUmnico(@Body() dto: TestUmnicoConfigDto) {
+    return this.umnico.testConnection(dto.token);
   }
 }

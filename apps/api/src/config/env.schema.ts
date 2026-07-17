@@ -263,6 +263,14 @@ export const envSchema = z.object({
   SMTP_PROXY_URL: z.string().optional(),
 
   /**
+   * Umnico — омниканальный агрегатор (WhatsApp/Telegram/VK/Avito и др.). Токен
+   * API вводится в админке (Setting), env — запасной вариант. Umnico берёт на себя
+   * подключение мессенджеров, прокси и api_id не нужны.
+   */
+  UMNICO_API_BASE: z.string().url().default('https://api.umnico.com'),
+  UMNICO_TOKEN: z.string().optional(),
+
+  /**
    * Telegram Direct (userbot, GramJS/MTProto) — общение с ЛИЧНОГО аккаунта, а не
    * бота. TG_USERBOT_ENABLED=true подключает сохранённую сессию при старте.
    * api_id/api_hash (my.telegram.org) и телефон вводятся в админке (Setting,

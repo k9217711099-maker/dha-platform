@@ -117,6 +117,20 @@ export class TgDirectStartDto {
   phone!: string;
 }
 
+/** Сохранение токена Umnico (пусто — не менять). */
+export class SaveUmnicoConfigDto {
+  @ApiPropertyOptional({ description: 'API-токен Umnico (из настроек Umnico → API). Пусто — не менять.' })
+  @IsOptional() @IsString() @MaxLength(1000)
+  token?: string;
+}
+
+/** Проверка подключения Umnico: токен из формы или сохранённый. */
+export class TestUmnicoConfigDto {
+  @ApiPropertyOptional({ description: 'Токен для разовой проверки; пусто — берём сохранённый.' })
+  @IsOptional() @IsString() @MaxLength(1000)
+  token?: string;
+}
+
 /** Telegram Direct: вход по QR (как Telegram Web) — нужны только реквизиты. */
 export class TgDirectStartQrDto {
   @ApiProperty({ description: 'api_id с my.telegram.org' })
