@@ -48,6 +48,7 @@ jobs:
             # был rm -rf .turbo/.next/node_modules/.cache — он и делал каждый деплой холодным
             # (полная пересборка 3 приложений, 17–50 мин, упиралась в память VPS).
             bash infra/deploy/deploy.sh ${{ github.ref_name }}
-            # Жёсткий перезапуск фронта: pm2 reload (graceful) в fork-режиме мог держать
-            # старую пререндеренную страницу в памяти → отдавались старые чанки.
-            pm2 restart dha-web dha-admin --update-env || pm2 restart all --update-env || true
+            # Жёсткий перезапуск ВСЕХ трёх (вкл. dha-api): pm2 reload (graceful) в fork-режиме
+            # мог держать в памяти старый код/пререндер → отдавались старые чанки и старые
+            # роуты API (деплой зелёный, а код старый). restart = гарантированно новый процесс.
+            pm2 restart dha-api dha-web dha-admin --update-env || pm2 restart all --update-env || true
