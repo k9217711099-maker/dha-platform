@@ -34,7 +34,7 @@ jobs:
           host: ${{ steps.target.outputs.host }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # Дефолт appleboy — 10 мин; запас на редкую холодную пересборку всех приложений.
+          # Дефолт appleboy — 10 мин; запас на полную пересборку (реально ~2–3 мин).
           command_timeout: 30m
           script: |
             cd /var/www/dha
@@ -42,11 +42,12 @@ jobs:
             # только в deploy.sh, чтобы применилось СРАЗУ (workflow берётся из пушимого
             # коммита, без лага самообновления deploy.sh).
             export PUBLIC_API_URL=https://api.nomero.online/api
-            # ВАРИАНТ 1 (инкрементально): кэш turbo НЕ чистим — пересобирается только
-            # изменённое. Смена NEXT_PUBLIC_API_URL сама инвалидирует бандл (объявлен в
-            # turbo.json → в ключе кэша), так что «старый бандл» не отдастся. Раньше здесь
-            # был rm -rf .turbo/.next/node_modules/.cache — он и делал каждый деплой холодным
-            # (полная пересборка 3 приложений, 17–50 мин, упиралась в память VPS).
+            # ЧИСТИМ кэш turbo/Next ДО сборки (здесь, не в deploy.sh — без лага самообновления
+            # скрипта). БЕЗ этого turbo отдавал «FULL TURBO cache hit» и восстанавливал ЗАЛИПШИЙ
+            # старый бандл → деплой зелёный, а прод замёрз на старом коде (роуты 404). Инкрементальный
+            # кэш («вариант 1») тут ненадёжен, поэтому пересобираем начисто. Дёшево: по логам
+            # реальные тайминги admin ~38с, web ~22с, api секунды → весь деплой ~2–3 мин.
+            rm -rf .turbo apps/web/.next apps/web/.turbo apps/admin/.next apps/admin/.turbo node_modules/.cache || true
             bash infra/deploy/deploy.sh ${{ github.ref_name }}
             # Жёсткий перезапуск ВСЕХ трёх (вкл. dha-api): pm2 reload (graceful) в fork-режиме
             # мог держать в памяти старый код/пререндер → отдавались старые чанки и старые
