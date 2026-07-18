@@ -42,6 +42,11 @@ jobs:
             # только в deploy.sh, чтобы применилось СРАЗУ (workflow берётся из пушимого
             # коммита, без лага самообновления deploy.sh).
             export PUBLIC_API_URL=https://api.nomero.online/api
+            # Публичный адрес гостевого портала для ссылок заселения. Домен nomero.online
+            # обслуживается ЭТИМ боксом (ветка develop) — поэтому и для develop, и для main
+            # ссылки должны вести на https://nomero.online, а не на localhost. Задаём здесь
+            # (сразу, без лага deploy.sh); deploy.sh читает через ${GUEST_PORTAL_URL:-...}.
+            export GUEST_PORTAL_URL=https://nomero.online
             # ЧИСТИМ кэш turbo/Next ДО сборки (здесь, не в deploy.sh — без лага самообновления
             # скрипта). БЕЗ этого turbo отдавал «FULL TURBO cache hit» и восстанавливал ЗАЛИПШИЙ
             # старый бандл → деплой зелёный, а прод замёрз на старом коде (роуты 404). Инкрементальный

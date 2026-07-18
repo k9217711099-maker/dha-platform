@@ -59,11 +59,10 @@ echo "==> NEXT_PUBLIC_API_URL=$API_URL (web + admin)"
 # СМС/на стойке). Без него backend берёт дефолт localhost:3000 из env.schema и гость
 # получает нерабочую ссылку. Пишем в apps/api/.env (рантайм pm2, не бандл); файл не
 # в git, поэтому upsert после git reset безопасен. Переопределяется GUEST_PORTAL_URL.
-if [ "$BRANCH" = "main" ]; then
-  PORTAL_URL="${GUEST_PORTAL_URL:-https://nomero.online}"
-else
-  PORTAL_URL="${GUEST_PORTAL_URL:-http://localhost:3000}"
-fi
+# Домен nomero.online обслуживается develop-боксом, поэтому дефолт nomero.online для ОБЕИХ
+# веток (GUEST_PORTAL_URL из deploy.yml всё равно перекрывает). localhost — только если
+# кто-то запускает deploy.sh вручную без переменной и не на nomero-сервере.
+PORTAL_URL="${GUEST_PORTAL_URL:-https://nomero.online}"
 upsert_env apps/api/.env GUEST_PORTAL_BASE_URL "$PORTAL_URL"
 echo "==> GUEST_PORTAL_BASE_URL=$PORTAL_URL (api)"
 
