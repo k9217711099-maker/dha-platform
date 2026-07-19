@@ -2975,8 +2975,11 @@ model AiConversation {
   employeeId String?
   /// Оператор, взявший эскалированный диалог (лента эскалаций §4.7).
   operatorId String?
-  /// Внешний ID чата (напр. Telegram chat id) — для канала TELEGRAM.
+  /// Внешний ID чата (напр. Telegram chat id / Umnico leadId) — адрес гостя в канале.
   externalId String?
+  /// Доп. данные маршрутизации для ответа оператора (напр. Umnico: source/userId/saId,
+  /// которых нет в leadId, но которые обязательны при отправке). JSON, зависит от канала.
+  channelMeta Json?
   model      String?
   /// Вехи для QA-метрик (§5.7): когда AI передал человеку / оператор взял / закрыт.
   escalatedAt DateTime?

@@ -44,6 +44,13 @@ export class UmnicoAgentService {
         text,
       });
       if (!existing) await this.conversations.setExternalId(res.conversationId, msg.leadId);
+      // Сохраняем адрес ответа (source/userId/saId) — без него оператор не сможет
+      // ответить в Umnico из инбокса (в leadId этих полей нет, а они обязательны).
+      await this.conversations.setChannelMeta(res.conversationId, {
+        source: msg.source ?? null,
+        userId: msg.userId ?? null,
+        saId: msg.saId ?? null,
+      });
       await this.umnico.sendMessage(
         { leadId: msg.leadId, source: msg.source, userId: msg.userId, saId: msg.saId },
         res.reply,

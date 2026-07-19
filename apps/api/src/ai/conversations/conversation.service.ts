@@ -73,6 +73,15 @@ export class ConversationService {
     return this.prisma.aiConversation.update({ where: { id }, data: { externalId } });
   }
 
+  /**
+   * Сохранить данные маршрутизации канала (напр. Umnico source/userId/saId) — нужны,
+   * чтобы оператор мог ответить в канал из инбокса (в leadId их нет). Обновляем на
+   * каждое входящее, т.к. значения могут меняться (напр. новый source по обращению).
+   */
+  setChannelMeta(id: string, meta: Prisma.InputJsonValue) {
+    return this.prisma.aiConversation.update({ where: { id }, data: { channelMeta: meta } });
+  }
+
   /** Привязать существующий диалог к гостю (напр. после Telegram deep-link §13). */
   setGuestId(id: string, guestId: string) {
     return this.prisma.aiConversation.update({ where: { id }, data: { guestId } });

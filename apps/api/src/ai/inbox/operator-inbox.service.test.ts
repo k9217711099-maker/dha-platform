@@ -3,6 +3,8 @@ import { OperatorInboxService } from './operator-inbox.service.js';
 import type { ConversationService } from '../conversations/conversation.service.js';
 import type { AiDirectoryService } from '../directory/ai-directory.service.js';
 import type { TelegramPort } from '../../integrations/telegram/telegram.port.js';
+import type { MaxPort } from '../../integrations/max/max.port.js';
+import type { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
 
 function setup(convo: Record<string, unknown> | null) {
   const conversations = {
@@ -18,7 +20,15 @@ function setup(convo: Record<string, unknown> | null) {
     operators: vi.fn().mockResolvedValue(new Map()),
   } as unknown as AiDirectoryService;
   const telegram = { sendMessage: vi.fn() } as unknown as TelegramPort;
-  return { svc: new OperatorInboxService(conversations, directory, telegram), conversations, telegram };
+  const max = { sendMessage: vi.fn() } as unknown as MaxPort;
+  const umnico = { sendMessage: vi.fn() } as unknown as UmnicoConfigService;
+  return {
+    svc: new OperatorInboxService(conversations, directory, telegram, max, umnico),
+    conversations,
+    telegram,
+    max,
+    umnico,
+  };
 }
 
 describe('OperatorInboxService', () => {
@@ -36,6 +46,21 @@ describe('OperatorInboxService', () => {
   it('reply в web-канале не дёргает Telegram (гость заберёт через GET)', async () => {
     const { svc, telegram } = setup({ id: 'c1', channel: 'WEB', externalId: null });
     await svc.reply('c1', 'op1', 'ответ');
+    expect(telegram.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('reply в Umnico шлёт через Umnico с source/userId из channelMeta', async () => {
+    const { svc, umnico, telegram } = setup({
+      id: 'c1',
+      channel: 'UMNICO',
+      externalId: '777',
+      channelMeta: { source: '255', userId: '15', saId: '3' },
+    });
+    await svc.reply('c1', 'op1', 'Ответ гостю');
+    expect(umnico.sendMessage).toHaveBeenCalledWith(
+      { leadId: '777', source: '255', userId: '15', saId: '3' },
+      'Ответ гостю',
+    );
     expect(telegram.sendMessage).not.toHaveBeenCalled();
   });
 
