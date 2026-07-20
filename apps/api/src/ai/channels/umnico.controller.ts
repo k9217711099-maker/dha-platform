@@ -19,8 +19,11 @@ interface UmnicoWebhook {
     text?: string;
     body?: string;
     content?: string;
-    /** Реальное место текста в событии message.incoming: message.message.text. */
-    message?: { text?: string };
+    /** Реальное место текста/вложений события message.incoming: message.message.*. */
+    message?: {
+      text?: string;
+      attachments?: Array<{ type?: string; url?: string; link?: string; src?: string; name?: string }>;
+    };
     incoming?: boolean;
     direction?: string;
     source?: { realId?: string | number; saId?: number | string; id?: string | number; type?: string };
@@ -49,7 +52,18 @@ export class UmnicoController {
     const m = body?.message ?? {};
     // Текст события message.incoming лежит в message.message.text (проверено на боевом
     // payload Umnico); запасные варианты — на случай других типов каналов.
-    const text = String(m.message?.text ?? m.text ?? m.body ?? m.content ?? '').trim();
+    const realText = String(m.message?.text ?? m.text ?? m.body ?? m.content ?? '').trim();
+    // Вложения (картинки/файлы) — в message.message.attachments. Если текста нет, но есть
+    // вложение — не теряем сообщение: подставляем пометку со ссылкой, чтобы оператор видел.
+    const atts = Array.isArray(m.message?.attachments) ? m.message.attachments : [];
+    let text = realText;
+    if (!text && atts.length) {
+      const a = atts[0];
+      const url = a?.url ?? a?.link ?? a?.src;
+      text = `[вложение${a?.type ? `: ${a.type}` : ''}]${url ? `\n${url}` : ''}`;
+      // ВРЕМЕННО: ключи вложения (без значений) — свериться, что поле ссылки угадано.
+      this.logger.error(`[UMNICO att] type=${a?.type ?? '?'} keys=[${Object.keys(a ?? {}).join(',')}]`);
+    }
     const isIncoming = m.incoming !== false && m.direction !== 'outgoing';
     // Обрабатываем как входящее, если есть обращение (leadId), текст и это не исходящее.
     // На точное имя type не завязываемся (Umnico шлёт ещё lead.changed и т.п. — их пропускаем).

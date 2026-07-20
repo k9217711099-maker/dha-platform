@@ -51,10 +51,15 @@ export class UmnicoAgentService {
         userId: msg.userId ?? null,
         saId: msg.saId ?? null,
       });
-      await this.umnico.sendMessage(
-        { leadId: msg.leadId, source: msg.source, userId: msg.userId, saId: msg.saId },
-        res.reply,
-      );
+      // Авто-ответ в мессенджер шлём ТОЛЬКО когда отвечает бот. При эскалации/выключенном
+      // AI молчим — иначе гость получал бы «администратор скоро ответит» на каждое сообщение;
+      // оператор ответит вручную из инбокса (OperatorInboxService → dispatchToChannel).
+      if (!res.escalated && res.reply?.trim()) {
+        await this.umnico.sendMessage(
+          { leadId: msg.leadId, source: msg.source, userId: msg.userId, saId: msg.saId },
+          res.reply,
+        );
+      }
     } catch (err) {
       this.logger.error(`Ошибка обработки входящего: ${(err as Error).message}`);
     }
