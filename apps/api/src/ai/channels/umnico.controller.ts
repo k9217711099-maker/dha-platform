@@ -10,13 +10,17 @@ import { UmnicoAgentService } from './umnico-agent.service.js';
  */
 interface UmnicoWebhook {
   type?: string;
+  event?: string;
   accountId?: number;
   leadId?: number | string;
   isNewLead?: boolean;
   isNewCustomer?: boolean;
   message?: {
     text?: string;
+    body?: string;
+    content?: string;
     incoming?: boolean;
+    direction?: string;
     source?: { realId?: string | number; saId?: number | string; type?: string };
     sender?: { id?: number | string; customerId?: number | string; login?: string; type?: string };
     sa?: { id?: number | string; type?: string; login?: string };
@@ -39,40 +43,31 @@ export class UmnicoController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Webhook Umnico (гостевой AI-агент)' })
   webhook(@Body() body: UmnicoWebhook): { ok: true } {
-    // Диагностика: фиксируем сам факт вызова и форму события. Если в логах пусто —
-    // значит Umnico не шлёт к нам (не прописан URL вебхука в кабинете Umnico).
-    this.logger.log(
-      `hit type=${body?.type ?? '—'} leadId=${body?.leadId ?? '—'} keys=[${Object.keys(body ?? {}).join(',')}]`,
+    const evt = body?.type ?? body?.event ?? '—';
+    const m = body?.message ?? {};
+    const text = String(m.text ?? m.body ?? m.content ?? '').trim();
+    const isIncoming = m.incoming !== false && m.direction !== 'outgoing';
+    // ВРЕМЕННО (диагностика): сырой payload на уровне error — info/warn на проде подавлены.
+    this.logger.error(
+      `[UMNICO RAW] evt=${evt} leadId=${body?.leadId ?? '—'} hasText=${!!text} incoming=${isIncoming} body=${JSON.stringify(body ?? {}).slice(0, 1500)}`,
     );
-    if (body?.type === 'message.incoming' && body.leadId != null) {
-      const m = body.message ?? {};
-      // incoming === false → исходящее (эхо нашего ответа), не обрабатываем.
-      if (m.incoming !== false) {
-        const src = m.source;
-        // source для ответа = source.realId (обяз. в Umnico), запас — saId.
-        const source =
-          src?.realId != null ? String(src.realId) : src?.saId != null ? String(src.saId) : undefined;
-        const saId = src?.saId != null ? String(src.saId) : m.sa?.id != null ? String(m.sa.id) : undefined;
-        // userId — идентификатор клиента (sender.id / customerId).
-        const userId =
-          m.sender?.id != null
-            ? String(m.sender.id)
-            : m.sender?.customerId != null
-              ? String(m.sender.customerId)
-              : undefined;
-        void this.agent.handleIncoming({
-          leadId: String(body.leadId),
-          source,
-          userId,
-          saId,
-          text: m.text ?? '',
-        });
-      } else {
-        this.logger.log(`пропущено исходящее (incoming=false) leadId=${body.leadId}`);
-      }
+    // Обрабатываем как входящее, если есть обращение (leadId), текст и это не исходящее.
+    // Не завязываемся строго на type='message.incoming' — Umnico может звать событие иначе.
+    if (body?.leadId != null && text && isIncoming) {
+      const src = m.source;
+      const source =
+        src?.realId != null ? String(src.realId) : src?.saId != null ? String(src.saId) : undefined;
+      const saId = src?.saId != null ? String(src.saId) : m.sa?.id != null ? String(m.sa.id) : undefined;
+      const userId =
+        m.sender?.id != null
+          ? String(m.sender.id)
+          : m.sender?.customerId != null
+            ? String(m.sender.customerId)
+            : undefined;
+      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, text });
     } else {
-      this.logger.warn(
-        `не распознано как message.incoming (type=${body?.type ?? '—'}) — событие проигнорировано`,
+      this.logger.error(
+        `[UMNICO SKIP] evt=${evt} leadId=${body?.leadId ?? '—'} hasText=${!!text} incoming=${isIncoming}`,
       );
     }
     return { ok: true };
