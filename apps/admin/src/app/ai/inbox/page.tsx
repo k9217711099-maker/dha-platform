@@ -121,6 +121,8 @@ export default function InboxPage() {
       return;
     }
     void loadThread(selected);
+    // Открыли диалог → backend отметит прочитанным; локально гасим «непрочитано» сразу (#1).
+    setList((rows) => rows.map((r) => (r.id === selected ? { ...r, unread: false } : r)));
     const t = setInterval(() => void loadThread(selected), 5_000);
     return () => clearInterval(t);
   }, [selected, loadThread]);
@@ -283,15 +285,20 @@ export default function InboxPage() {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-ink">
-                      {c.title || `Диалог ${shortId(c.id)}`}
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      {c.unread && (
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="Непрочитанное сообщение" />
+                      )}
+                      <span className={`truncate text-sm text-ink ${c.unread ? 'font-semibold' : 'font-medium'}`}>
+                        {c.title || `Диалог ${shortId(c.id)}`}
+                      </span>
                     </span>
                     <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
                       {CHANNEL_RU[c.channel] ?? c.channel}
                     </span>
                   </div>
                   {c.lastMessage && (
-                    <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                    <p className={`mt-0.5 truncate text-[11px] ${c.unread ? 'font-medium text-ink' : 'text-slate-500'}`}>
                       {c.lastRole === 'user' ? '👤 ' : c.lastRole === 'staff' ? '🧑‍💼 ' : '🤖 '}
                       {c.lastMessage.replace(/\[img\]\S+/g, '📷 фото')}
                     </p>

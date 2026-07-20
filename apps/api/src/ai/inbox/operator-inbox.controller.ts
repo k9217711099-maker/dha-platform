@@ -35,6 +35,13 @@ export class OperatorInboxController {
     return this.inbox.operators(tenantId);
   }
 
+  @Get('unread-count')
+  @ApiOperation({ summary: 'Число непрочитанных эскалаций (бейдж сайдбара, #1)' })
+  async unreadCount() {
+    const tenantId = await this.tenant.getDefaultTenantId();
+    return this.inbox.unreadCount(tenantId);
+  }
+
   @Get('all')
   @ApiOperation({ summary: 'Все гостевые диалоги (мониторинг), не только эскалированные' })
   @ApiQuery({ name: 'status', required: false, enum: AiConversationStatus })

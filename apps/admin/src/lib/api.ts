@@ -1782,6 +1782,8 @@ export interface GuestConversationRow extends InboxConversationRow {
   lastRole?: 'user' | 'ai' | 'staff' | null;
   lastMessage?: string | null;
   lastAt?: string;
+  /** Непрочитано: последнее сообщение от гостя новее момента, когда оператор открывал диалог (#1). */
+  unread?: boolean;
 }
 export interface InboxOperator {
   id: string;
@@ -2828,6 +2830,7 @@ export const adminApi = {
   inboxRename: (id: string, title: string) =>
     request<{ ok: true }>(`/ai/inbox/${id}/rename`, { method: 'POST', body: { title } }),
   inboxOperators: () => request<InboxOperator[]>('/ai/inbox/operators'),
+  inboxUnread: () => request<{ count: number }>('/ai/inbox/unread-count'),
   inboxDelegate: (id: string, operatorId: string, note?: string) =>
     request<{ ok: true }>(`/ai/inbox/${id}/delegate`, { method: 'POST', body: { operatorId, note } }),
 

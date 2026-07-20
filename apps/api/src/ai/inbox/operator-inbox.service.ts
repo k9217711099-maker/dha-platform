@@ -53,9 +53,20 @@ export class OperatorInboxService {
     }));
   }
 
+  /** Число непрочитанных эскалированных диалогов — для бейджа в сайдборе (#1). */
+  async unreadCount(tenantId: string): Promise<{ count: number }> {
+    const rows = await this.conversations.listGuestConversations(tenantId, {
+      status: AiConversationStatus.ESCALATED,
+    });
+    return { count: rows.filter((r) => r.unread).length };
+  }
+
   async thread(id: string) {
     const convo = await this.conversations.get(id);
     if (!convo) throw new NotFoundException('Диалог не найден');
+    // Оператор открыл диалог → отмечаем прочитанным (сбрасывает «непрочитано»/бейдж).
+    // Не блокируем ответ и не роняем его из-за сбоя отметки.
+    void this.conversations.setOperatorRead(id).catch(() => undefined);
     const [messages, guests, operators] = await Promise.all([
       this.conversations.threadView(id, { includeSystem: true }), // операторская лента видит SYSTEM-заметки (лог делегирования)
       this.directory.guests([convo.guestId]),

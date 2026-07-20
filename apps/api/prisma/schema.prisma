@@ -2990,6 +2990,9 @@ model AiConversation {
   escalatedAt DateTime?
   assignedAt  DateTime?
   closedAt    DateTime?
+  /// Когда оператор последний раз открывал диалог (лента эскалаций §4.7). Непрочитанным
+  /// считается диалог, где последнее сообщение гостя новее operatorReadAt (или он null).
+  operatorReadAt DateTime?
   createdAt  DateTime             @default(now())
   updatedAt  DateTime             @updatedAt
 

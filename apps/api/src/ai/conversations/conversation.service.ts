@@ -87,6 +87,14 @@ export class ConversationService {
     return this.prisma.aiConversation.update({ where: { id }, data: { guestId } });
   }
 
+  /** Отметить диалог прочитанным оператором (сбрасывает «непрочитано» в ленте §4.7). */
+  setOperatorRead(id: string) {
+    return this.prisma.aiConversation.update({
+      where: { id },
+      data: { operatorReadAt: new Date() },
+    });
+  }
+
   /** Переименовать диалог (метка оператора в ленте эскалаций §4.7). Пусто → сброс к дефолту. */
   setTitle(id: string, title: string | null) {
     const t = title?.trim();
@@ -197,6 +205,7 @@ export class ConversationService {
         title: true,
         guestId: true,
         operatorId: true,
+        operatorReadAt: true,
         externalId: true,
         createdAt: true,
         updatedAt: true,
@@ -209,13 +218,19 @@ export class ConversationService {
       },
     });
     const roleMap = { USER: 'user', ASSISTANT: 'ai', STAFF: 'staff' } as const;
-    return rows.map(({ messages, ...rest }) => {
+    return rows.map(({ messages, operatorReadAt, ...rest }) => {
       const last = messages[0];
+      const lastRole = last ? roleMap[last.role as 'USER' | 'ASSISTANT' | 'STAFF'] : null;
+      const lastAt = last?.createdAt ?? rest.updatedAt;
+      // Непрочитано: последнее сообщение — от гостя и новее момента, когда оператор
+      // в последний раз открывал диалог (или он ещё ни разу не открывал).
+      const unread = lastRole === 'user' && (!operatorReadAt || lastAt > operatorReadAt);
       return {
         ...rest,
-        lastRole: last ? roleMap[last.role as 'USER' | 'ASSISTANT' | 'STAFF'] : null,
+        lastRole,
         lastMessage: last?.content ?? null,
-        lastAt: last?.createdAt ?? rest.updatedAt,
+        lastAt,
+        unread,
       };
     });
   }

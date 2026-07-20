@@ -179,11 +179,12 @@ export function AdminSidebar() {
     if (!me) return;
     let alive = true;
     const poll = async () => {
-      const [chat, ops] = await Promise.all([
+      const [chat, ops, inbox] = await Promise.all([
         me.permissions.includes('staff_chat') ? adminApi.staffUnread().then((r) => r.unread).catch(() => 0) : Promise.resolve(0),
         me.permissions.includes('ops_tasks') ? adminApi.opsBadge().then((r) => r.count).catch(() => 0) : Promise.resolve(0),
+        me.permissions.includes('guest_inbox') ? adminApi.inboxUnread().then((r) => r.count).catch(() => 0) : Promise.resolve(0),
       ]);
-      if (alive) setBadges({ '/staff-chat': chat, '/ops/tasks': ops });
+      if (alive) setBadges({ '/staff-chat': chat, '/ops/tasks': ops, '/ai/inbox': inbox });
     };
     void poll();
     const t = setInterval(() => void poll(), 25_000);
