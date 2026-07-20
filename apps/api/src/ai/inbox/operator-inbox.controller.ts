@@ -1,5 +1,18 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AiChannel, AiConversationStatus } from '@prisma/client';
 import { AdminAuthGuard, type AdminRequest } from '../../admin/admin-auth.guard.js';
 import { RequirePermission } from '../../admin/require-permission.decorator.js';
@@ -86,6 +99,19 @@ export class OperatorInboxController {
   @ApiOperation({ summary: 'Ответить гостю (уходит в его канал)' })
   reply(@Param('id') id: string, @Body() dto: InboxReplyDto, @Req() req: AdminRequest) {
     return this.inbox.reply(id, req.adminId, dto.text);
+  }
+
+  @Post(':id/attachment')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Ответить гостю файлом/фото (≤ 25 МБ, #5/#10)' })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
+  attachment(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: AdminRequest,
+    @Body('text') text?: string,
+  ) {
+    return this.inbox.replyAttachment(id, req.adminId, file, text);
   }
 
   @Post(':id/rename')

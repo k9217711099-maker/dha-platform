@@ -1,9 +1,12 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AiChannel, AiConversationStatus, AiMessageRole } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
+import type { Env } from '../../config/env.schema.js';
 import { ConversationService } from '../conversations/conversation.service.js';
 import { AiDirectoryService } from '../directory/ai-directory.service.js';
 import { SettingsService } from '../../common/settings/settings.service.js';
+import { AttachmentStorageService } from '../../staff-chat/attachment-storage.service.js';
 import { TelegramPort } from '../../integrations/telegram/telegram.port.js';
 import { MaxPort } from '../../integrations/max/max.port.js';
 import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
@@ -33,7 +36,58 @@ export class OperatorInboxService {
     private readonly telegram: TelegramPort,
     private readonly max: MaxPort,
     private readonly umnico: UmnicoConfigService,
+    private readonly config: ConfigService<Env, true>,
+    private readonly storage: AttachmentStorageService,
   ) {}
+
+  /**
+   * Абсолютный URL загруженного файла (API отдаёт `/uploads` статикой). Origin выводим из
+   * GUEST_PORTAL_BASE_URL так же, как фронт: `api.<домен>` в проде, `:3001` локально/по IP.
+   */
+  private publicFileUrl(path: string): string {
+    const portal = this.config.get('GUEST_PORTAL_BASE_URL', { infer: true }) ?? 'http://localhost:3000';
+    let origin = 'http://localhost:3001';
+    try {
+      const u = new URL(portal);
+      if (u.hostname === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(u.hostname)) {
+        origin = `${u.protocol}//${u.hostname}:3001`;
+      } else {
+        origin = `${u.protocol}//api.${u.hostname.replace(/^(www|admin)\./, '')}`;
+      }
+    } catch {
+      /* fallback на localhost */
+    }
+    return `${origin}${path}`;
+  }
+
+  /**
+   * Ответ гостю файлом/фото (#5/#10). Файл сохраняется, показывается в ленте (картинка —
+   * маркером [img], рисуется как <img>) и уходит прямой ссылкой в канал гостя (мессенджеры
+   * дают превью по URL; web/app гость забирает из истории). Опциональная подпись — вместе.
+   */
+  async replyAttachment(
+    id: string,
+    operatorId: string,
+    file: Express.Multer.File,
+    caption?: string,
+  ): Promise<{ ok: true }> {
+    const convo = await this.conversations.get(id);
+    if (!convo) throw new NotFoundException('Диалог не найден');
+    const saved = await this.storage.save(file);
+    const url = this.publicFileUrl(saved.url);
+    const cap = caption?.trim();
+    const isImage = file.mimetype.startsWith('image/');
+    const marker = isImage ? `[img]${url}` : `[файл: ${saved.name}]\n${url}`;
+    const feed = cap ? `${cap}\n${marker}` : marker;
+    // Вмешался человек — переводим бота в ESCALATED, чтобы он замолчал (как в reply()).
+    if (convo.status === AiConversationStatus.BOT) {
+      await this.conversations.setStatus(id, AiConversationStatus.ESCALATED);
+    }
+    await this.conversations.assignOperator(id, operatorId);
+    await this.conversations.addMessage(id, { role: AiMessageRole.STAFF, content: feed });
+    await this.dispatchToChannel(convo, cap ? `${cap}\n${url}` : url);
+    return { ok: true };
+  }
 
   /** Быстрые шаблоны ответа (§4.7, «/»). Хранятся в Setting как JSON-массив. */
   async getTemplates(): Promise<ReplyTemplate[]> {

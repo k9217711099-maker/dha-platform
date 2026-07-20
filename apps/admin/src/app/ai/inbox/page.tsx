@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ChangeEvent, type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Card } from '@dha/ui';
 import {
   adminApi,
@@ -86,9 +86,15 @@ export default function InboxPage() {
   const [templates, setTemplates] = useState<InboxTemplate[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showTplManager, setShowTplManager] = useState(false);
+  // Вложение гостю (#5/#10): выбранный файл + превью + статус загрузки + drag-over.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const loadList = useCallback(async () => {
     try {
@@ -130,6 +136,11 @@ export default function InboxPage() {
     setQuoted(null);
     setShowEmoji(false);
     setShowTemplates(false);
+    setPendingFile(null);
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     if (!selected) {
       setThread(null);
       return;
@@ -148,16 +159,19 @@ export default function InboxPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [thread?.messages.length, selected]);
 
+  function quotePrefix() {
+    // Цитата (#5): процитированный фрагмент перед текстом (кросс-канально — обычным текстом).
+    return quoted ? `«${quoted.text.replace(/\s+/g, ' ').slice(0, 160)}»\n\n` : '';
+  }
+
   async function send() {
+    if (pendingFile) return void sendAttachment();
     const body = reply.trim();
     if (!body || !selected || busy) return;
-    // Цитата (#5): добавляем процитированный фрагмент перед текстом ответа (кросс-канально —
-    // обычным текстом, чтобы дошло в любой мессенджер).
-    const quote = quoted ? `«${quoted.text.replace(/\s+/g, ' ').slice(0, 160)}»\n\n` : '';
     setBusy(true);
     setNote(null);
     try {
-      await adminApi.inboxReply(selected, quote + body);
+      await adminApi.inboxReply(selected, quotePrefix() + body);
       setReply('');
       setQuoted(null);
       setShowTemplates(false);
@@ -166,6 +180,62 @@ export default function InboxPage() {
       setNote(e instanceof Error ? e.message : 'Не удалось отправить');
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Выбрать файл для отправки гостю (превью + подпись, отправка по кнопке — #5/#10). */
+  function stageFile(file: File | null | undefined) {
+    if (!file || !selected) return;
+    setPendingFile(file);
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+    });
+  }
+  function clearPending() {
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPendingFile(null);
+  }
+  function onPickFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    stageFile(file);
+  }
+  function onDragOver(e: DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    if (!dragOver) setDragOver(true);
+  }
+  function onDragLeave(e: DragEvent<HTMLDivElement>) {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDragOver(false);
+  }
+  function onDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    stageFile(e.dataTransfer.files?.[0]);
+  }
+
+  /** Отправить выбранный файл гостю с подписью (текст ответа + цитата). */
+  async function sendAttachment() {
+    if (!pendingFile || !selected || uploading) return;
+    const caption = (quotePrefix() + reply.trim()).trim();
+    setUploading(true);
+    setNote(null);
+    try {
+      await adminApi.inboxSendAttachment(selected, pendingFile, caption || undefined);
+      clearPending();
+      setReply('');
+      setQuoted(null);
+      setShowTemplates(false);
+      await loadThread(selected);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Не удалось отправить файл');
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -398,7 +468,17 @@ export default function InboxPage() {
           {!conv ? (
             <div className="grid flex-1 place-items-center text-sm text-slate-400">Выберите диалог слева</div>
           ) : (
-            <>
+            <div
+              className="relative flex flex-1 flex-col"
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+            >
+              {dragOver && (
+                <div className="pointer-events-none absolute inset-0 z-30 m-2 grid place-items-center rounded-2xl border-2 border-dashed border-primary bg-primary-50/85 text-sm font-medium text-primary-700">
+                  Отпустите файл, чтобы отправить гостю
+                </div>
+              )}
               <div className="flex items-center justify-between border-b border-ink/[0.06] px-5 py-3">
                 <div className="min-w-0">
                   {renaming ? (
@@ -626,7 +706,36 @@ export default function InboxPage() {
                   </div>
                 )}
 
+                {pendingFile && (
+                  <div className="flex items-center gap-3 border-b border-ink/[0.06] bg-slate-50/70 px-4 py-2">
+                    {pendingPreview ? (
+                      <img src={pendingPreview} alt="" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
+                    ) : (
+                      <span className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-slate-200 text-2xl">
+                        📎
+                      </span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-ink">{pendingFile.name}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {uploading
+                          ? 'Отправка…'
+                          : `${Math.round(pendingFile.size / 1024)} КБ · подпись — по желанию, «Отправить» — гостю`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={clearPending}
+                      disabled={uploading}
+                      title="Убрать файл"
+                      className="shrink-0 text-slate-400 transition hover:text-rose-600 disabled:opacity-40"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex items-end gap-2 px-4 py-3">
+                  <input ref={fileRef} type="file" className="hidden" onChange={onPickFile} />
                   <div className="relative">
                     <button
                       onClick={() => setShowEmoji((v) => !v)}
@@ -650,6 +759,14 @@ export default function InboxPage() {
                   >
                     /
                   </button>
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    title="Прикрепить файл/фото"
+                    className="rounded-lg border border-ink/10 px-2.5 py-2 text-sm text-slate-500 transition hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    📎
+                  </button>
                   <textarea
                     ref={replyRef}
                     value={reply}
@@ -671,19 +788,23 @@ export default function InboxPage() {
                       }
                     }}
                     rows={1}
-                    placeholder="Ответ гостю… («/» — быстрые ответы, Enter — отправить)"
+                    placeholder={
+                      pendingFile
+                        ? 'Подпись к файлу… (необязательно)'
+                        : 'Ответ гостю… («/» — быстрые ответы, Enter — отправить)'
+                    }
                     className="max-h-32 flex-1 resize-none rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-primary focus:outline-none"
                   />
                   <button
                     onClick={() => void send()}
-                    disabled={busy || !reply.trim()}
+                    disabled={busy || uploading || (!reply.trim() && !pendingFile)}
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
                   >
-                    Отправить
+                    {uploading ? 'Отправка…' : 'Отправить'}
                   </button>
                 </div>
               </div>
-            </>
+            </div>
           )}
         </Card>
       </div>

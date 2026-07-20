@@ -3,9 +3,12 @@ import { OperatorInboxService } from './operator-inbox.service.js';
 import type { ConversationService } from '../conversations/conversation.service.js';
 import type { AiDirectoryService } from '../directory/ai-directory.service.js';
 import type { SettingsService } from '../../common/settings/settings.service.js';
+import type { AttachmentStorageService } from '../../staff-chat/attachment-storage.service.js';
 import type { TelegramPort } from '../../integrations/telegram/telegram.port.js';
 import type { MaxPort } from '../../integrations/max/max.port.js';
 import type { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
+import type { ConfigService } from '@nestjs/config';
+import type { Env } from '../../config/env.schema.js';
 
 function setup(convo: Record<string, unknown> | null) {
   const conversations = {
@@ -27,12 +30,19 @@ function setup(convo: Record<string, unknown> | null) {
   const telegram = { sendMessage: vi.fn() } as unknown as TelegramPort;
   const max = { sendMessage: vi.fn() } as unknown as MaxPort;
   const umnico = { sendMessage: vi.fn() } as unknown as UmnicoConfigService;
+  const config = {
+    get: vi.fn().mockReturnValue('https://nomero.online'),
+  } as unknown as ConfigService<Env, true>;
+  const storage = {
+    save: vi.fn().mockResolvedValue({ url: '/uploads/x.jpg', name: 'x.jpg', size: 1, mime: 'image/jpeg', kind: 'IMAGE' }),
+  } as unknown as AttachmentStorageService;
   return {
-    svc: new OperatorInboxService(conversations, directory, settings, telegram, max, umnico),
+    svc: new OperatorInboxService(conversations, directory, settings, telegram, max, umnico, config, storage),
     conversations,
     telegram,
     max,
     umnico,
+    storage,
   };
 }
 
@@ -67,6 +77,28 @@ describe('OperatorInboxService', () => {
       'Ответ гостю',
     );
     expect(telegram.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('replyAttachment: сохраняет файл, пишет STAFF-сообщение с [img] и шлёт ссылку в канал', async () => {
+    const { svc, conversations, telegram, storage } = setup({
+      id: 'c1',
+      channel: 'TELEGRAM',
+      externalId: '555',
+      status: 'ESCALATED',
+    });
+    await svc.replyAttachment('c1', 'op1', { mimetype: 'image/jpeg' } as Express.Multer.File, 'Вот схема');
+    expect(storage.save).toHaveBeenCalled();
+    expect(conversations.addMessage).toHaveBeenCalledWith(
+      'c1',
+      expect.objectContaining({
+        role: 'STAFF',
+        content: expect.stringContaining('[img]https://api.nomero.online/uploads/x.jpg'),
+      }),
+    );
+    expect(telegram.sendMessage).toHaveBeenCalledWith(
+      '555',
+      expect.stringContaining('https://api.nomero.online/uploads/x.jpg'),
+    );
   });
 
   it('close переводит диалог в CLOSED', async () => {

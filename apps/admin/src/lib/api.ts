@@ -2841,6 +2841,8 @@ export const adminApi = {
   inboxAssign: (id: string) => request<unknown>(`/ai/inbox/${id}/assign`, { method: 'POST' }),
   inboxReply: (id: string, text: string) =>
     request<{ ok: true }>(`/ai/inbox/${id}/reply`, { method: 'POST', body: { text } }),
+  inboxSendAttachment: (id: string, file: File, text?: string) =>
+    upload<{ ok: true }>(`/ai/inbox/${id}/attachment`, file, text ? { text } : {}),
   inboxClose: (id: string) => request<{ ok: true }>(`/ai/inbox/${id}/close`, { method: 'POST' }),
   inboxRename: (id: string, title: string) =>
     request<{ ok: true }>(`/ai/inbox/${id}/rename`, { method: 'POST', body: { title } }),
