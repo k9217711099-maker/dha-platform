@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AiChannel, AiConversationStatus } from '@prisma/client';
 import { AdminAuthGuard, type AdminRequest } from '../../admin/admin-auth.guard.js';
@@ -8,6 +8,7 @@ import { OperatorInboxService } from './operator-inbox.service.js';
 import { InboxReplyDto } from './dto/inbox-reply.dto.js';
 import { InboxDelegateDto } from './dto/inbox-delegate.dto.js';
 import { InboxRenameDto } from './dto/inbox-rename.dto.js';
+import { InboxTemplatesDto } from './dto/inbox-templates.dto.js';
 
 /** Лента эскалаций для оператора (админ-панель, право guest_inbox). */
 @ApiTags('ai')
@@ -40,6 +41,18 @@ export class OperatorInboxController {
   async unreadCount() {
     const tenantId = await this.tenant.getDefaultTenantId();
     return this.inbox.unreadCount(tenantId);
+  }
+
+  @Get('templates')
+  @ApiOperation({ summary: 'Быстрые шаблоны ответа («/», #5)' })
+  templates() {
+    return this.inbox.getTemplates();
+  }
+
+  @Put('templates')
+  @ApiOperation({ summary: 'Сохранить быстрые шаблоны ответа (полная замена)' })
+  saveTemplates(@Body() dto: InboxTemplatesDto) {
+    return this.inbox.setTemplates(dto.templates);
   }
 
   @Get('all')

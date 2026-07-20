@@ -6,9 +6,11 @@ import {
   adminApi,
   type GuestConversationRow,
   type InboxOperator,
+  type InboxTemplate,
   type InboxThread,
 } from '../../../lib/api';
 import { useAdminMe, useRequireAdmin } from '../../../lib/use-admin';
+import { EmojiPicker } from '../../staff-chat/EmojiPicker';
 
 const CHANNEL_RU: Record<string, string> = {
   WEB: 'Сайт',
@@ -78,8 +80,15 @@ export default function InboxPage() {
   const [delegateNote, setDelegateNote] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
+  // Инструменты ответа (#5): эмодзи, цитата, быстрые шаблоны «/».
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [quoted, setQuoted] = useState<{ role: string; text: string } | null>(null);
+  const [templates, setTemplates] = useState<InboxTemplate[]>([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showTplManager, setShowTplManager] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const replyRef = useRef<HTMLTextAreaElement>(null);
 
   const loadList = useCallback(async () => {
     try {
@@ -107,15 +116,20 @@ export default function InboxPage() {
     return () => clearInterval(t);
   }, [ready, loadList]);
 
-  // Список сотрудников для делегирования (загружаем один раз).
+  // Список сотрудников для делегирования + быстрые шаблоны ответа (загружаем один раз).
   useEffect(() => {
-    if (ready) adminApi.inboxOperators().then(setOperators).catch(() => undefined);
+    if (!ready) return;
+    adminApi.inboxOperators().then(setOperators).catch(() => undefined);
+    adminApi.inboxTemplates().then(setTemplates).catch(() => undefined);
   }, [ready]);
 
   // Выбранный диалог: опрос каждые 5 c (гость может дописывать, пока оператор думает).
   useEffect(() => {
     setShowDelegate(false);
     setRenaming(false);
+    setQuoted(null);
+    setShowEmoji(false);
+    setShowTemplates(false);
     if (!selected) {
       setThread(null);
       return;
@@ -135,19 +149,70 @@ export default function InboxPage() {
   }, [thread?.messages.length, selected]);
 
   async function send() {
-    const text = reply.trim();
-    if (!text || !selected || busy) return;
+    const body = reply.trim();
+    if (!body || !selected || busy) return;
+    // Цитата (#5): добавляем процитированный фрагмент перед текстом ответа (кросс-канально —
+    // обычным текстом, чтобы дошло в любой мессенджер).
+    const quote = quoted ? `«${quoted.text.replace(/\s+/g, ' ').slice(0, 160)}»\n\n` : '';
     setBusy(true);
     setNote(null);
     try {
-      await adminApi.inboxReply(selected, text);
+      await adminApi.inboxReply(selected, quote + body);
       setReply('');
+      setQuoted(null);
+      setShowTemplates(false);
       await loadThread(selected);
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Не удалось отправить');
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Ввод в поле ответа: «/» в начале открывает быстрые шаблоны (#5). */
+  function onReplyChange(v: string) {
+    setReply(v);
+    setShowTemplates(v.startsWith('/'));
+  }
+
+  /** Список шаблонов под текущий «/запрос». */
+  function matchedTemplates(): InboxTemplate[] {
+    if (!reply.startsWith('/')) return [];
+    const q = reply.slice(1).trim().toLowerCase();
+    if (!q) return templates;
+    return templates.filter(
+      (t) => t.title.toLowerCase().includes(q) || t.text.toLowerCase().includes(q),
+    );
+  }
+
+  /** Вставить шаблон в поле ответа (заменяет «/запрос»). */
+  function pickTemplate(t: InboxTemplate) {
+    setReply(t.text);
+    setShowTemplates(false);
+    replyRef.current?.focus();
+  }
+
+  /** Вставить эмодзи в позицию курсора поля ответа. */
+  function insertEmoji(e: string) {
+    const el = replyRef.current;
+    if (!el) {
+      setReply((r) => r + e);
+      return;
+    }
+    const start = el.selectionStart ?? reply.length;
+    const end = el.selectionEnd ?? reply.length;
+    setReply(reply.slice(0, start) + e + reply.slice(end));
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + e.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
+  /** Процитировать сообщение в ответе (#5). */
+  function quoteMessage(m: { role: string; text: string }) {
+    setQuoted({ role: m.role, text: m.text.replace(/\[img\]\S+/g, '📷 фото') });
+    replyRef.current?.focus();
   }
 
   async function assign() {
@@ -466,7 +531,19 @@ export default function InboxPage() {
                       </div>
                     </div>
                   ) : (
-                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
+                    <div
+                      key={i}
+                      className={`group flex items-center gap-1 ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}
+                    >
+                      {m.role !== 'user' && (
+                        <button
+                          onClick={() => quoteMessage(m)}
+                          title="Ответить с цитатой"
+                          className="shrink-0 px-1 text-slate-300 opacity-0 transition hover:text-slate-600 group-hover:opacity-100"
+                        >
+                          ↩
+                        </button>
+                      )}
                       <div className="max-w-[75%]">
                         {m.role === 'ai' && (
                           <div className="mb-0.5 text-right text-[10px] text-slate-400">AI</div>
@@ -483,38 +560,245 @@ export default function InboxPage() {
                           <MessageBody text={m.text} />
                         </div>
                       </div>
+                      {m.role === 'user' && (
+                        <button
+                          onClick={() => quoteMessage(m)}
+                          title="Ответить с цитатой"
+                          className="shrink-0 px-1 text-slate-300 opacity-0 transition hover:text-slate-600 group-hover:opacity-100"
+                        >
+                          ↩
+                        </button>
+                      )}
                     </div>
                   ),
                 )}
                 <div ref={endRef} />
               </div>
 
-              <div className="flex items-end gap-2 border-t border-ink/[0.06] px-4 py-3">
-                <textarea
-                  value={reply}
-                  onChange={(e) => setReply(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
-                  rows={1}
-                  placeholder="Ответ гостю… (Enter — отправить, Shift+Enter — перенос)"
-                  className="max-h-32 flex-1 resize-none rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-                />
-                <button
-                  onClick={() => void send()}
-                  disabled={busy || !reply.trim()}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
-                >
-                  Отправить
-                </button>
+              <div className="relative border-t border-ink/[0.06]">
+                {quoted && (
+                  <div className="flex items-start gap-2 border-b border-ink/[0.06] bg-slate-50/70 px-4 py-1.5 text-xs text-slate-500">
+                    <span className="mt-0.5 shrink-0 text-slate-400">↩</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="text-slate-400">
+                        {quoted.role === 'user' ? 'Гость' : quoted.role === 'ai' ? 'AI' : 'Оператор'}:{' '}
+                      </span>
+                      <span className="line-clamp-2 break-words">{quoted.text.slice(0, 200)}</span>
+                    </span>
+                    <button onClick={() => setQuoted(null)} className="shrink-0 text-slate-400 hover:text-ink">
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {showTemplates && (
+                  <div className="absolute bottom-full left-3 right-3 z-20 mb-2 max-h-64 overflow-y-auto rounded-xl border border-ink/10 bg-white p-1 shadow-2xl">
+                    <div className="flex items-center justify-between px-2 py-1">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                        Быстрые ответы
+                      </span>
+                      <button
+                        onClick={() => {
+                          setShowTemplates(false);
+                          setShowTplManager(true);
+                        }}
+                        className="text-[11px] text-primary hover:underline"
+                      >
+                        Настроить
+                      </button>
+                    </div>
+                    {matchedTemplates().length === 0 ? (
+                      <p className="px-2 py-3 text-center text-xs text-slate-400">
+                        {templates.length === 0 ? 'Шаблонов пока нет — «Настроить»' : 'Ничего не найдено'}
+                      </p>
+                    ) : (
+                      matchedTemplates().map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => pickTemplate(t)}
+                          className="block w-full rounded-lg px-2 py-1.5 text-left hover:bg-slate-50"
+                        >
+                          {t.title && <span className="text-sm font-medium text-ink">{t.title}</span>}
+                          <span className="block truncate text-xs text-slate-500">{t.text}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                <div className="flex items-end gap-2 px-4 py-3">
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowEmoji((v) => !v)}
+                      title="Эмодзи"
+                      className="rounded-lg border border-ink/10 px-2.5 py-2 text-sm text-slate-500 transition hover:bg-slate-50"
+                    >
+                      🙂
+                    </button>
+                    {showEmoji && (
+                      <EmojiPicker
+                        className="absolute bottom-full left-0 mb-2"
+                        onPick={(e) => insertEmoji(e)}
+                        onClose={() => setShowEmoji(false)}
+                      />
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setShowTplManager(true)}
+                    title="Быстрые ответы («/»)"
+                    className="rounded-lg border border-ink/10 px-2.5 py-2 text-sm text-slate-500 transition hover:bg-slate-50"
+                  >
+                    /
+                  </button>
+                  <textarea
+                    ref={replyRef}
+                    value={reply}
+                    onChange={(e) => onReplyChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setShowTemplates(false);
+                        setShowEmoji(false);
+                        return;
+                      }
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        if (showTemplates) {
+                          const first = matchedTemplates()[0];
+                          if (first) pickTemplate(first);
+                          return;
+                        }
+                        void send();
+                      }
+                    }}
+                    rows={1}
+                    placeholder="Ответ гостю… («/» — быстрые ответы, Enter — отправить)"
+                    className="max-h-32 flex-1 resize-none rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                  />
+                  <button
+                    onClick={() => void send()}
+                    disabled={busy || !reply.trim()}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+                  >
+                    Отправить
+                  </button>
+                </div>
               </div>
             </>
           )}
         </Card>
       </div>
+
+      {showTplManager && (
+        <TemplateManager
+          initial={templates}
+          onClose={() => setShowTplManager(false)}
+          onSaved={setTemplates}
+        />
+      )}
     </main>
+  );
+}
+
+/** Модалка управления быстрыми ответами (#5): добавить/изменить/удалить, сохранение — полная замена. */
+function TemplateManager({
+  initial,
+  onClose,
+  onSaved,
+}: {
+  initial: InboxTemplate[];
+  onClose: () => void;
+  onSaved: (list: InboxTemplate[]) => void;
+}) {
+  const [rows, setRows] = useState<{ id?: string; title: string; text: string }[]>(
+    initial.length
+      ? initial.map((t) => ({ id: t.id, title: t.title, text: t.text }))
+      : [{ title: '', text: '' }],
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const update = (i: number, patch: Partial<{ title: string; text: string }>) =>
+    setRows((r) => r.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
+
+  async function save() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const saved = await adminApi.inboxSaveTemplates(rows.filter((r) => r.text.trim()));
+      onSaved(saved);
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Не удалось сохранить');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4" onClick={onClose}>
+      <div
+        className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="text-lg font-medium text-ink">Быстрые ответы</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-ink">
+            ✕
+          </button>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          Вставляются в поле ответа по «/». Название — для быстрого поиска.
+        </p>
+        {err && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <div className="space-y-3">
+          {rows.map((row, i) => (
+            <div key={i} className="rounded-xl border border-ink/10 p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <input
+                  value={row.title}
+                  onChange={(e) => update(i, { title: e.target.value })}
+                  placeholder="Название (напр. «Приветствие»)"
+                  maxLength={80}
+                  className="flex-1 rounded-lg border border-ink/15 px-2 py-1 text-sm focus:border-primary focus:outline-none"
+                />
+                <button
+                  onClick={() => setRows((r) => r.filter((_, idx) => idx !== i))}
+                  title="Удалить"
+                  className="shrink-0 rounded-lg px-2 py-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                >
+                  🗑
+                </button>
+              </div>
+              <textarea
+                value={row.text}
+                onChange={(e) => update(i, { text: e.target.value })}
+                placeholder="Текст ответа…"
+                rows={2}
+                maxLength={4000}
+                className="w-full resize-none rounded-lg border border-ink/15 px-2 py-1 text-sm focus:border-primary focus:outline-none"
+              />
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => setRows((r) => [...r, { title: '', text: '' }])}
+          className="mt-3 w-full rounded-lg border border-dashed border-ink/20 py-2 text-sm text-slate-500 hover:bg-slate-50"
+        >
+          + Добавить ответ
+        </button>
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:text-ink">
+            Отмена
+          </button>
+          <button
+            onClick={() => void save()}
+            disabled={busy}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+          >
+            {busy ? 'Сохранение…' : 'Сохранить'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

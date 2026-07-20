@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { OperatorInboxService } from './operator-inbox.service.js';
 import type { ConversationService } from '../conversations/conversation.service.js';
 import type { AiDirectoryService } from '../directory/ai-directory.service.js';
+import type { SettingsService } from '../../common/settings/settings.service.js';
 import type { TelegramPort } from '../../integrations/telegram/telegram.port.js';
 import type { MaxPort } from '../../integrations/max/max.port.js';
 import type { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
@@ -19,11 +20,15 @@ function setup(convo: Record<string, unknown> | null) {
     guests: vi.fn().mockResolvedValue(new Map()),
     operators: vi.fn().mockResolvedValue(new Map()),
   } as unknown as AiDirectoryService;
+  const settings = {
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn(),
+  } as unknown as SettingsService;
   const telegram = { sendMessage: vi.fn() } as unknown as TelegramPort;
   const max = { sendMessage: vi.fn() } as unknown as MaxPort;
   const umnico = { sendMessage: vi.fn() } as unknown as UmnicoConfigService;
   return {
-    svc: new OperatorInboxService(conversations, directory, telegram, max, umnico),
+    svc: new OperatorInboxService(conversations, directory, settings, telegram, max, umnico),
     conversations,
     telegram,
     max,

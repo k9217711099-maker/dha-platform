@@ -1,10 +1,20 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { AiChannel, AiConversationStatus, AiMessageRole } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { ConversationService } from '../conversations/conversation.service.js';
 import { AiDirectoryService } from '../directory/ai-directory.service.js';
+import { SettingsService } from '../../common/settings/settings.service.js';
 import { TelegramPort } from '../../integrations/telegram/telegram.port.js';
 import { MaxPort } from '../../integrations/max/max.port.js';
 import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
+
+/** Быстрый шаблон ответа оператора (вставляется по «/» в ленте эскалаций). */
+export interface ReplyTemplate {
+  id: string;
+  title: string;
+  text: string;
+}
+const TEMPLATES_KEY = 'ai.inbox.reply_templates';
 
 /**
  * Лента эскалаций (operator inbox, §4.7): оператор видит переданные человеку
@@ -19,10 +29,37 @@ export class OperatorInboxService {
   constructor(
     private readonly conversations: ConversationService,
     private readonly directory: AiDirectoryService,
+    private readonly settings: SettingsService,
     private readonly telegram: TelegramPort,
     private readonly max: MaxPort,
     private readonly umnico: UmnicoConfigService,
   ) {}
+
+  /** Быстрые шаблоны ответа (§4.7, «/»). Хранятся в Setting как JSON-массив. */
+  async getTemplates(): Promise<ReplyTemplate[]> {
+    const raw = await this.settings.get(TEMPLATES_KEY);
+    if (!raw) return [];
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? (v as ReplyTemplate[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Сохранить список шаблонов (полная замена). Чистим/ограничиваем ввод. */
+  async setTemplates(list: Array<Partial<ReplyTemplate>>): Promise<ReplyTemplate[]> {
+    const clean: ReplyTemplate[] = (Array.isArray(list) ? list : [])
+      .filter((t) => t && typeof t.text === 'string' && t.text.trim())
+      .slice(0, 50)
+      .map((t) => ({
+        id: t.id || randomUUID(),
+        title: (t.title ?? '').trim().slice(0, 80),
+        text: (t.text ?? '').trim().slice(0, 4000),
+      }));
+    await this.settings.set(TEMPLATES_KEY, JSON.stringify(clean));
+    return clean;
+  }
 
   /**
    * Очередь эскалаций: диалоги ESCALATED с превью последнего сообщения и именами

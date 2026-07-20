@@ -1799,6 +1799,12 @@ export interface InboxOperator {
   name: string;
   role: string;
 }
+/** Быстрый шаблон ответа оператора (вставка по «/» в ленте эскалаций, #5). */
+export interface InboxTemplate {
+  id: string;
+  title: string;
+  text: string;
+}
 export interface InboxThread {
   conversation: {
     id: string;
@@ -2840,6 +2846,9 @@ export const adminApi = {
     request<{ ok: true }>(`/ai/inbox/${id}/rename`, { method: 'POST', body: { title } }),
   inboxOperators: () => request<InboxOperator[]>('/ai/inbox/operators'),
   inboxUnread: () => request<{ count: number }>('/ai/inbox/unread-count'),
+  inboxTemplates: () => request<InboxTemplate[]>('/ai/inbox/templates'),
+  inboxSaveTemplates: (templates: { id?: string; title?: string; text: string }[]) =>
+    request<InboxTemplate[]>('/ai/inbox/templates', { method: 'PUT', body: { templates } }),
   inboxDelegate: (id: string, operatorId: string, note?: string) =>
     request<{ ok: true }>(`/ai/inbox/${id}/delegate`, { method: 'POST', body: { operatorId, note } }),
 
