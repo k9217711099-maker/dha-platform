@@ -61,13 +61,18 @@ export class OperatorInboxService {
       this.directory.guests([convo.guestId]),
       this.directory.operators([convo.operatorId]),
     ]);
+    // Телефон гостя из мессенджера (напр. Umnico) храним в channelMeta — показываем
+    // оператору даже если профиль ещё не сопоставлен (#8).
+    const meta = (convo.channelMeta ?? {}) as { phone?: string | null };
     return {
       conversation: {
         id: convo.id,
         channel: convo.channel,
         status: convo.status,
+        title: convo.title,
         guestId: convo.guestId,
         guestName: (convo.guestId && guests.get(convo.guestId)) || null,
+        guestPhone: meta.phone ?? null,
         operatorId: convo.operatorId,
         operatorName: (convo.operatorId && operators.get(convo.operatorId)) || null,
         createdAt: convo.createdAt,
@@ -78,6 +83,14 @@ export class OperatorInboxService {
 
   assign(id: string, operatorId: string) {
     return this.conversations.assignOperator(id, operatorId);
+  }
+
+  /** Переименовать диалог (метка оператора §4.7). Пустая строка → сброс к дефолту. */
+  async rename(id: string, title: string | null): Promise<{ ok: true }> {
+    const convo = await this.conversations.get(id);
+    if (!convo) throw new NotFoundException('Диалог не найден');
+    await this.conversations.setTitle(id, title);
+    return { ok: true };
   }
 
   async reply(id: string, operatorId: string, text: string): Promise<{ ok: true }> {

@@ -1762,6 +1762,7 @@ export interface QaReviewRow {
 export interface InboxConversationRow {
   id: string;
   channel: string;
+  title?: string | null;
   guestId: string | null;
   guestName: string | null;
   operatorId: string | null;
@@ -1792,8 +1793,10 @@ export interface InboxThread {
     id: string;
     channel: string;
     status: string;
+    title?: string | null;
     guestId: string | null;
     guestName: string | null;
+    guestPhone?: string | null;
     operatorId: string | null;
     operatorName: string | null;
     createdAt: string;
@@ -2822,6 +2825,8 @@ export const adminApi = {
   inboxReply: (id: string, text: string) =>
     request<{ ok: true }>(`/ai/inbox/${id}/reply`, { method: 'POST', body: { text } }),
   inboxClose: (id: string) => request<{ ok: true }>(`/ai/inbox/${id}/close`, { method: 'POST' }),
+  inboxRename: (id: string, title: string) =>
+    request<{ ok: true }>(`/ai/inbox/${id}/rename`, { method: 'POST', body: { title } }),
   inboxOperators: () => request<InboxOperator[]>('/ai/inbox/operators'),
   inboxDelegate: (id: string, operatorId: string, note?: string) =>
     request<{ ok: true }>(`/ai/inbox/${id}/delegate`, { method: 'POST', body: { operatorId, note } }),

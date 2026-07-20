@@ -7,6 +7,7 @@ import { TenantService } from '../../pms/tenant/tenant.service.js';
 import { OperatorInboxService } from './operator-inbox.service.js';
 import { InboxReplyDto } from './dto/inbox-reply.dto.js';
 import { InboxDelegateDto } from './dto/inbox-delegate.dto.js';
+import { InboxRenameDto } from './dto/inbox-rename.dto.js';
 
 /** Лента эскалаций для оператора (админ-панель, право guest_inbox). */
 @ApiTags('ai')
@@ -65,6 +66,12 @@ export class OperatorInboxController {
   @ApiOperation({ summary: 'Ответить гостю (уходит в его канал)' })
   reply(@Param('id') id: string, @Body() dto: InboxReplyDto, @Req() req: AdminRequest) {
     return this.inbox.reply(id, req.adminId, dto.text);
+  }
+
+  @Post(':id/rename')
+  @ApiOperation({ summary: 'Переименовать диалог (#7)' })
+  rename(@Param('id') id: string, @Body() dto: InboxRenameDto) {
+    return this.inbox.rename(id, dto.title ?? null);
   }
 
   @Post(':id/close')

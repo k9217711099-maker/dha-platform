@@ -76,6 +76,8 @@ export default function InboxPage() {
   const [showDelegate, setShowDelegate] = useState(false);
   const [delegateTo, setDelegateTo] = useState('');
   const [delegateNote, setDelegateNote] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
 
@@ -113,6 +115,7 @@ export default function InboxPage() {
   // Выбранный диалог: опрос каждые 5 c (гость может дописывать, пока оператор думает).
   useEffect(() => {
     setShowDelegate(false);
+    setRenaming(false);
     if (!selected) {
       setThread(null);
       return;
@@ -194,6 +197,21 @@ export default function InboxPage() {
     }
   }
 
+  async function saveTitle() {
+    if (!selected || busy) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await adminApi.inboxRename(selected, titleDraft.trim());
+      setRenaming(false);
+      await Promise.all([loadThread(selected), loadList()]);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Не удалось переименовать');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!ready) return <main className="px-8 py-12 text-dark-gray">Загрузка…</main>;
 
   const conv = thread?.conversation;
@@ -265,8 +283,10 @@ export default function InboxPage() {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-ink">Диалог {shortId(c.id)}</span>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
+                    <span className="truncate text-sm font-medium text-ink">
+                      {c.title || `Диалог ${shortId(c.id)}`}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
                       {CHANNEL_RU[c.channel] ?? c.channel}
                     </span>
                   </div>
@@ -308,12 +328,58 @@ export default function InboxPage() {
           ) : (
             <>
               <div className="flex items-center justify-between border-b border-ink/[0.06] px-5 py-3">
-                <div>
-                  <p className="text-sm font-medium text-ink">
-                    Диалог {shortId(conv.id)} · {CHANNEL_RU[conv.channel] ?? conv.channel}
-                  </p>
+                <div className="min-w-0">
+                  {renaming ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        autoFocus
+                        value={titleDraft}
+                        onChange={(e) => setTitleDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') void saveTitle();
+                          if (e.key === 'Escape') setRenaming(false);
+                        }}
+                        placeholder={`Диалог ${shortId(conv.id)}`}
+                        maxLength={120}
+                        className="w-56 rounded-lg border border-ink/15 px-2 py-1 text-sm focus:border-primary focus:outline-none"
+                      />
+                      <button
+                        onClick={() => void saveTitle()}
+                        disabled={busy}
+                        className="rounded-md bg-primary px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+                      >
+                        OK
+                      </button>
+                      <button
+                        onClick={() => setRenaming(false)}
+                        className="rounded-md px-2 py-1 text-xs text-slate-500 hover:text-ink"
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <p className="truncate text-sm font-medium text-ink">
+                        {conv.title || `Диалог ${shortId(conv.id)}`}
+                        <span className="ml-1.5 font-normal text-slate-400">
+                          · {CHANNEL_RU[conv.channel] ?? conv.channel}
+                        </span>
+                      </p>
+                      <button
+                        onClick={() => {
+                          setTitleDraft(conv.title ?? '');
+                          setRenaming(true);
+                        }}
+                        title="Переименовать диалог"
+                        className="shrink-0 rounded p-0.5 text-slate-300 transition hover:text-slate-600"
+                      >
+                        ✎
+                      </button>
+                    </div>
+                  )}
                   <p className="text-xs text-slate-400">
                     {guestLabel(conv.guestName, conv.guestId)}
+                    {conv.guestPhone ? ` · ${conv.guestPhone}` : ''}
                     {conv.operatorId
                       ? ` · ${mineAssigned ? 'у вас' : operatorLabel(conv.operatorName, conv.operatorId)}`
                       : ' · не взят'}

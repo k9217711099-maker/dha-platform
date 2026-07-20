@@ -15,6 +15,10 @@ interface UmnicoWebhook {
   leadId?: number | string;
   isNewLead?: boolean;
   isNewCustomer?: boolean;
+  /** Телефон гостя может прийти на верхнем уровне (в разных каналах Umnico по-разному). */
+  phone?: string;
+  customer?: { phone?: string; name?: string };
+  contact?: { phone?: string };
   message?: {
     text?: string;
     body?: string;
@@ -26,10 +30,32 @@ interface UmnicoWebhook {
     };
     incoming?: boolean;
     direction?: string;
-    source?: { realId?: string | number; saId?: number | string; id?: string | number; type?: string };
-    sender?: { id?: number | string; customerId?: number | string; login?: string; type?: string };
+    source?: {
+      realId?: string | number;
+      saId?: number | string;
+      id?: string | number;
+      type?: string;
+      identifier?: string;
+    };
+    sender?: {
+      id?: number | string;
+      customerId?: number | string;
+      login?: string;
+      phone?: string;
+      type?: string;
+    };
     sa?: { id?: number | string; type?: string; login?: string };
   };
+}
+
+/** Первый кандидат, похожий на телефон (≥10 цифр). Форматы каналов различаются. */
+function pickPhone(...vals: Array<unknown>): string | undefined {
+  for (const v of vals) {
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (s.replace(/\D/g, '').length >= 10) return s;
+  }
+  return undefined;
 }
 
 /**
@@ -82,7 +108,17 @@ export class UmnicoController {
           : m.sender?.customerId != null
             ? String(m.sender.customerId)
             : undefined;
-      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, text });
+      // Телефон гостя (если канал его отдаёт) — защитно из нескольких мест: у WhatsApp/SMS
+      // это обычно login отправителя; плюс верхнеуровневые customer/contact/phone.
+      const phone = pickPhone(
+        m.sender?.phone,
+        m.sender?.login,
+        m.source?.identifier,
+        body.customer?.phone,
+        body.contact?.phone,
+        body.phone,
+      );
+      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, text });
     } else if (/message\.incoming/i.test(evt)) {
       // message.incoming без текста и без распознанного вложения — просто отметим (warn
       // на проде подавлен, спама не будет; поднять уровень при разборе новых типов медиа).

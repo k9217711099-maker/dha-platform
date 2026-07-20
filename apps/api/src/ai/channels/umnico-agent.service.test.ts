@@ -14,6 +14,8 @@ function setup(existing: { id: string } | null) {
     findByExternal: vi.fn().mockResolvedValue(existing),
     setExternalId: vi.fn(),
     setChannelMeta: vi.fn(),
+    setGuestId: vi.fn(),
+    findGuestIdByPhone: vi.fn().mockResolvedValue(null),
   } as unknown as ConversationService;
   const umnico = { sendMessage: vi.fn() } as unknown as UmnicoConfigService;
   const tenant = { getDefaultTenantId: vi.fn().mockResolvedValue('t1') } as unknown as TenantService;
@@ -45,5 +47,13 @@ describe('UmnicoAgentService', () => {
     await svc.handleIncoming({ leadId: '90', text: '' });
     await svc.handleIncoming({ leadId: '', text: 'hi' });
     expect(guestAgent.handle).not.toHaveBeenCalled();
+  });
+
+  it('телефон совпал с профилем → диалог привязывается к гостю (#8)', async () => {
+    const { svc, conversations } = setup(null);
+    (conversations.findGuestIdByPhone as ReturnType<typeof vi.fn>).mockResolvedValue('guest-1');
+    await svc.handleIncoming({ leadId: '90', phone: '+79217711099', text: 'Привет' });
+    expect(conversations.findGuestIdByPhone).toHaveBeenCalledWith('t1', '+79217711099');
+    expect(conversations.setGuestId).toHaveBeenCalledWith('conv1', 'guest-1');
   });
 });

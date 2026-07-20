@@ -12,6 +12,8 @@ export interface UmnicoIncoming {
   source?: string;
   userId?: string;
   saId?: string;
+  /** Телефон гостя (если канал его отдаёт) — для привязки диалога к профилю (#8). */
+  phone?: string;
   text: string;
 }
 
@@ -50,11 +52,19 @@ export class UmnicoAgentService {
       if (!existing) await this.conversations.setExternalId(res.conversationId, msg.leadId);
       // Сохраняем адрес ответа (source/userId/saId) — без него оператор не сможет
       // ответить в Umnico из инбокса (в leadId этих полей нет, а они обязательны).
+      // Телефон гостя кладём сюда же — оператор видит его в инбоксе (#8).
       await this.conversations.setChannelMeta(res.conversationId, {
         source: msg.source ?? null,
         userId: msg.userId ?? null,
         saId: msg.saId ?? null,
+        phone: msg.phone ?? null,
       });
+      // Подтягиваем профиль гостя по номеру телефона (#8): если диалог ещё не привязан
+      // к гостю, а телефон совпал с профилем — привязываем (в ленте появятся ФИО/профиль).
+      if (msg.phone && !existing?.guestId) {
+        const guestId = await this.conversations.findGuestIdByPhone(tenantId, msg.phone);
+        if (guestId) await this.conversations.setGuestId(res.conversationId, guestId);
+      }
       // Авто-ответ в мессенджер шлём ТОЛЬКО когда отвечает бот. При эскалации/выключенном
       // AI молчим — иначе гость получал бы «администратор скоро ответит» на каждое сообщение;
       // оператор ответит вручную из инбокса (OperatorInboxService → dispatchToChannel).

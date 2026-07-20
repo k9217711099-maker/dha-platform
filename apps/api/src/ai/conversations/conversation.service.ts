@@ -87,6 +87,29 @@ export class ConversationService {
     return this.prisma.aiConversation.update({ where: { id }, data: { guestId } });
   }
 
+  /** Переименовать диалог (метка оператора в ленте эскалаций §4.7). Пусто → сброс к дефолту. */
+  setTitle(id: string, title: string | null) {
+    const t = title?.trim();
+    return this.prisma.aiConversation.update({ where: { id }, data: { title: t || null } });
+  }
+
+  /**
+   * Найти гостя тенанта по номеру телефона — для авто-привязки диалога из мессенджера
+   * к профилю (#8, «подтянуть профиль по номеру»). Матч по последним 10 цифрам, т.к.
+   * форматы различаются (+7…/8…/9…, с пробелами/скобками). Возвращает id первого
+   * совпадения или null. Вызывается редко (при первом входящем нового обращения).
+   */
+  async findGuestIdByPhone(tenantId: string, phone: string): Promise<string | null> {
+    const tail = phone.replace(/\D/g, '').slice(-10);
+    if (tail.length < 10) return null;
+    const rows = await this.prisma.guest.findMany({
+      where: { tenantId, phone: { not: null } },
+      select: { id: true, phone: true },
+    });
+    const hit = rows.find((r) => (r.phone ?? '').replace(/\D/g, '').endsWith(tail));
+    return hit?.id ?? null;
+  }
+
   /**
    * Сообщения диалога для показа. Гостю — только user/ai/staff (по умолчанию).
    * Оператору (`includeSystem`) — плюс SYSTEM-заметки (напр. лог делегирования §4.8),
@@ -171,6 +194,7 @@ export class ConversationService {
         id: true,
         channel: true,
         status: true,
+        title: true,
         guestId: true,
         operatorId: true,
         externalId: true,
