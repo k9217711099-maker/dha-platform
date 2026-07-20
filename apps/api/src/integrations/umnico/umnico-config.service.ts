@@ -147,36 +147,44 @@ export class UmnicoConfigService {
     const target = url.trim();
     if (!/^https:\/\//i.test(target)) return { ok: false, message: 'URL вебхука должен быть по HTTPS.' };
     try {
-      const stale = (await this.listWebhooks()).filter((w) => (w.url ?? '').trim() === target);
+      // Umnico не даёт создать дубль на тот же URL («This server already exists»), поэтому:
+      // если вебхук уже есть — включаем его (PUT status:1); если нет — создаём.
+      const mine = (await this.listWebhooks()).find((w) => (w.url ?? '').trim() === target);
+      if (mine) {
+        const wasStatus = mine.status;
+        const put = await fetch(`${this.base}/v1.3/webhooks/${mine.id}`, {
+          method: 'PUT',
+          headers: this.authHeaders(token),
+          body: JSON.stringify({ status: 1 }),
+        });
+        if (!put.ok) {
+          const d = await put.text().catch(() => '');
+          return {
+            ok: false,
+            message: `Вебхук есть (id ${mine.id}, статус ${wasStatus ?? '?'}), но включить не удалось: ${put.status} ${d.slice(0, 150)}`,
+          };
+        }
+        return {
+          ok: true,
+          message:
+            wasStatus === 1
+              ? `Вебхук уже был активен (id ${mine.id}, статус 1). Если входящие не идут — причина не в статусе.`
+              : `Вебхук включён: id ${mine.id}, статус был ${wasStatus ?? '?'} → 1.`,
+          id: mine.id,
+        };
+      }
       const res = await fetch(`${this.base}/v1.3/webhooks`, {
         method: 'POST',
         headers: this.authHeaders(token),
         body: JSON.stringify({ url: target, name }),
       });
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) return { ok: false, message: 'Токен отклонён (401/403).' };
-        const detail = await res.text().catch(() => '');
-        return { ok: false, message: `Umnico вернул ${res.status}: ${detail.slice(0, 200)}` };
+      if (res.ok) {
+        const created = (await res.json().catch(() => ({}))) as UmnicoWebhookEntry;
+        return { ok: true, message: 'Вебхук зарегистрирован в Umnico (создан новый).', id: created.id };
       }
-      const created = (await res.json().catch(() => ({}))) as UmnicoWebhookEntry;
-      // Чистим прежние вебхуки того же URL (выключенные/дубликаты), кроме только что созданного.
-      let removed = 0;
-      for (const w of stale) {
-        if (w.id === created.id) continue;
-        const del = await fetch(`${this.base}/v1.3/webhooks/${w.id}`, {
-          method: 'DELETE',
-          headers: this.authHeaders(token),
-        }).catch(() => null);
-        if (del && del.ok) removed += 1;
-      }
-      return {
-        ok: true,
-        message:
-          removed > 0
-            ? `Вебхук пересоздан (свежий активный; удалено старых с тем же адресом: ${removed}).`
-            : 'Вебхук зарегистрирован в Umnico.',
-        id: created.id,
-      };
+      if (res.status === 401 || res.status === 403) return { ok: false, message: 'Токен отклонён (401/403).' };
+      const detail = await res.text().catch(() => '');
+      return { ok: false, message: `Umnico вернул ${res.status}: ${detail.slice(0, 200)}` };
     } catch (e) {
       return { ok: false, message: `Сеть/адрес недоступны: ${(e as Error).message}` };
     }
