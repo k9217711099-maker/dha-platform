@@ -4,6 +4,7 @@ import type { GuestAgentService } from '../agents/guest-agent.service.js';
 import type { ConversationService } from '../conversations/conversation.service.js';
 import type { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
 import type { TenantService } from '../../pms/tenant/tenant.service.js';
+import type { ChannelToggleService } from './channel-toggle.service.js';
 
 function setup(existing: { id: string } | null) {
   const guestAgent = {
@@ -12,10 +13,12 @@ function setup(existing: { id: string } | null) {
   const conversations = {
     findByExternal: vi.fn().mockResolvedValue(existing),
     setExternalId: vi.fn(),
+    setChannelMeta: vi.fn(),
   } as unknown as ConversationService;
   const umnico = { sendMessage: vi.fn() } as unknown as UmnicoConfigService;
   const tenant = { getDefaultTenantId: vi.fn().mockResolvedValue('t1') } as unknown as TenantService;
-  const svc = new UmnicoAgentService(guestAgent, conversations, umnico, tenant);
+  const toggle = { isChannelEnabledFor: vi.fn().mockResolvedValue(true) } as unknown as ChannelToggleService;
+  const svc = new UmnicoAgentService(guestAgent, conversations, umnico, tenant, toggle);
   return { svc, guestAgent, conversations, umnico };
 }
 

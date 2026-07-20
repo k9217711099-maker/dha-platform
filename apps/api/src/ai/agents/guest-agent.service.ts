@@ -9,6 +9,18 @@ import { ToolRegistry } from '../tools/tool-registry.js';
 import type { ToolContext } from '../tools/agent-tool.js';
 import { GUEST_AGENT_SYSTEM_PROMPT } from './prompts.js';
 
+/** AiChannel → id канала в тумблерах (ai.channel.<id>.ai_enabled). Локально, чтобы не
+ *  тянуть ChannelToggleService (циклическая зависимость модулей). */
+const CHANNEL_ID: Partial<Record<AiChannel, string>> = {
+  [AiChannel.WEB]: 'web',
+  [AiChannel.APP]: 'app',
+  [AiChannel.TELEGRAM]: 'telegram',
+  [AiChannel.TELEGRAM_DIRECT]: 'tg_direct',
+  [AiChannel.MAX]: 'max',
+  [AiChannel.WHATSAPP]: 'whatsapp',
+  [AiChannel.UMNICO]: 'umnico',
+};
+
 export interface GuestMessageInput {
   /** Существующий диалог; если не задан — создаётся новый. */
   conversationId?: string;
@@ -41,10 +53,16 @@ export class GuestAgentService {
     private readonly settings: SettingsService,
   ) {}
 
-  /** Глобальный тумблер AI-агента (админка → «AI и коммуникации»). По умолчанию включён. */
-  private async aiEnabled(): Promise<boolean> {
-    const v = await this.settings.get('ai.agent.enabled');
-    return v === null || v === undefined || v === '' ? true : v === 'true';
+  /**
+   * Разрешён ли автоответ бота на этом канале: глобальный тумблер AI И тумблер AI по
+   * каналу (оба по умолчанию включены — выключает только явное 'false'). Настраивается
+   * в админке → «AI и коммуникации» (глобально и по каждому каналу).
+   */
+  private async aiEnabledFor(channel: AiChannel): Promise<boolean> {
+    if ((await this.settings.get('ai.agent.enabled')) === 'false') return false;
+    const id = CHANNEL_ID[channel];
+    if (!id) return true;
+    return (await this.settings.get(`ai.channel.${id}.ai_enabled`)) !== 'false';
   }
 
   async handle(input: GuestMessageInput): Promise<GuestMessageResult> {
@@ -70,8 +88,8 @@ export class GuestAgentService {
       content: input.text,
     });
 
-    // Глобальный тумблер AI выключен — модель не вызываем, диалог сразу к оператору.
-    if (!(await this.aiEnabled())) {
+    // AI выключен (глобально или для этого канала) — модель не вызываем, диалог к оператору.
+    if (!(await this.aiEnabledFor(input.channel))) {
       if (convo.status !== AiConversationStatus.ESCALATED) {
         await this.conversations.setStatus(convo.id, AiConversationStatus.ESCALATED);
       }

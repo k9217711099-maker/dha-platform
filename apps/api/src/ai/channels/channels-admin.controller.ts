@@ -55,10 +55,12 @@ interface ChannelCardBase {
 }
 
 interface ChannelCard extends ChannelCardBase {
-  /** Есть ли тумблер вкл/выкл (web/app работают из коробки, без тумблера). */
+  /** Есть ли тумблеры вкл/выкл канала и AI. */
   toggleable: boolean;
   /** Включён ли канал (для переключаемых — из Setting; иначе всегда true). */
   enabled: boolean;
+  /** Включён ли AI-агент на этом канале (иначе входящие идут сразу оператору). */
+  aiEnabled: boolean;
 }
 
 const isToggleable = (id: ChannelId): id is ToggleChannelId =>
@@ -106,10 +108,11 @@ export class ChannelsAdminController {
   @RequirePermission('ai_agent')
   @ApiOperation({ summary: 'Список каналов коммуникации и их статус' })
   async list(): Promise<ChannelCard[]> {
-    const [tg, mx, enabledMap] = await Promise.all([
+    const [tg, mx, enabledMap, aiMap] = await Promise.all([
       this.telegram.getPublicConfig(),
       this.max.getPublicConfig(),
       this.toggle.map(),
+      this.toggle.aiMap(),
     ]);
     const wa = this.whatsapp.getState();
     const ub = this.userbot.getState();
@@ -260,6 +263,7 @@ export class ChannelsAdminController {
       ...c,
       toggleable: isToggleable(c.id),
       enabled: isToggleable(c.id) ? enabledMap[c.id] : true,
+      aiEnabled: isToggleable(c.id) ? aiMap[c.id] : true,
     }));
   }
 
@@ -283,6 +287,27 @@ export class ChannelsAdminController {
       entity: 'AiChannel',
       entityId: channel,
       payload: { enabled: dto.enabled },
+    });
+    return this.list();
+  }
+
+  /** Включить/выключить AI-агента на конкретном канале (входящие пойдут сразу оператору). */
+  @Put(':id/ai')
+  @RequirePermission('ai_agent')
+  @ApiOperation({ summary: 'Включить/выключить AI-агента на канале' })
+  async setChannelAi(
+    @Param('id') id: string,
+    @Body() dto: ToggleChannelDto,
+    @CurrentAdminId() adminId: string,
+  ): Promise<ChannelCard[]> {
+    if (!isToggleable(id as ChannelId)) throw new BadRequestException('Канал не переключается');
+    await this.toggle.setChannelAi(id as ToggleChannelId, dto.enabled);
+    await this.audit.record({
+      actorId: adminId,
+      action: 'updated',
+      entity: 'AiChannel',
+      entityId: id,
+      payload: { aiEnabled: dto.enabled },
     });
     return this.list();
   }

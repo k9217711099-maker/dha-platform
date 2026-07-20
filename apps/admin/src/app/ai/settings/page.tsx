@@ -50,6 +50,10 @@ function IntegrationsTab() {
     setToggling(id);
     try { setItems(await adminApi.aiSetChannelEnabled(id, enabled)); } catch { /* игнор */ } finally { setToggling(null); }
   };
+  const setChannelAi = async (id: string, enabled: boolean) => {
+    setToggling(id);
+    try { setItems(await adminApi.aiSetChannelAi(id, enabled)); } catch { /* игнор */ } finally { setToggling(null); }
+  };
   const toggleAi = async () => {
     if (aiOn === null) return;
     setAiBusy(true);
@@ -121,17 +125,38 @@ function IntegrationsTab() {
               ) : null}
             </div>
             {i.available && i.toggleable ? (
-              <button
-                type="button"
-                role="switch"
-                aria-checked={i.enabled}
-                aria-label={i.enabled ? 'Выключить канал' : 'Включить канал'}
-                disabled={toggling === i.id}
-                onClick={() => void setEnabled(i.id, !i.enabled)}
-                className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-50 ${i.enabled ? 'bg-emerald-500' : 'bg-ink/20'}`}
-              >
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${i.enabled ? 'left-[22px]' : 'left-0.5'}`} />
-              </button>
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-9 text-right text-[11px] text-dark-gray">Канал</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={i.enabled}
+                    aria-label={i.enabled ? 'Выключить канал' : 'Включить канал'}
+                    disabled={toggling === i.id}
+                    onClick={() => void setEnabled(i.id, !i.enabled)}
+                    className={`relative h-6 w-11 rounded-full transition disabled:opacity-50 ${i.enabled ? 'bg-emerald-500' : 'bg-ink/20'}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${i.enabled ? 'left-[22px]' : 'left-0.5'}`} />
+                  </button>
+                </div>
+                {i.category === 'guest' ? (
+                  <div className="flex items-center gap-2">
+                    <span className="w-9 text-right text-[11px] text-dark-gray">AI</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={i.aiEnabled}
+                      aria-label={i.aiEnabled ? 'Выключить AI на канале' : 'Включить AI на канале'}
+                      disabled={toggling === i.id || !i.enabled}
+                      onClick={() => void setChannelAi(i.id, !i.aiEnabled)}
+                      className={`relative h-6 w-11 rounded-full transition disabled:opacity-40 ${i.aiEnabled && i.enabled ? 'bg-sky-500' : 'bg-ink/20'}`}
+                    >
+                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${i.aiEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
           </div>
           {!i.available ? <p className="mt-3 rounded-md bg-ink/[0.03] px-3 py-2 text-xs text-dark-gray">Канал появится на следующем этапе. Здесь будут поля подключения аккаунта.</p> : null}

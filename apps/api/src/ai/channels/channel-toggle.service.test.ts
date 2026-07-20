@@ -31,6 +31,25 @@ describe('ChannelToggleService', () => {
   it('map возвращает состояние всех переключаемых каналов', async () => {
     const { svc } = make({ 'ai.channel.whatsapp.enabled': 'true' });
     const m = await svc.map();
-    expect(m).toEqual({ telegram: true, tg_direct: false, max: false, whatsapp: true });
+    expect(m).toEqual({
+      telegram: true,
+      tg_direct: false,
+      max: false,
+      whatsapp: true,
+      umnico: true,
+      email: true,
+      avito: false,
+    });
+  });
+
+  it('per-channel AI по умолчанию включён, isAiEnabledFor учитывает глобальный тумблер', async () => {
+    const { svc, stored } = make();
+    expect(await svc.isChannelAiEnabled('umnico')).toBe(true);
+    // выключаем AI на umnico — глобальный остаётся вкл
+    await svc.setChannelAi('umnico', false);
+    expect(stored['ai.channel.umnico.ai_enabled']).toBe('false');
+    // глобальный AI выключен → на любом канале false
+    await svc.setAiEnabled(false);
+    expect(await svc.isAiEnabled()).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { GuestAgentService } from '../agents/guest-agent.service.js';
 import { ConversationService } from '../conversations/conversation.service.js';
 import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
 import { TenantService } from '../../pms/tenant/tenant.service.js';
+import { ChannelToggleService } from './channel-toggle.service.js';
 
 /** Входящее из Umnico (упрощённо): обращение + текст + адрес для ответа. */
 export interface UmnicoIncoming {
@@ -29,12 +30,15 @@ export class UmnicoAgentService {
     private readonly conversations: ConversationService,
     private readonly umnico: UmnicoConfigService,
     private readonly tenant: TenantService,
+    private readonly toggle: ChannelToggleService,
   ) {}
 
   async handleIncoming(msg: UmnicoIncoming): Promise<void> {
     const text = msg.text?.trim();
     if (!msg.leadId || !text) return;
     try {
+      // Канал Umnico выключен тумблером в админке — входящие игнорируем.
+      if (!(await this.toggle.isChannelEnabledFor(AiChannel.UMNICO))) return;
       const tenantId = await this.tenant.getDefaultTenantId();
       const existing = await this.conversations.findByExternal(tenantId, AiChannel.UMNICO, msg.leadId);
       const res = await this.guestAgent.handle({
