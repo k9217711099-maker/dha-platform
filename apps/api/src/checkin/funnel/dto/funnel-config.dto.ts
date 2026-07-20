@@ -101,6 +101,16 @@ export class UpsertStageDto {
   @IsObject()
   staffTask?: Record<string, unknown>;
 
+  @ApiPropertyOptional({ description: '{ enabled, templateKey, channels?, offsetHours? } — отправить шаблон один раз на этапе' })
+  @IsOptional()
+  @IsObject()
+  sendTemplate?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ description: '{ enabled, status: CHECKED_IN|NO_SHOW|CANCELLED, requireConditionMet?, offsetHours? } — сменить статус брони' })
+  @IsOptional()
+  @IsObject()
+  setStatus?: Record<string, unknown>;
+
   @ApiPropertyOptional({ description: '«Как это работает» для гостя (markdown)' })
   @IsOptional()
   @IsString()

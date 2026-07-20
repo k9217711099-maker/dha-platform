@@ -1906,6 +1906,10 @@ model CheckinFunnelStageConfig {
   timing                  Json?
   /// Действие «поставить задачу в отдел», пока этап не пройден: { enabled, groupId, offsetHours?, title? }.
   staffTask               Json?
+  /// Действие «отправить шаблон разово» на этапе: { enabled, templateKey, channels?, offsetHours? }.
+  sendTemplate            Json?
+  /// Действие «сменить статус брони»: { enabled, status: CHECKED_IN|NO_SHOW|CANCELLED, requireConditionMet?, offsetHours? }.
+  setStatus               Json?
   /// «Как это работает» для гостя (markdown, показывается в гостевом портале).
   guestDescription        String?
   /// Заметка для сотрудника.

@@ -870,6 +870,15 @@ export interface FunnelStageConfig {
   timing: Record<string, unknown> | null;
   /** Действие «поставить задачу в отдел», пока этап не пройден. */
   staffTask: { enabled?: boolean; groupId?: string | null; offsetHours?: number | null; title?: string | null } | null;
+  /** Действие «отправить шаблон разово» на этапе. */
+  sendTemplate: { enabled?: boolean; templateKey?: string | null; channels?: string[] | null; offsetHours?: number | null } | null;
+  /** Действие «сменить статус брони» на этапе. */
+  setStatus: {
+    enabled?: boolean;
+    status?: 'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED';
+    requireConditionMet?: boolean;
+    offsetHours?: number | null;
+  } | null;
   guestDescription: string | null;
   staffNote: string | null;
 }

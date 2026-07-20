@@ -202,6 +202,7 @@ function FunnelEditor({ funnel, dict, properties, groups, onChanged, onDeleted }
           <li><b>Обязательный (блокирующий) этап</b> — пока не выполнен, цифровой ключ гостю не выдаётся.</li>
           <li>На последнем этапе «Готовность и ключ», когда все условия зелёные, ключ <b>выдаётся автоматически</b>, затем — авто-заезд (если включён у объекта).</li>
         </ul>
+        <p className="mt-2">На каждом этапе можно настроить <b>действия</b> (раскройте этап): ② уведомления гостю, ④ задача в отдел, ⑤ разовый шаблон, ⑥ смена статуса брони на шахматке.</p>
       </div>
 
       {/* Этапы */}
@@ -237,6 +238,13 @@ function StageCard({ stage, dict, groups, busy, first, last, onMove, onPatch, on
   const [taskGroup, setTaskGroup] = useState(stage.staffTask?.groupId ?? '');
   const [taskOffset, setTaskOffset] = useState(stage.staffTask?.offsetHours != null ? String(stage.staffTask.offsetHours) : '');
   const [taskTitle, setTaskTitle] = useState(stage.staffTask?.title ?? '');
+  const [sendOn, setSendOn] = useState(Boolean(stage.sendTemplate?.enabled));
+  const [sendTpl, setSendTpl] = useState(stage.sendTemplate?.templateKey ?? '');
+  const [sendOffset, setSendOffset] = useState(stage.sendTemplate?.offsetHours != null ? String(stage.sendTemplate.offsetHours) : '');
+  const [statusOn, setStatusOn] = useState(Boolean(stage.setStatus?.enabled));
+  const [statusValue, setStatusValue] = useState<'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED'>(stage.setStatus?.status ?? 'CHECKED_IN');
+  const [statusReqMet, setStatusReqMet] = useState(stage.setStatus?.requireConditionMet !== false);
+  const [statusOffset, setStatusOffset] = useState(stage.setStatus?.offsetHours != null ? String(stage.setStatus.offsetHours) : '');
   useEffect(() => {
     setTitle(stage.title); setGuestDescription(stage.guestDescription ?? ''); setStaffNote(stage.staffNote ?? '');
     setReminders((stage.reminderPolicy ?? []).map((r) => r.offsetHours).join(', '));
@@ -246,6 +254,13 @@ function StageCard({ stage, dict, groups, busy, first, last, onMove, onPatch, on
     setTaskGroup(stage.staffTask?.groupId ?? '');
     setTaskOffset(stage.staffTask?.offsetHours != null ? String(stage.staffTask.offsetHours) : '');
     setTaskTitle(stage.staffTask?.title ?? '');
+    setSendOn(Boolean(stage.sendTemplate?.enabled));
+    setSendTpl(stage.sendTemplate?.templateKey ?? '');
+    setSendOffset(stage.sendTemplate?.offsetHours != null ? String(stage.sendTemplate.offsetHours) : '');
+    setStatusOn(Boolean(stage.setStatus?.enabled));
+    setStatusValue(stage.setStatus?.status ?? 'CHECKED_IN');
+    setStatusReqMet(stage.setStatus?.requireConditionMet !== false);
+    setStatusOffset(stage.setStatus?.offsetHours != null ? String(stage.setStatus.offsetHours) : '');
   }, [stage]);
 
   const stageLabel = dict.stageKeys.find((k) => k.key === stage.key)?.label ?? stage.key;
@@ -260,6 +275,8 @@ function StageCard({ stage, dict, groups, busy, first, last, onMove, onPatch, on
   const saveTexts = () => {
     const offsets = reminders.split(',').map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n !== 0);
     const off = taskOffset.trim() === '' ? null : Number(taskOffset);
+    const sOff = sendOffset.trim() === '' ? null : Number(sendOffset);
+    const stOff = statusOffset.trim() === '' ? null : Number(statusOffset);
     onPatch({
       title,
       guestDescription: guestDescription || undefined,
@@ -267,6 +284,12 @@ function StageCard({ stage, dict, groups, busy, first, last, onMove, onPatch, on
       reminderPolicy: offsets.map((offsetHours) => ({ offsetHours })),
       staffTask: taskOn
         ? { enabled: true, groupId: taskGroup || null, offsetHours: Number.isFinite(off) ? off : null, title: taskTitle || null }
+        : { enabled: false },
+      sendTemplate: sendOn && sendTpl
+        ? { enabled: true, templateKey: sendTpl, offsetHours: Number.isFinite(sOff) ? sOff : null }
+        : { enabled: false },
+      setStatus: statusOn
+        ? { enabled: true, status: statusValue, requireConditionMet: statusReqMet, offsetHours: Number.isFinite(stOff) ? stOff : null }
         : { enabled: false },
       ...(stage.key === 'key_issue' ? { timing: { preCheckinMinutes: Number(pre) || 30, postCheckoutMinutes: Number(post) || 30 } } : {}),
     });
@@ -405,6 +428,61 @@ function StageCard({ stage, dict, groups, busy, first, last, onMove, onPatch, on
                 <label className="block text-xs text-dark-gray sm:col-span-2">Заголовок задачи (необязательно)
                   <input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} className={`mt-1 ${fieldCls}`} placeholder={`Заселение: ${stage.title}`} />
                 </label>
+              </div>
+            ) : null}
+          </section>
+
+          {/* ⑤ Отправить шаблон разово */}
+          <section className="space-y-2 rounded-lg border border-ink/10 p-3">
+            <label className="flex items-center gap-2 text-xs font-semibold text-ink">
+              <input type="checkbox" checked={sendOn} onChange={(e) => setSendOn(e.target.checked)} />
+              ⑤ Отправить шаблон разово
+            </label>
+            <p className="text-[11px] leading-relaxed text-dark-gray">Разовое сообщение гостю на этом этапе (независимо от условия) — одно на бронь. Каналы берутся из блока ②. Это отдельно от приглашения и напоминаний.</p>
+            {sendOn ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block text-xs text-dark-gray">Шаблон
+                  <select value={sendTpl} onChange={(e) => setSendTpl(e.target.value)} className={`mt-1 ${fieldCls}`}>
+                    <option value="">— выберите шаблон —</option>
+                    {dict.templates.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  </select>
+                </label>
+                <label className="block text-xs text-dark-gray">Когда, часов до заезда (пусто — сразу; напр. −24)
+                  <input value={sendOffset} onChange={(e) => setSendOffset(e.target.value)} className={`mt-1 ${fieldCls}`} placeholder="сразу при постановке на этап" />
+                </label>
+              </div>
+            ) : null}
+          </section>
+
+          {/* ⑥ Сменить статус брони на шахматке */}
+          <section className="space-y-2 rounded-lg border border-ink/10 p-3">
+            <label className="flex items-center gap-2 text-xs font-semibold text-ink">
+              <input type="checkbox" checked={statusOn} onChange={(e) => setStatusOn(e.target.checked)} />
+              ⑥ Сменить статус брони на шахматке
+            </label>
+            <p className="text-[11px] leading-relaxed text-dark-gray">Автоматически меняет статус брони. «Заехал» — когда условие этапа выполнено; «Незаезд»/«Отмена» — если условие НЕ выполнено к дедлайну. Срабатывает только из статуса «Подтверждена», один раз на бронь. <b>Ответственно: меняет бронь на шахматке.</b></p>
+            {statusOn ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block text-xs text-dark-gray">Новый статус
+                  <select value={statusValue} onChange={(e) => setStatusValue(e.target.value as 'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED')} className={`mt-1 ${fieldCls}`}>
+                    <option value="CHECKED_IN">Заехал</option>
+                    <option value="NO_SHOW">Незаезд</option>
+                    <option value="CANCELLED">Отменена</option>
+                  </select>
+                </label>
+                <label className="block text-xs text-dark-gray">Когда менять
+                  <select value={statusReqMet ? 'met' : 'deadline'} onChange={(e) => setStatusReqMet(e.target.value === 'met')} className={`mt-1 ${fieldCls}`}>
+                    <option value="met">когда условие этапа выполнено</option>
+                    <option value="deadline">по дедлайну, если НЕ выполнено</option>
+                  </select>
+                </label>
+                {!statusReqMet ? (
+                  <label className="block text-xs text-dark-gray sm:col-span-2">Дедлайн, часов относительно заезда (обязательно; напр. 2 = через 2 ч после заезда, −1 = за час до)
+                    <input value={statusOffset} onChange={(e) => setStatusOffset(e.target.value)} className={`mt-1 ${fieldCls}`} placeholder="напр. 2" />
+                  </label>
+                ) : (
+                  <p className="text-[11px] text-dark-gray sm:col-span-2">Совет: «Заехал» надёжнее всего на этапе выдачи ключа (условие = номер назначен + окно открыто).</p>
+                )}
               </div>
             ) : null}
           </section>

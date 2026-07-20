@@ -98,6 +98,8 @@ export class FunnelConfigService {
         reminderPolicy: (dto.reminderPolicy ?? undefined) as unknown as Prisma.InputJsonValue,
         timing: (dto.timing ?? undefined) as unknown as Prisma.InputJsonValue,
         staffTask: (dto.staffTask ?? undefined) as unknown as Prisma.InputJsonValue,
+        sendTemplate: (dto.sendTemplate ?? undefined) as unknown as Prisma.InputJsonValue,
+        setStatus: (dto.setStatus ?? undefined) as unknown as Prisma.InputJsonValue,
         guestDescription: dto.guestDescription ?? null,
         staffNote: dto.staffNote ?? null,
       },
@@ -193,6 +195,8 @@ function stageData(dto: UpsertStageDto): Prisma.CheckinFunnelStageConfigUpdateIn
     ...(dto.reminderPolicy !== undefined ? { reminderPolicy: dto.reminderPolicy as unknown as Prisma.InputJsonValue } : {}),
     ...(dto.timing !== undefined ? { timing: dto.timing as unknown as Prisma.InputJsonValue } : {}),
     ...(dto.staffTask !== undefined ? { staffTask: dto.staffTask as unknown as Prisma.InputJsonValue } : {}),
+    ...(dto.sendTemplate !== undefined ? { sendTemplate: dto.sendTemplate as unknown as Prisma.InputJsonValue } : {}),
+    ...(dto.setStatus !== undefined ? { setStatus: dto.setStatus as unknown as Prisma.InputJsonValue } : {}),
     ...(dto.guestDescription !== undefined ? { guestDescription: dto.guestDescription || null } : {}),
     ...(dto.staffNote !== undefined ? { staffNote: dto.staffNote || null } : {}),
   };

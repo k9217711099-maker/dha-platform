@@ -41,6 +41,13 @@ interface StageConfig {
   reminderPolicy: { offsetHours: number; channels?: string[] }[];
   timing: { preCheckinMinutes?: number; postCheckoutMinutes?: number } | null;
   staffTask: { enabled: boolean; groupId: string | null; offsetHours: number | null; title: string | null } | null;
+  sendTemplate: { enabled: boolean; templateKey: string; channels: string[] | null; offsetHours: number | null } | null;
+  setStatus: {
+    enabled: boolean;
+    status: 'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED';
+    requireConditionMet: boolean;
+    offsetHours: number | null;
+  } | null;
 }
 
 /**
@@ -203,6 +210,39 @@ export class FunnelOrchestratorService {
       });
     }
 
+    // 2c) Действие «отправить шаблон разово»: один раз на бронь, в момент checkinAt+offset
+    // (offset пусто → сразу). Не зависит от условия — это разовое сообщение этапа.
+    for (const s of stages) {
+      if (!s.enabled || !s.sendTemplate?.enabled) continue;
+      const fireAt =
+        s.sendTemplate.offsetHours != null ? checkinAt.getTime() + s.sendTemplate.offsetHours * 3_600_000 : now.getTime();
+      if (now.getTime() < fireAt) continue;
+      await this.sendOnce(
+        b,
+        `${b.id}:sendtpl:${s.key}`,
+        'stage_send',
+        s.sendTemplate.templateKey,
+        s.sendTemplate.channels ?? s.channels,
+      );
+    }
+
+    // 2d) Действие «сменить статус брони»: requireConditionMet → при выполнении условия
+    // этапа (напр. key_issue → Заехал); иначе — по дедлайну checkinAt+offset, если условие
+    // НЕ выполнено (напр. Незаезд/Отмена). Только из CONFIRMED (кандидаты уже CONFIRMED),
+    // идемпотентно (событие пишется до действия — реальные брони не дёргаем повторно).
+    for (const s of stages) {
+      if (!s.enabled || !s.setStatus?.enabled) continue;
+      const met = this.stageConditionMet(s.key, view.gates);
+      let shouldFire = false;
+      if (s.setStatus.requireConditionMet) {
+        shouldFire = met;
+      } else if (s.setStatus.offsetHours != null) {
+        shouldFire = !met && now.getTime() >= checkinAt.getTime() + s.setStatus.offsetHours * 3_600_000;
+      }
+      if (!shouldFire) continue;
+      await this.applyStageStatus(b, s.key, s.setStatus.status);
+    }
+
     // 3) READY → авто-выдача ключа (идемпотентно: issue пропускает ACTIVE-ключи, §6.3).
     if (stage === FunnelStage.READY && keyStage) {
       try {
@@ -292,6 +332,8 @@ export class FunnelOrchestratorService {
       reminderPolicy: Array.isArray(s.reminderPolicy) ? (s.reminderPolicy as { offsetHours: number; channels?: string[] }[]) : [],
       timing: (s.timing ?? null) as StageConfig['timing'],
       staffTask: parseStaffTask(s.staffTask),
+      sendTemplate: parseSendTemplate(s.sendTemplate),
+      setStatus: parseSetStatus(s.setStatus),
     }));
   }
 
@@ -395,6 +437,25 @@ export class FunnelOrchestratorService {
     }
   }
 
+  /** Сменить статус брони действием этапа. Событие пишем ДО вызова PMS — дедуп на реальных бронях. */
+  private async applyStageStatus(
+    b: CandidateBooking,
+    stageKey: string,
+    status: 'CHECKED_IN' | 'NO_SHOW' | 'CANCELLED',
+  ): Promise<void> {
+    if (b.status !== BookingStatus.CONFIRMED) return; // трогаем только подтверждённые
+    const logged = await this.logEvent(b, `${b.id}:setstatus:${stageKey}`, 'stage_status', status);
+    if (!logged) return;
+    try {
+      if (status === 'CHECKED_IN') await this.pmsBookings.checkIn(b.tenantId, b.id, {});
+      else if (status === 'NO_SHOW') await this.pmsBookings.noShow(b.tenantId, b.id);
+      else await this.pmsBookings.cancel(b.tenantId, b.id, { reason: 'Автоотмена воронкой заселения' });
+      this.logger.log(`Статус брони ${b.id} → ${status} (действие этапа ${stageKey})`);
+    } catch (e) {
+      this.logger.warn(`Смена статуса ${b.id}→${status} (этап ${stageKey}): ${String(e)}`);
+    }
+  }
+
   private async hasActiveKey(bookingId: string): Promise<boolean> {
     const k = await this.prisma.digitalKey.findFirst({
       where: { bookingId, status: KeyStatus.ACTIVE },
@@ -430,5 +491,40 @@ function parseStaffTask(raw: unknown): StageConfig['staffTask'] {
     groupId: typeof o.groupId === 'string' && o.groupId ? o.groupId : null,
     offsetHours: typeof o.offsetHours === 'number' && Number.isFinite(o.offsetHours) ? o.offsetHours : null,
     title: typeof o.title === 'string' && o.title ? o.title : null,
+  };
+}
+
+/** JSON поля sendTemplate этапа → рабочий вид (null, если выключено/нет шаблона). */
+function parseSendTemplate(raw: unknown): StageConfig['sendTemplate'] {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (!o.enabled) return null;
+  const templateKey = typeof o.templateKey === 'string' && o.templateKey ? o.templateKey : null;
+  if (!templateKey) return null;
+  const channels = Array.isArray(o.channels)
+    ? (o.channels as unknown[]).filter((c): c is string => typeof c === 'string')
+    : null;
+  return {
+    enabled: true,
+    templateKey,
+    channels: channels && channels.length ? channels : null,
+    offsetHours: typeof o.offsetHours === 'number' && Number.isFinite(o.offsetHours) ? o.offsetHours : null,
+  };
+}
+
+const STAGE_STATUS_ALLOWED = ['CHECKED_IN', 'NO_SHOW', 'CANCELLED'] as const;
+
+/** JSON поля setStatus этапа → рабочий вид (null, если выключено/статус вне белого списка). */
+function parseSetStatus(raw: unknown): StageConfig['setStatus'] {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (!o.enabled) return null;
+  const status = STAGE_STATUS_ALLOWED.find((s) => s === o.status);
+  if (!status) return null;
+  return {
+    enabled: true,
+    status,
+    requireConditionMet: o.requireConditionMet !== false, // по умолчанию true — безопаснее
+    offsetHours: typeof o.offsetHours === 'number' && Number.isFinite(o.offsetHours) ? o.offsetHours : null,
   };
 }
