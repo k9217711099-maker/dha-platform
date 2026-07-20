@@ -77,6 +77,7 @@ export default function InboxPage() {
   const [delegateTo, setDelegateTo] = useState('');
   const [delegateNote, setDelegateNote] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
 
   const loadList = useCallback(async () => {
     try {
@@ -121,9 +122,12 @@ export default function InboxPage() {
     return () => clearInterval(t);
   }, [selected, loadThread]);
 
+  // Прокручиваем ТОЛЬКО контейнер сообщений вниз (не весь экран через scrollIntoView —
+  // из-за него страница «уходила вниз» при открытии диалога).
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [thread?.messages.length]);
+    const el = messagesRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [thread?.messages.length, selected]);
 
   async function send() {
     const text = reply.trim();
@@ -266,10 +270,10 @@ export default function InboxPage() {
                       {CHANNEL_RU[c.channel] ?? c.channel}
                     </span>
                   </div>
-                  {mode === 'all' && c.lastMessage && (
+                  {c.lastMessage && (
                     <p className="mt-0.5 truncate text-[11px] text-slate-500">
                       {c.lastRole === 'user' ? '👤 ' : c.lastRole === 'staff' ? '🧑‍💼 ' : '🤖 '}
-                      {c.lastMessage}
+                      {c.lastMessage.replace(/\[img\]\S+/g, '📷 фото')}
                     </p>
                   )}
                   <div className="mt-0.5 flex items-center justify-between text-[11px] text-slate-400">
@@ -380,7 +384,7 @@ export default function InboxPage() {
                 </div>
               )}
 
-              <div className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
+              <div ref={messagesRef} className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
                 {thread?.messages.map((m, i) =>
                   m.role === 'system' ? (
                     <div key={i} className="flex justify-center">
@@ -395,7 +399,7 @@ export default function InboxPage() {
                           <div className="mb-0.5 text-right text-[10px] text-slate-400">AI</div>
                         )}
                         <div
-                          className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
+                          className={`overflow-hidden whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
                             m.role === 'user'
                               ? 'bg-slate-100 text-ink'
                               : m.role === 'staff'

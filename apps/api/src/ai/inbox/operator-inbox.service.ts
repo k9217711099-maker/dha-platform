@@ -24,18 +24,12 @@ export class OperatorInboxService {
     private readonly umnico: UmnicoConfigService,
   ) {}
 
-  /** Очередь: диалоги в статусе ESCALATED (+ имена гостя/оператора). */
+  /**
+   * Очередь эскалаций: диалоги ESCALATED с превью последнего сообщения и именами
+   * (та же форма, что «Все диалоги» — чтобы в ленте был виден текст последнего сообщения).
+   */
   async list(tenantId: string) {
-    const rows = await this.conversations.listByStatus(tenantId, AiConversationStatus.ESCALATED);
-    const [guests, operators] = await Promise.all([
-      this.directory.guests(rows.map((r) => r.guestId)),
-      this.directory.operators(rows.map((r) => r.operatorId)),
-    ]);
-    return rows.map((r) => ({
-      ...r,
-      guestName: (r.guestId && guests.get(r.guestId)) || null,
-      operatorName: (r.operatorId && operators.get(r.operatorId)) || null,
-    }));
+    return this.listAll(tenantId, { status: AiConversationStatus.ESCALATED });
   }
 
   /**
