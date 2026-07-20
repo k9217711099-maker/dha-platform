@@ -188,6 +188,10 @@ export default function StaffChatPage() {
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
   const [replyTo, setReplyTo] = useState<StaffMessage | null>(null);
   const [editing, setEditing] = useState<StaffMessage | null>(null);
+  // Файл, выбранный/перетащенный, но ещё не отправленный: показываем превью + даём
+  // добавить подпись, отправляем по кнопке (#9 — интуитивно, как в мессенджерах).
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   // Полный набор эмодзи (§3): расширенный пикер реакции + пикер в поле ввода.
   const [fullPickerFor, setFullPickerFor] = useState<string | null>(null);
@@ -400,6 +404,11 @@ export default function StaffChatPage() {
     setNotifyOpen(false);
     setPendingMentions([]);
     setTypingBy({});
+    setPendingFile(null); // сбрасываем выбранный, но не отправленный файл (#9)
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
   }, [selected]);
 
   // Участники чата — для @упоминаний.
@@ -482,6 +491,8 @@ export default function StaffChatPage() {
   }
 
   async function send() {
+    // Есть выбранный файл → отправляем его с подписью (а не текстовое сообщение).
+    if (pendingFile) return void sendPending();
     const t = text.trim();
     if (!t || !selected || busy) return;
     askNotify();
@@ -504,12 +515,33 @@ export default function StaffChatPage() {
     }
   }
 
-  /** Загрузить и отправить файл в текущий чат (общий путь для кнопки 📎 и drag-and-drop #10). */
-  async function uploadFile(file: File | null | undefined) {
-    if (!file || !selected || uploading) return;
+  /** Выбрать файл для отправки (превью + подпись), но пока не отправлять (#9). */
+  function stageFile(file: File | null | undefined) {
+    if (!file || !selected) return;
+    setPendingFile(file);
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+    });
+  }
+
+  /** Снять выбранный файл (× / после отправки / смена чата). */
+  function clearPending() {
+    setPendingPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPendingFile(null);
+  }
+
+  /** Отправить выбранный файл с подписью (text) в текущий чат. */
+  async function sendPending() {
+    if (!pendingFile || !selected || uploading) return;
+    const file = pendingFile;
     setUploading(true);
     try {
       await adminApi.staffSendAttachment(selected, file, text.trim() || undefined);
+      clearPending();
       setText('');
       await loadMessages(selected);
       await loadChats();
@@ -518,13 +550,13 @@ export default function StaffChatPage() {
     }
   }
 
-  async function onPickFile(e: ChangeEvent<HTMLInputElement>) {
+  function onPickFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
-    await uploadFile(file);
+    stageFile(file);
   }
 
-  // Перетаскивание файла на область чата (#10): подсветка зоны + отправка при отпускании.
+  // Перетаскивание файла на область чата (#10): подсветка зоны + выбор при отпускании.
   function onDragOver(e: DragEvent<HTMLDivElement>) {
     if (!e.dataTransfer.types.includes('Files')) return;
     e.preventDefault();
@@ -539,7 +571,7 @@ export default function StaffChatPage() {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) void uploadFile(file);
+    if (file) stageFile(file);
   }
 
   async function startRecording() {
@@ -1378,6 +1410,34 @@ export default function StaffChatPage() {
                 </div>
               )}
 
+              {pendingFile && (
+                <div className="flex items-center gap-3 border-t border-ink/[0.06] bg-slate-50/60 px-4 py-2">
+                  {pendingPreview ? (
+                    <img src={pendingPreview} alt="" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
+                  ) : (
+                    <span className="grid h-14 w-14 shrink-0 place-items-center rounded-lg bg-slate-200 text-2xl">
+                      📎
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-ink">{pendingFile.name}</p>
+                    <p className="text-[11px] text-slate-400">
+                      {uploading
+                        ? 'Отправка…'
+                        : `${Math.round(pendingFile.size / 1024)} КБ · добавьте подпись и нажмите «Отправить»`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={clearPending}
+                    disabled={uploading}
+                    title="Убрать файл"
+                    className="shrink-0 text-slate-400 transition hover:text-rose-600 disabled:opacity-40"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-end gap-2 border-t border-ink/[0.06] px-4 py-3">
                 <input ref={fileRef} type="file" className="hidden" onChange={(e) => void onPickFile(e)} />
                 {recording ? (
@@ -1443,15 +1503,21 @@ export default function StaffChatPage() {
                         }
                       }}
                       rows={1}
-                      placeholder={editing ? 'Изменить сообщение…' : 'Сообщение… (Enter — отправить)'}
+                      placeholder={
+                        editing
+                          ? 'Изменить сообщение…'
+                          : pendingFile
+                            ? 'Подпись к файлу… (необязательно)'
+                            : 'Сообщение… (Enter — отправить)'
+                      }
                       className="max-h-32 flex-1 resize-none rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-primary focus:outline-none"
                     />
                     <button
                       onClick={() => void send()}
-                      disabled={busy || !text.trim()}
+                      disabled={busy || uploading || (!text.trim() && !pendingFile)}
                       className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
                     >
-                      {editing ? 'Сохранить' : 'Отправить'}
+                      {editing ? 'Сохранить' : uploading ? 'Отправка…' : 'Отправить'}
                     </button>
                   </>
                 )}
