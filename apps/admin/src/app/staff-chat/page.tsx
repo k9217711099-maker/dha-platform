@@ -2,6 +2,7 @@
 
 import {
   type ChangeEvent,
+  type DragEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -214,6 +215,7 @@ export default function StaffChatPage() {
   const [pendingMentions, setPendingMentions] = useState<StaffMember[]>([]);
   const [onlineOverride, setOnlineOverride] = useState<Record<string, boolean>>({});
   const [typingBy, setTypingBy] = useState<Record<string, number>>({});
+  const [dragOver, setDragOver] = useState(false); // перетаскивание файла на область чата (#10)
   const endRef = useRef<HTMLDivElement>(null);
   const lastTyping = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -502,9 +504,8 @@ export default function StaffChatPage() {
     }
   }
 
-  async function onPickFile(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
+  /** Загрузить и отправить файл в текущий чат (общий путь для кнопки 📎 и drag-and-drop #10). */
+  async function uploadFile(file: File | null | undefined) {
     if (!file || !selected || uploading) return;
     setUploading(true);
     try {
@@ -515,6 +516,30 @@ export default function StaffChatPage() {
     } finally {
       setUploading(false);
     }
+  }
+
+  async function onPickFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    await uploadFile(file);
+  }
+
+  // Перетаскивание файла на область чата (#10): подсветка зоны + отправка при отпускании.
+  function onDragOver(e: DragEvent<HTMLDivElement>) {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    if (!dragOver) setDragOver(true);
+  }
+  function onDragLeave(e: DragEvent<HTMLDivElement>) {
+    // Игнорируем переходы между вложенными элементами — гасим, только покидая всю зону.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDragOver(false);
+  }
+  function onDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) void uploadFile(file);
   }
 
   async function startRecording() {
@@ -1014,7 +1039,17 @@ export default function StaffChatPage() {
           {!chat ? (
             <div className="grid flex-1 place-items-center text-sm text-slate-400">Выберите чат слева</div>
           ) : (
-            <>
+            <div
+              className="relative flex flex-1 flex-col"
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+            >
+              {dragOver && (
+                <div className="pointer-events-none absolute inset-0 z-30 m-2 grid place-items-center rounded-2xl border-2 border-dashed border-primary bg-primary-50/85 text-sm font-medium text-primary-700">
+                  Отпустите файл, чтобы отправить
+                </div>
+              )}
               <div className="flex items-center gap-3 border-b border-ink/[0.06] px-5 py-3">
                 <span className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
                   {initials(chat.title ?? 'Гр')}
@@ -1421,7 +1456,7 @@ export default function StaffChatPage() {
                   </>
                 )}
               </div>
-            </>
+            </div>
           )}
         </Card>
       </div>
