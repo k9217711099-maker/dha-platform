@@ -1904,6 +1904,8 @@ model CheckinFunnelStageConfig {
   reminderPolicy          Json?
   /// Временные смещения этапа (напр. окно ключа { preCheckinMinutes, postCheckoutMinutes }).
   timing                  Json?
+  /// Действие «поставить задачу в отдел», пока этап не пройден: { enabled, groupId, offsetHours?, title? }.
+  staffTask               Json?
   /// «Как это работает» для гостя (markdown, показывается в гостевом портале).
   guestDescription        String?
   /// Заметка для сотрудника.

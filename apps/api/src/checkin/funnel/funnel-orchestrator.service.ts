@@ -33,12 +33,14 @@ type CandidateBooking = Prisma.BookingGetPayload<{ include: typeof BOOKING_INCLU
 /** Конфиг-этап воронки, приведённый к рабочему виду. */
 interface StageConfig {
   key: string;
+  title: string;
   enabled: boolean;
   required: boolean;
   channels: string[];
   notificationTemplateKey: string | null;
   reminderPolicy: { offsetHours: number; channels?: string[] }[];
   timing: { preCheckinMinutes?: number; postCheckoutMinutes?: number } | null;
+  staffTask: { enabled: boolean; groupId: string | null; offsetHours: number | null; title: string | null } | null;
 }
 
 /**
@@ -182,6 +184,25 @@ export class FunnelOrchestratorService {
       await this.remind(b, stages, 'payment', checkinAt, now, 'оплатите проживание');
     }
 
+    // 2b) Задачи сотрудникам по этапам (§6.5): ставим задачу в отдел, ПОКА этап не пройден.
+    // offsetHours пусто → сразу при постановке на этап; иначе — в момент checkinAt+offset.
+    // Условие выполнено → задачу не ставим (или снимать её вручную). Идемпотентно (dedupeKey).
+    for (const s of stages) {
+      if (!s.enabled || !s.staffTask?.enabled) continue;
+      if (this.stageConditionMet(s.key, view.gates)) continue;
+      const fireAt = s.staffTask.offsetHours != null ? checkinAt.getTime() + s.staffTask.offsetHours * 3_600_000 : now.getTime();
+      if (now.getTime() < fireAt) continue;
+      await this.escalation.escalateOnce({
+        bookingId: b.id,
+        dedupeKey: `${b.id}:stafftask:${s.key}`,
+        kind: 'stage_task',
+        title: s.staffTask.title || `Заселение: ${s.title ?? s.key}`,
+        description: `Гость на этапе «${s.title ?? s.key}» — условие пока не выполнено.`,
+        groupId: s.staffTask.groupId,
+        important: false,
+      });
+    }
+
     // 3) READY → авто-выдача ключа (идемпотентно: issue пропускает ACTIVE-ключи, §6.3).
     if (stage === FunnelStage.READY && keyStage) {
       try {
@@ -263,13 +284,27 @@ export class FunnelOrchestratorService {
       }));
     return (funnel?.stages ?? []).map((s) => ({
       key: s.key,
+      title: s.title,
       enabled: s.enabled,
       required: s.required,
       channels: s.channels,
       notificationTemplateKey: s.notificationTemplateKey,
       reminderPolicy: Array.isArray(s.reminderPolicy) ? (s.reminderPolicy as { offsetHours: number; channels?: string[] }[]) : [],
       timing: (s.timing ?? null) as StageConfig['timing'],
+      staffTask: parseStaffTask(s.staffTask),
     }));
+  }
+
+  /** Выполнено ли условие этапа сейчас (по машинным шлюзам). custom — без стандартного шлюза. */
+  private stageConditionMet(key: string, gates: { key: string; ok: boolean }[]): boolean {
+    const ok = (k: string) => gates.find((g) => g.key === k)?.ok ?? false;
+    switch (key) {
+      case 'identification': return ok('contact_verified');
+      case 'registration': return ok('registration_approved');
+      case 'payment': return ok('payment_paid');
+      case 'key_issue': return ok('room_assigned') && ok('time_window_open');
+      default: return false;
+    }
   }
 
   /** Этап включён и блокирующий? (нет конфига → считаем блокирующим, как зашитая логика). */
@@ -383,4 +418,17 @@ function mapChannels(stageChannels?: string[]): NotificationChannel[] | undefine
   };
   const mapped = stageChannels.map((c) => map[c]).filter((c): c is NotificationChannel => Boolean(c));
   return mapped.length ? mapped : undefined;
+}
+
+/** JSON поля staffTask этапа → рабочий вид (null, если действие выключено/не задано). */
+function parseStaffTask(raw: unknown): StageConfig['staffTask'] {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (!o.enabled) return null;
+  return {
+    enabled: true,
+    groupId: typeof o.groupId === 'string' && o.groupId ? o.groupId : null,
+    offsetHours: typeof o.offsetHours === 'number' && Number.isFinite(o.offsetHours) ? o.offsetHours : null,
+    title: typeof o.title === 'string' && o.title ? o.title : null,
+  };
 }

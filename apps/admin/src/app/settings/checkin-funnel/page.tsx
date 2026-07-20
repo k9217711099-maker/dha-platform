@@ -7,6 +7,7 @@ import {
   type FunnelDictionary,
   type FunnelStageConfig,
   type FunnelStagePatch,
+  type OpsGroup,
   type PmsProperty,
 } from '../../../lib/api';
 import { useRequireAdmin } from '../../../lib/use-admin';
@@ -23,6 +24,7 @@ export default function CheckinFunnelPage() {
   const [funnels, setFunnels] = useState<CheckinFunnel[]>([]);
   const [dict, setDict] = useState<FunnelDictionary | null>(null);
   const [properties, setProperties] = useState<PmsProperty[]>([]);
+  const [groups, setGroups] = useState<OpsGroup[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [err, setErr] = useState('');
 
@@ -37,6 +39,7 @@ export default function CheckinFunnelPage() {
     void load();
     void adminApi.funnelDictionary().then(setDict).catch(() => undefined);
     void adminApi.pmsProperties().then(setProperties).catch(() => undefined);
+    void adminApi.opsGroups().then(setGroups).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
@@ -74,7 +77,7 @@ export default function CheckinFunnelPage() {
         {/* Редактор выбранной воронки */}
         <div className="lg:col-span-3">
           {selected && dict ? (
-            <FunnelEditor funnel={selected} dict={dict} properties={properties}
+            <FunnelEditor funnel={selected} dict={dict} properties={properties} groups={groups}
               onChanged={applyUpdated}
               onDeleted={() => { setFunnels((p) => p.filter((x) => x.id !== selected.id)); setSelectedId(null); void load(); }} />
           ) : (
@@ -116,8 +119,8 @@ function NewFunnelForm({ properties, onCreated }: { properties: PmsProperty[]; o
   );
 }
 
-function FunnelEditor({ funnel, dict, properties, onChanged, onDeleted }: {
-  funnel: CheckinFunnel; dict: FunnelDictionary; properties: PmsProperty[];
+function FunnelEditor({ funnel, dict, properties, groups, onChanged, onDeleted }: {
+  funnel: CheckinFunnel; dict: FunnelDictionary; properties: PmsProperty[]; groups: OpsGroup[];
   onChanged: (f: CheckinFunnel) => void; onDeleted: () => void;
 }) {
   const [name, setName] = useState(funnel.name);
@@ -189,9 +192,21 @@ function FunnelEditor({ funnel, dict, properties, onChanged, onDeleted }: {
         {err ? <p className="mt-2 text-sm text-rose-600">{err}</p> : null}
       </div>
 
+      {/* Как читать конструктор — модель воронки */}
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 text-xs leading-relaxed text-dark-gray">
+        <p className="mb-1.5 text-sm font-medium text-ink">Как работает воронка</p>
+        <p>Бронь проходит этапы <b>по порядку сверху вниз</b>. Каждый этап — это <b>условие</b>:</p>
+        <ul className="mt-1.5 list-disc space-y-1 pl-4">
+          <li><b>Пока условие не выполнено</b> — бронь «стоит» на этапе, гостю по расписанию уходят <b>напоминания</b>.</li>
+          <li><b>Как только условие выполнено</b> — бронь <b>переходит на следующий этап</b>, а напоминания этого этапа сами прекращаются.</li>
+          <li><b>Обязательный (блокирующий) этап</b> — пока не выполнен, цифровой ключ гостю не выдаётся.</li>
+          <li>На последнем этапе «Готовность и ключ», когда все условия зелёные, ключ <b>выдаётся автоматически</b>, затем — авто-заезд (если включён у объекта).</li>
+        </ul>
+      </div>
+
       {/* Этапы */}
       {funnel.stages.map((s, i) => (
-        <StageCard key={s.id} stage={s} dict={dict} busy={busy}
+        <StageCard key={s.id} stage={s} dict={dict} groups={groups} busy={busy}
           first={i === 0} last={i === funnel.stages.length - 1}
           onMove={(dir) => move(i, dir)}
           onPatch={(body) => void patchStage(s.id, body)}
@@ -207,8 +222,8 @@ function FunnelEditor({ funnel, dict, properties, onChanged, onDeleted }: {
   );
 }
 
-function StageCard({ stage, dict, busy, first, last, onMove, onPatch, onDelete }: {
-  stage: FunnelStageConfig; dict: FunnelDictionary; busy: boolean; first: boolean; last: boolean;
+function StageCard({ stage, dict, groups, busy, first, last, onMove, onPatch, onDelete }: {
+  stage: FunnelStageConfig; dict: FunnelDictionary; groups: OpsGroup[]; busy: boolean; first: boolean; last: boolean;
   onMove: (dir: -1 | 1) => void; onPatch: (body: FunnelStagePatch) => void; onDelete?: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -218,11 +233,19 @@ function StageCard({ stage, dict, busy, first, last, onMove, onPatch, onDelete }
   const [reminders, setReminders] = useState((stage.reminderPolicy ?? []).map((r) => r.offsetHours).join(', '));
   const [pre, setPre] = useState(String((stage.timing?.preCheckinMinutes as number | undefined) ?? 30));
   const [post, setPost] = useState(String((stage.timing?.postCheckoutMinutes as number | undefined) ?? 30));
+  const [taskOn, setTaskOn] = useState(Boolean(stage.staffTask?.enabled));
+  const [taskGroup, setTaskGroup] = useState(stage.staffTask?.groupId ?? '');
+  const [taskOffset, setTaskOffset] = useState(stage.staffTask?.offsetHours != null ? String(stage.staffTask.offsetHours) : '');
+  const [taskTitle, setTaskTitle] = useState(stage.staffTask?.title ?? '');
   useEffect(() => {
     setTitle(stage.title); setGuestDescription(stage.guestDescription ?? ''); setStaffNote(stage.staffNote ?? '');
     setReminders((stage.reminderPolicy ?? []).map((r) => r.offsetHours).join(', '));
     setPre(String((stage.timing?.preCheckinMinutes as number | undefined) ?? 30));
     setPost(String((stage.timing?.postCheckoutMinutes as number | undefined) ?? 30));
+    setTaskOn(Boolean(stage.staffTask?.enabled));
+    setTaskGroup(stage.staffTask?.groupId ?? '');
+    setTaskOffset(stage.staffTask?.offsetHours != null ? String(stage.staffTask.offsetHours) : '');
+    setTaskTitle(stage.staffTask?.title ?? '');
   }, [stage]);
 
   const stageLabel = dict.stageKeys.find((k) => k.key === stage.key)?.label ?? stage.key;
@@ -236,11 +259,15 @@ function StageCard({ stage, dict, busy, first, last, onMove, onPatch, onDelete }
 
   const saveTexts = () => {
     const offsets = reminders.split(',').map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n !== 0);
+    const off = taskOffset.trim() === '' ? null : Number(taskOffset);
     onPatch({
       title,
       guestDescription: guestDescription || undefined,
       staffNote: staffNote || undefined,
       reminderPolicy: offsets.map((offsetHours) => ({ offsetHours })),
+      staffTask: taskOn
+        ? { enabled: true, groupId: taskGroup || null, offsetHours: Number.isFinite(off) ? off : null, title: taskTitle || null }
+        : { enabled: false },
       ...(stage.key === 'key_issue' ? { timing: { preCheckinMinutes: Number(pre) || 30, postCheckoutMinutes: Number(post) || 30 } } : {}),
     });
   };
@@ -271,13 +298,16 @@ function StageCard({ stage, dict, busy, first, last, onMove, onPatch, onDelete }
             </label>
             <label className="flex items-end gap-1.5 pb-2 text-xs text-dark-gray">
               <input type="checkbox" checked={stage.required} disabled={busy} onChange={(e) => onPatch({ required: e.target.checked })} />
-              Блокирующий шлюз (без него ключ не выдаётся)
+              Обязательный (блокирующий): пока не выполнен — ключ не выдаётся
             </label>
           </div>
 
-          {/* Условия из словаря (§2.1) */}
-          <div>
-            <p className="mb-1.5 text-xs uppercase tracking-wide text-dark-gray">Условия этапа</p>
+          {/* ① Условие: пока не выполнено — бронь стоит здесь */}
+          <section className="rounded-lg border border-ink/10 p-3">
+            <p className="text-xs font-semibold text-ink">① Условие этапа</p>
+            <p className="mb-2 mt-0.5 text-[11px] leading-relaxed text-dark-gray">
+              Что должно выполниться, чтобы бронь ушла дальше. <b>Пока не выполнено</b> — бронь «стоит» на этом этапе (и идут напоминания ниже).
+            </p>
             <div className="flex flex-wrap gap-1.5">
               {dict.conditions.map((c) => (
                 <button key={c.type} type="button" disabled={busy} onClick={() => toggleCondition(c.type)}
@@ -286,30 +316,16 @@ function StageCard({ stage, dict, busy, first, last, onMove, onPatch, onDelete }
                 </button>
               ))}
             </div>
-          </div>
+          </section>
 
-          {/* Каналы коммуникации (§5) */}
-          <div>
-            <p className="mb-1.5 text-xs uppercase tracking-wide text-dark-gray">Каналы уведомлений</p>
-            <div className="flex flex-wrap gap-1.5">
-              {dict.channels.map((c) => {
-                const on = stage.channels.includes(c.key);
-                const inactive = c.active === false;
-                return (
-                  <button key={c.key} type="button" disabled={busy} onClick={() => toggleChannel(c.key)}
-                    title={inactive ? 'Канал не настроен/не подключён — подключите в «AI и коммуникации → Настройки»' : undefined}
-                    className={`rounded-full border px-2.5 py-1 text-xs transition ${on ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : inactive ? 'border-ink/10 text-ink/30' : 'border-ink/15 text-dark-gray hover:border-ink/30'}`}>
-                    {c.label}{inactive ? ' ·⃠' : ''}
-                  </button>
-                );
-              })}
+          {/* ② Пока бронь на этапе — что шлём гостю */}
+          <section className="space-y-3 rounded-lg border border-ink/10 p-3">
+            <div>
+              <p className="text-xs font-semibold text-ink">② Пока бронь на этапе — уведомления гостю</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-dark-gray">Приглашение уходит <b>один раз</b> при постановке на этап; напоминания повторяются, <b>пока условие не выполнено</b>, и сами прекращаются, когда выполнено.</p>
             </div>
-            <p className="mt-1.5 text-xs text-dark-gray">Приглушённые каналы не подключены. Telegram/WhatsApp/MAX доставляют, только если гость привязал этот мессенджер к своему аккаунту — для гарантированной доставки анкеты держите SMS/Email.</p>
-          </div>
 
-          {/* Шаблон уведомления этапа + предпросмотр (§5.2) */}
-          <div>
-            <label className="block text-xs text-dark-gray">Шаблон уведомления при входе в этап
+            <label className="block text-xs text-dark-gray">Приглашение при входе на этап (шаблон, отправляется один раз)
               <select value={stage.notificationTemplateKey ?? ''} disabled={busy}
                 onChange={(e) => onPatch({ notificationTemplateKey: e.target.value || undefined })}
                 className={`mt-1 ${fieldCls}`}>
@@ -318,29 +334,80 @@ function StageCard({ stage, dict, busy, first, last, onMove, onPatch, onDelete }
               </select>
             </label>
             {template ? (
-              <div className="mt-2 rounded-lg bg-ink/5 p-2.5 text-xs">
+              <div className="rounded-lg bg-ink/5 p-2.5 text-xs">
                 <p className="font-medium text-ink">{template.preview.title}</p>
                 <p className="text-dark-gray">{template.preview.body}</p>
                 <p className="mt-1 text-[10px] text-dark-gray">Текст редактируется в «Шаблоны уведомлений»</p>
               </div>
             ) : null}
-          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-xs text-dark-gray">Напоминания, часов до заезда (через запятую, напр. -24, -3)
+            <label className="block text-xs text-dark-gray">Напоминания, пока условие не выполнено — часов до заезда (через запятую, минус = до заезда: −24, −3)
               <input value={reminders} onChange={(e) => setReminders(e.target.value)} className={`mt-1 ${fieldCls}`} placeholder="-24, -3" />
             </label>
+
+            <div>
+              <p className="mb-1.5 text-[11px] uppercase tracking-wide text-dark-gray">Каналы (для приглашения и напоминаний)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {dict.channels.map((c) => {
+                  const on = stage.channels.includes(c.key);
+                  const inactive = c.active === false;
+                  return (
+                    <button key={c.key} type="button" disabled={busy} onClick={() => toggleChannel(c.key)}
+                      title={inactive ? 'Канал не настроен/не подключён — подключите в «AI и коммуникации → Настройки»' : undefined}
+                      className={`rounded-full border px-2.5 py-1 text-xs transition ${on ? 'border-emerald-400 bg-emerald-50 text-emerald-700' : inactive ? 'border-ink/10 text-ink/30' : 'border-ink/15 text-dark-gray hover:border-ink/30'}`}>
+                      {c.label}{inactive ? ' ·⃠' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-[11px] text-dark-gray">Приглушённые каналы не подключены. Telegram/WhatsApp/MAX доставляют, только если гость привязал этот мессенджер к своему аккаунту — для гарантированной доставки анкеты держите SMS/Email.</p>
+            </div>
+          </section>
+
+          {/* ③ Когда условие выполнено */}
+          <section className="rounded-lg border border-ink/10 p-3">
+            <p className="text-xs font-semibold text-ink">③ Когда условие выполнено</p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-dark-gray">
+              {stage.key === 'key_issue'
+                ? 'Все условия зелёные → цифровой ключ выдаётся автоматически, затем — авто-заезд (если у объекта включён самозаезд).'
+                : 'Бронь переходит на следующий этап воронки, напоминания этого этапа прекращаются.'}
+            </p>
             {stage.key === 'key_issue' ? (
-              <div className="grid grid-cols-2 gap-2">
-                <label className="block text-xs text-dark-gray">Ключ: мин до заезда
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <label className="block text-xs text-dark-gray">Ключ активен за, мин до заезда
                   <input value={pre} onChange={(e) => setPre(e.target.value)} className={`mt-1 ${fieldCls}`} />
                 </label>
-                <label className="block text-xs text-dark-gray">мин после выезда
+                <label className="block text-xs text-dark-gray">и ещё, мин после выезда
                   <input value={post} onChange={(e) => setPost(e.target.value)} className={`mt-1 ${fieldCls}`} />
                 </label>
               </div>
             ) : null}
-          </div>
+          </section>
+
+          {/* ④ Задача сотруднику (в отдел), пока этап не пройден */}
+          <section className="space-y-2 rounded-lg border border-ink/10 p-3">
+            <label className="flex items-center gap-2 text-xs font-semibold text-ink">
+              <input type="checkbox" checked={taskOn} onChange={(e) => setTaskOn(e.target.checked)} />
+              ④ Поставить задачу сотруднику (пока этап не пройден)
+            </label>
+            <p className="text-[11px] leading-relaxed text-dark-gray">Создаёт задачу в отдел, если условие этапа не выполнено к указанному сроку. Одна задача на бронь (не дублируется). Сохраняется по кнопке «Сохранить этап».</p>
+            {taskOn ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="block text-xs text-dark-gray">Отдел-получатель
+                  <select value={taskGroup} onChange={(e) => setTaskGroup(e.target.value)} className={`mt-1 ${fieldCls}`}>
+                    <option value="">— без отдела (по правам) —</option>
+                    {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                </label>
+                <label className="block text-xs text-dark-gray">Когда, часов до заезда (пусто — сразу; напр. −2)
+                  <input value={taskOffset} onChange={(e) => setTaskOffset(e.target.value)} className={`mt-1 ${fieldCls}`} placeholder="сразу при постановке на этап" />
+                </label>
+                <label className="block text-xs text-dark-gray sm:col-span-2">Заголовок задачи (необязательно)
+                  <input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} className={`mt-1 ${fieldCls}`} placeholder={`Заселение: ${stage.title}`} />
+                </label>
+              </div>
+            ) : null}
+          </section>
 
           <label className="block text-xs text-dark-gray">Текст для гостя — «как это работает» (виден в портале на этом шаге)
             <textarea value={guestDescription} onChange={(e) => setGuestDescription(e.target.value)} rows={2} className={`mt-1 ${fieldCls}`} />

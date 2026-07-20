@@ -868,6 +868,8 @@ export interface FunnelStageConfig {
   notificationTemplateKey: string | null;
   reminderPolicy: { offsetHours: number; channels?: string[] }[] | null;
   timing: Record<string, unknown> | null;
+  /** Действие «поставить задачу в отдел», пока этап не пройден. */
+  staffTask: { enabled?: boolean; groupId?: string | null; offsetHours?: number | null; title?: string | null } | null;
   guestDescription: string | null;
   staffNote: string | null;
 }

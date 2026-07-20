@@ -22,6 +22,10 @@ export class FunnelEscalationService {
     kind: string;
     title: string;
     description: string;
+    /** Отдел-получатель (UserGroup). Пусто — задача без отдела (видна по правам). */
+    groupId?: string | null;
+    /** Пометить важной (по умолчанию да — эскалации срочные). */
+    important?: boolean;
   }): Promise<boolean> {
     try {
       const booking = await this.prisma.booking.findUnique({
@@ -51,7 +55,8 @@ export class FunnelEscalationService {
           propertyId: booking.propertyId,
           roomId: booking.roomId,
           bookingId: params.bookingId,
-          important: true,
+          important: params.important ?? true,
+          ...(params.groupId ? { groupId: params.groupId } : {}),
           statusLog: { create: { from: 'NEW', to: 'NEW', note: 'создана воронкой заселения' } },
         },
       });

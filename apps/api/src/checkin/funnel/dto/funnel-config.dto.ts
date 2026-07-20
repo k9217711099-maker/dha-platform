@@ -96,6 +96,11 @@ export class UpsertStageDto {
   @IsObject()
   timing?: Record<string, unknown>;
 
+  @ApiPropertyOptional({ description: '{ enabled, groupId, offsetHours?, title? } — поставить задачу в отдел, пока этап не пройден' })
+  @IsOptional()
+  @IsObject()
+  staffTask?: Record<string, unknown>;
+
   @ApiPropertyOptional({ description: '«Как это работает» для гостя (markdown)' })
   @IsOptional()
   @IsString()
