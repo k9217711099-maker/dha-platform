@@ -19,9 +19,11 @@ interface UmnicoWebhook {
     text?: string;
     body?: string;
     content?: string;
+    /** Реальное место текста в событии message.incoming: message.message.text. */
+    message?: { text?: string };
     incoming?: boolean;
     direction?: string;
-    source?: { realId?: string | number; saId?: number | string; type?: string };
+    source?: { realId?: string | number; saId?: number | string; id?: string | number; type?: string };
     sender?: { id?: number | string; customerId?: number | string; login?: string; type?: string };
     sa?: { id?: number | string; type?: string; login?: string };
   };
@@ -45,14 +47,12 @@ export class UmnicoController {
   webhook(@Body() body: UmnicoWebhook): { ok: true } {
     const evt = body?.type ?? body?.event ?? '—';
     const m = body?.message ?? {};
-    const text = String(m.text ?? m.body ?? m.content ?? '').trim();
+    // Текст события message.incoming лежит в message.message.text (проверено на боевом
+    // payload Umnico); запасные варианты — на случай других типов каналов.
+    const text = String(m.message?.text ?? m.text ?? m.body ?? m.content ?? '').trim();
     const isIncoming = m.incoming !== false && m.direction !== 'outgoing';
-    // ВРЕМЕННО (диагностика): сырой payload на уровне error — info/warn на проде подавлены.
-    this.logger.error(
-      `[UMNICO RAW] evt=${evt} leadId=${body?.leadId ?? '—'} hasText=${!!text} incoming=${isIncoming} body=${JSON.stringify(body ?? {}).slice(0, 1500)}`,
-    );
     // Обрабатываем как входящее, если есть обращение (leadId), текст и это не исходящее.
-    // Не завязываемся строго на type='message.incoming' — Umnico может звать событие иначе.
+    // На точное имя type не завязываемся (Umnico шлёт ещё lead.changed и т.п. — их пропускаем).
     if (body?.leadId != null && text && isIncoming) {
       const src = m.source;
       const source =
@@ -65,10 +65,9 @@ export class UmnicoController {
             ? String(m.sender.customerId)
             : undefined;
       void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, text });
-    } else {
-      this.logger.error(
-        `[UMNICO SKIP] evt=${evt} leadId=${body?.leadId ?? '—'} hasText=${!!text} incoming=${isIncoming}`,
-      );
+    } else if (/message\.incoming/i.test(evt)) {
+      // message.incoming без текста — единственный случай, который стоит заметить (без ПДн).
+      this.logger.warn(`[UMNICO] message.incoming без текста: leadId=${body?.leadId ?? '—'}`);
     }
     return { ok: true };
   }
