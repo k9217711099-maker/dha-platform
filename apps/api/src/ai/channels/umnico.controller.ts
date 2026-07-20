@@ -53,16 +53,20 @@ export class UmnicoController {
     // Текст события message.incoming лежит в message.message.text (проверено на боевом
     // payload Umnico); запасные варианты — на случай других типов каналов.
     const realText = String(m.message?.text ?? m.text ?? m.body ?? m.content ?? '').trim();
-    // Вложения (картинки/файлы) — в message.message.attachments. Если текста нет, но есть
-    // вложение — не теряем сообщение: подставляем пометку со ссылкой, чтобы оператор видел.
+    // Вложения (картинки/файлы) — в message.message.attachments. Картинки помечаем
+    // маркером `[img]<url>` (админка рисует их как <img>), прочие типы — ссылкой.
+    // Работает и с подписью (caption), и с несколькими вложениями.
     const atts = Array.isArray(m.message?.attachments) ? m.message.attachments : [];
     let text = realText;
-    if (!text && atts.length) {
-      const a = atts[0];
+    for (const a of atts) {
       const url = a?.url ?? a?.link ?? a?.src;
-      text = `[вложение${a?.type ? `: ${a.type}` : ''}]${url ? `\n${url}` : ''}`;
-      // ВРЕМЕННО: ключи вложения (без значений) — свериться, что поле ссылки угадано.
-      this.logger.error(`[UMNICO att] type=${a?.type ?? '?'} keys=[${Object.keys(a ?? {}).join(',')}]`);
+      const isImage = /photo|image|picture/i.test(a?.type ?? '');
+      const marker = url
+        ? isImage
+          ? `[img]${url}`
+          : `[вложение${a?.type ? `: ${a.type}` : ''}]\n${url}`
+        : `[вложение${a?.type ? `: ${a.type}` : ''}]`;
+      text = text ? `${text}\n${marker}` : marker;
     }
     const isIncoming = m.incoming !== false && m.direction !== 'outgoing';
     // Обрабатываем как входящее, если есть обращение (leadId), текст и это не исходящее.
@@ -80,11 +84,9 @@ export class UmnicoController {
             : undefined;
       void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, text });
     } else if (/message\.incoming/i.test(evt)) {
-      // message.incoming без текста (напр. картинка/вложение). ВРЕМЕННО логируем КЛЮЧИ
-      // (без значений — без ПДн) на error-уровне, чтобы увидеть, где лежит вложение.
-      this.logger.error(
-        `[UMNICO no-text] leadId=${body?.leadId ?? '—'} msgKeys=[${Object.keys(m).join(',')}] innerKeys=[${Object.keys(m.message ?? {}).join(',')}]`,
-      );
+      // message.incoming без текста и без распознанного вложения — просто отметим (warn
+      // на проде подавлен, спама не будет; поднять уровень при разборе новых типов медиа).
+      this.logger.warn(`[UMNICO] message.incoming без текста/вложений: leadId=${body?.leadId ?? '—'}`);
     }
     return { ok: true };
   }

@@ -39,6 +39,29 @@ function timeAgo(iso: string): string {
   return `${Math.floor(s / 86400)} дн назад`;
 }
 
+/**
+ * Тело сообщения: маркеры `[img]<url>` (напр. картинки из Umnico) рисуем как <img>,
+ * остальное — как текст. Клик по картинке открывает оригинал в новой вкладке.
+ */
+function MessageBody({ text }: { text: string }) {
+  const parts = text.split(/(\[img\]\S+)/g).filter((p) => p !== '');
+  return (
+    <>
+      {parts.map((p, i) => {
+        const img = p.match(/^\[img\](\S+)$/);
+        if (img) {
+          return (
+            <a key={i} href={img[1]} target="_blank" rel="noreferrer" className="block">
+              <img src={img[1]} alt="вложение" className="mt-1 max-h-64 max-w-full rounded-lg object-contain" />
+            </a>
+          );
+        }
+        return <span key={i}>{p}</span>;
+      })}
+    </>
+  );
+}
+
 export default function InboxPage() {
   const ready = useRequireAdmin();
   const me = useAdminMe();
@@ -380,7 +403,7 @@ export default function InboxPage() {
                                 : 'border border-ink/10 bg-white text-slate-500'
                           }`}
                         >
-                          {m.text}
+                          <MessageBody text={m.text} />
                         </div>
                       </div>
                     </div>
