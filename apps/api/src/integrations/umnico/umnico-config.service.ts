@@ -208,6 +208,30 @@ export class UmnicoConfigService {
     }
   }
 
+  /**
+   * id оператора аккаунта Umnico (GET /v1.3/managers) — обязателен как отправитель
+   * при send (userId). Кэшируем: операторы меняются редко, сбрасывается перезапуском.
+   * Предпочитаем владельца (role=owner), затем подтверждённого, затем любого.
+   */
+  private cachedManagerId?: number;
+  async managerUserId(): Promise<number | undefined> {
+    if (this.cachedManagerId != null) return this.cachedManagerId;
+    const token = await this.token();
+    if (!token) return undefined;
+    try {
+      const res = await fetch(`${this.base}/v1.3/managers`, { headers: this.authHeaders(token) });
+      if (!res.ok) return undefined;
+      const data = (await res.json().catch(() => [])) as { id: number; role?: string; confirmed?: boolean }[];
+      const arr = Array.isArray(data) ? data : [];
+      const chosen = arr.find((m) => m.role === 'owner') ?? arr.find((m) => m.confirmed) ?? arr[0];
+      this.cachedManagerId = chosen?.id;
+      return this.cachedManagerId;
+    } catch (e) {
+      this.logger.warn(`managers: ${(e as Error).message}`);
+      return undefined;
+    }
+  }
+
   /** Отправка сообщения: POST /v1.3/messaging/<leadId>/send. */
   async sendMessage(
     target: { leadId: string; source?: string; userId?: string; saId?: string },
@@ -218,10 +242,13 @@ export class UmnicoConfigService {
       this.logger.warn('Umnico: нет токена или leadId — сообщение не отправлено.');
       return;
     }
-    // Umnico ждёт source (source.realId) и userId (число, идентификатор клиента); saId — опционально.
+    // Umnico ждёт: source (source.realId канала) + userId — id ОПЕРАТORA аккаунта
+    // (не клиента! иначе 422 «User X doesn't exist for this account»). saId опц.
     const body: Record<string, unknown> = { message: { text } };
     if (target.source) body.source = target.source;
-    if (target.userId) body.userId = /^\d+$/.test(target.userId) ? Number(target.userId) : target.userId;
+    const senderId = await this.managerUserId();
+    if (senderId != null) body.userId = senderId;
+    else this.logger.error('Umnico: не найден оператор аккаунта (GET /managers) — userId обязателен, ответ не уйдёт.');
     if (target.saId) body.saId = /^\d+$/.test(target.saId) ? Number(target.saId) : target.saId;
     const res = await fetch(`${this.base}/v1.3/messaging/${encodeURIComponent(target.leadId)}/send`, {
       method: 'POST',

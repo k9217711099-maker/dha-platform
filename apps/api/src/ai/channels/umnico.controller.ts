@@ -66,8 +66,11 @@ export class UmnicoController {
             : undefined;
       void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, text });
     } else if (/message\.incoming/i.test(evt)) {
-      // message.incoming без текста — единственный случай, который стоит заметить (без ПДн).
-      this.logger.warn(`[UMNICO] message.incoming без текста: leadId=${body?.leadId ?? '—'}`);
+      // message.incoming без текста (напр. картинка/вложение). ВРЕМЕННО логируем КЛЮЧИ
+      // (без значений — без ПДн) на error-уровне, чтобы увидеть, где лежит вложение.
+      this.logger.error(
+        `[UMNICO no-text] leadId=${body?.leadId ?? '—'} msgKeys=[${Object.keys(m).join(',')}] innerKeys=[${Object.keys(m.message ?? {}).join(',')}]`,
+      );
     }
     return { ok: true };
   }
