@@ -98,6 +98,13 @@ export class AdminController {
     return this.admin.guestDetails(id);
   }
 
+  @Get('guests/:id/conversations')
+  @RequirePermission('guests')
+  @ApiOperation({ summary: 'История переписки гостя (AI/оператор, #8)' })
+  guestConversations(@Param('id') id: string) {
+    return this.admin.guestConversations(id);
+  }
+
   @Patch('guests/:id')
   @RequirePermission('pms_bookings')
   @ApiOperation({ summary: 'Редактировать контакты гостя-заказчика' })

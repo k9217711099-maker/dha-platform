@@ -301,6 +301,17 @@ export interface GuestListRow {
   createdAt: string;
   bookingsCount: number;
 }
+/** Диалог гостя (история переписки в карточке гостя, #8). */
+export interface GuestConversation {
+  id: string;
+  channel: string;
+  status: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+  messages: { role: 'user' | 'ai' | 'staff'; text: string; createdAt: string }[];
+}
+
 export interface GuestDetails {
   id: string;
   phone: string | null;
@@ -2480,6 +2491,7 @@ export const adminApi = {
     return request<GuestListRow[]>(`/admin/guests-list${s ? `?${s}` : ''}`);
   },
   guest: (id: string) => request<GuestDetails>(`/admin/guests/${id}`),
+  guestConversations: (id: string) => request<GuestConversation[]>(`/admin/guests/${id}/conversations`),
   updateGuest: (id: string, body: { firstName?: string; lastName?: string; phone?: string; email?: string; guestNotes?: string }) =>
     request<GuestSearchResult>(`/admin/guests/${id}`, { method: 'PATCH', body }),
   accrue: (guestId: string, amount: number, comment: string) =>

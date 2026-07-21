@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CheckinStatus } from '@prisma/client';
+import { AiMessageRole, CheckinStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { LoyaltyService } from '../loyalty/loyalty.service.js';
 
@@ -163,5 +163,46 @@ export class AdminService {
         totalPrice: b.totalPrice,
       })),
     };
+  }
+
+  /**
+   * История переписки гостя (#8): все AI-диалоги, привязанные к гостю (по телефону/логину),
+   * с содержательными сообщениями. Показывается в карточке гостя.
+   */
+  async guestConversations(guestId: string) {
+    const convos = await this.prisma.aiConversation.findMany({
+      where: { guestId },
+      orderBy: { updatedAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        channel: true,
+        status: true,
+        title: true,
+        createdAt: true,
+        updatedAt: true,
+        messages: {
+          where: {
+            role: { in: [AiMessageRole.USER, AiMessageRole.ASSISTANT, AiMessageRole.STAFF] },
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { role: true, content: true, createdAt: true },
+        },
+      },
+    });
+    const roleMap = { USER: 'user', ASSISTANT: 'ai', STAFF: 'staff' } as const;
+    return convos.map((c) => ({
+      id: c.id,
+      channel: c.channel,
+      status: c.status,
+      title: c.title,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      messages: c.messages.map((m) => ({
+        role: roleMap[m.role as 'USER' | 'ASSISTANT' | 'STAFF'],
+        text: m.content,
+        createdAt: m.createdAt,
+      })),
+    }));
   }
 }

@@ -2,13 +2,23 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Card, Input } from '@dha/ui';
-import { adminApi, type GuestDetails, type GuestListRow } from '../../lib/api';
+import { adminApi, type GuestConversation, type GuestDetails, type GuestListRow } from '../../lib/api';
 import { useRequireAdmin } from '../../lib/use-admin';
 import { useEsc } from '../../lib/use-esc';
 import { tierMeta } from '../../lib/loyalty';
 import { formatPhoneDisplay } from '../../lib/phone';
 
 const TIERS = ['MEMBER', 'SILVER', 'GOLD', 'PLATINUM'];
+const CONV_CHANNEL_RU: Record<string, string> = {
+  WEB: 'Сайт',
+  APP: 'Приложение',
+  TELEGRAM: 'Telegram',
+  TELEGRAM_DIRECT: 'Telegram',
+  MAX: 'MAX',
+  WHATSAPP: 'WhatsApp',
+  UMNICO: 'Умнико',
+  ADMIN: 'Админка',
+};
 const guestName = (g: { firstName: string | null; lastName: string | null }) =>
   `${g.lastName ?? ''} ${g.firstName ?? ''}`.trim() || 'Без имени';
 
@@ -118,8 +128,15 @@ function GuestDetailCard({ data, amount, setAmount, comment, setComment, op, onC
 }) {
   const [notes, setNotes] = useState(data.guestNotes ?? '');
   const [savingNotes, setSavingNotes] = useState(false);
+  const [convos, setConvos] = useState<GuestConversation[] | null>(null);
+  const [openConvo, setOpenConvo] = useState<string | null>(null);
   useEsc(onClose);
   useEffect(() => setNotes(data.guestNotes ?? ''), [data.id, data.guestNotes]);
+  useEffect(() => {
+    setConvos(null);
+    setOpenConvo(null);
+    adminApi.guestConversations(data.id).then(setConvos).catch(() => setConvos([]));
+  }, [data.id]);
   const saveNotes = async () => {
     setSavingNotes(true);
     try { await adminApi.updateGuest(data.id, { guestNotes: notes }); onNotesSaved(); } finally { setSavingNotes(false); }
@@ -181,6 +198,64 @@ function GuestDetailCard({ data, amount, setAmount, comment, setComment, op, onC
             </div>
           ))}
         </div>
+      </Card>
+
+      <Card>
+        <h2 className="mb-3 text-lg text-ink">Переписка</h2>
+        {convos === null ? (
+          <p className="text-sm text-dark-gray">Загрузка…</p>
+        ) : convos.length === 0 ? (
+          <p className="text-sm text-dark-gray">Переписки с этим гостем пока нет.</p>
+        ) : (
+          <div className="space-y-2">
+            {convos.map((c) => {
+              const isOpen = openConvo === c.id;
+              const last = c.messages[c.messages.length - 1];
+              const chan = CONV_CHANNEL_RU[c.channel] ?? c.channel;
+              return (
+                <div key={c.id} className="rounded-lg border border-ink/10">
+                  <button
+                    type="button"
+                    onClick={() => setOpenConvo(isOpen ? null : c.id)}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-ink/[0.03]"
+                  >
+                    <span className="min-w-0">
+                      <span className="text-sm text-ink">{c.title || `Диалог · ${chan}`}</span>
+                      {last && (
+                        <span className="block truncate text-xs text-dark-gray">
+                          {last.role === 'user' ? '👤 ' : last.role === 'staff' ? '🧑‍💼 ' : '🤖 '}
+                          {last.text.replace(/\[img\]\S+/g, '📷 фото')}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-xs text-dark-gray">
+                      {new Date(c.updatedAt).toLocaleDateString('ru')} {isOpen ? '▲' : '▼'}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="max-h-72 space-y-1.5 overflow-y-auto border-t border-ink/10 px-3 py-2">
+                      {c.messages.map((m, i) => (
+                        <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
+                          <div
+                            className={`max-w-[80%] whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-lg px-2.5 py-1.5 text-xs ${
+                              m.role === 'user'
+                                ? 'bg-ink/[0.06] text-ink'
+                                : m.role === 'staff'
+                                  ? 'bg-ink text-white'
+                                  : 'border border-ink/10 text-dark-gray'
+                            }`}
+                          >
+                            {m.text.replace(/\[img\](\S+)/g, '📷 $1')}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Card>
       </div>
     </div>
