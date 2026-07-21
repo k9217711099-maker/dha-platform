@@ -7,6 +7,7 @@ import { useRequireAdmin } from '../../lib/use-admin';
 import { useEsc } from '../../lib/use-esc';
 import { tierMeta } from '../../lib/loyalty';
 import { formatPhoneDisplay } from '../../lib/phone';
+import { PassportPanel } from '../pms/shakhmatka/PassportPanel';
 
 const TIERS = ['MEMBER', 'SILVER', 'GOLD', 'PLATINUM'];
 const CONV_CHANNEL_RU: Record<string, string> = {
@@ -199,6 +200,8 @@ function GuestDetailCard({ data, amount, setAmount, comment, setComment, op, onC
           ))}
         </div>
       </Card>
+
+      <PassportPanel guestId={data.id} />
 
       <Card>
         <h2 className="mb-3 text-lg text-ink">Переписка</h2>

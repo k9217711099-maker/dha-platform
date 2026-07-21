@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { adminApi, fileUrl, type BookingAuditEntry, type BookingKeyView, type BookingTag, type Extra, type GuestConversation, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory, type UmnicoReachChannel } from '../../../lib/api';
 import { STATUS as OPS_STATUS } from '../../ops/shared';
 import { CheckinFunnelPanel } from './CheckinFunnelPanel';
+import { PassportPanel } from './PassportPanel';
 import { FinanceTab } from './FinanceTab';
 import { balanceBadge, guestName, money, paidAmount, statusMeta } from './booking-view';
 import { useEsc } from '../../../lib/use-esc';
@@ -236,6 +237,7 @@ function MainTab({ b, rooms, busy, act, can, reloadAll }: { b: PmsBooking; rooms
       {/* Правая часть — заселение + задачи */}
       <div className="space-y-5 lg:col-span-1">
         <CheckinFunnelPanel bookingId={b.id} bookingStatus={b.status} />
+        <PassportPanel bookingId={b.id} />
         <TasksModule b={b} />
       </div>
     </div>

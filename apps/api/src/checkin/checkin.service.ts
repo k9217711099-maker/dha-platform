@@ -8,8 +8,20 @@ import { StoragePort } from '../integrations/storage/storage.port.js';
 import { PassportPort, type RecognizeResult } from '../integrations/passport/passport.port.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { FunnelOrchestratorService } from './funnel/funnel-orchestrator.service.js';
+import { FunnelEscalationService } from './funnel/funnel-escalation.service.js';
+import { AuditService } from '../warehouse/audit/audit.service.js';
 import type { Env } from '../config/env.schema.js';
 import type { SaveCheckinDto } from './dto/save-checkin.dto.js';
+
+/** Паспорт гостя для админки (расшифровано; доступ логируется, 152-ФЗ). */
+export interface AdminPassportView {
+  bookingId: string | null;
+  series: string | null;
+  number: string | null;
+  checkStatus: 'VALID' | 'INVALID' | 'MANUAL' | null;
+  checkNote: string | null;
+  documents: { id: string; contentType: string; createdAt: Date }[];
+}
 
 export interface CheckinView {
   id: string;
@@ -57,6 +69,10 @@ export class CheckinService {
     private readonly config: ConfigService<Env, true>,
     // Хук воронки заселения (§6.2); Optional — для юнит-тестов без модуля.
     @Optional() private readonly orchestrator?: FunnelOrchestratorService,
+    // Эскалация «ранний заезд» в задачу; Optional — для юнит-тестов.
+    @Optional() private readonly escalation?: FunnelEscalationService,
+    // Аудит просмотра паспортных данных (152-ФЗ); Optional — для юнит-тестов.
+    @Optional() private readonly audit?: AuditService,
   ) {}
 
   /** Получить регистрацию по брони (или создать черновик). */
@@ -212,8 +228,26 @@ export class CheckinService {
     const updated = await this.prisma.checkin.update({
       where: { bookingId },
       data: { status: CheckinStatus.SUBMITTED, submittedAt: new Date() },
-      include: { _count: { select: { documents: true } } },
+      include: {
+        _count: { select: { documents: true } },
+        booking: { select: { property: { select: { checkInTime: true } } } },
+      },
     });
+    // Ранний заезд: гость просит время раньше стандартного заезда объекта → задача персоналу
+    // на подтверждение готовности номера/доплаты. Идемпотентно (dedupeKey с временем).
+    const stdCheckin = updated.booking.property.checkInTime;
+    if (updated.arrivalTime && stdCheckin && updated.arrivalTime < stdCheckin) {
+      await this.escalation
+        ?.escalateOnce({
+          bookingId,
+          dedupeKey: `${bookingId}:early_checkin:${updated.arrivalTime}`,
+          kind: 'early_checkin',
+          title: `Ранний заезд: гость просит ${updated.arrivalTime}`,
+          description: `Гость запросил заезд в ${updated.arrivalTime} (стандарт объекта — ${stdCheckin}). Подтвердите готовность номера и при необходимости доплату за ранний заезд.`,
+          important: false,
+        })
+        .catch(() => undefined);
+    }
     return this.toView(updated, updated._count.documents);
   }
 
@@ -247,6 +281,89 @@ export class CheckinService {
       passportCheckStatus: c.passportCheckStatus,
       passportCheckNote: c.passportCheckNote,
     }));
+  }
+
+  /** Расшифровать паспорт {series, number} из зашифрованного поля (пустой при ошибке). */
+  private decodePassport(enc: string | null): { series: string | null; number: string | null } {
+    if (!enc) return { series: null, number: null };
+    try {
+      const p = JSON.parse(this.crypto.decryptPii(enc)) as { series?: string; number?: string };
+      return { series: p.series ?? null, number: p.number ?? null };
+    } catch {
+      return { series: null, number: null };
+    }
+  }
+
+  private toPassportView(
+    c: { bookingId: string; passportEncrypted: string | null; passportCheckStatus: 'VALID' | 'INVALID' | 'MANUAL' | null; passportCheckNote: string | null; documents: { id: string; contentType: string; createdAt: Date }[] } | null,
+  ): AdminPassportView {
+    if (!c) return { bookingId: null, series: null, number: null, checkStatus: null, checkNote: null, documents: [] };
+    const { series, number } = this.decodePassport(c.passportEncrypted);
+    return { bookingId: c.bookingId, series, number, checkStatus: c.passportCheckStatus, checkNote: c.passportCheckNote, documents: c.documents };
+  }
+
+  private static readonly PASSPORT_DOC_SELECT = {
+    id: true,
+    passportEncrypted: true,
+    passportCheckStatus: true,
+    passportCheckNote: true,
+    bookingId: true,
+    documents: {
+      where: { kind: 'passport' },
+      select: { id: true, contentType: true, createdAt: true },
+      orderBy: { createdAt: 'desc' as const },
+    },
+  } as const;
+
+  /** Паспортные данные + сканы по брони (админ, право checkins). Доступ логируется. */
+  async passportForBooking(tenantId: string, bookingId: string, actorId: string): Promise<AdminPassportView> {
+    const c = await this.prisma.checkin.findFirst({
+      where: { bookingId, booking: { tenantId } },
+      select: CheckinService.PASSPORT_DOC_SELECT,
+    });
+    if (c) await this.audit?.record({ tenantId, actorId, action: 'passport_viewed', entity: 'Checkin', entityId: c.id, payload: { bookingId } });
+    return this.toPassportView(c);
+  }
+
+  /** Паспортные данные + сканы гостя (последняя регистрация с данными/сканом). */
+  async passportForGuest(tenantId: string, guestId: string, actorId: string): Promise<AdminPassportView> {
+    const c = await this.prisma.checkin.findFirst({
+      where: { guestId, booking: { tenantId }, OR: [{ passportEncrypted: { not: null } }, { documents: { some: { kind: 'passport' } } }] },
+      orderBy: { updatedAt: 'desc' },
+      select: CheckinService.PASSPORT_DOC_SELECT,
+    });
+    if (c) await this.audit?.record({ tenantId, actorId, action: 'passport_viewed', entity: 'Guest', entityId: guestId, payload: { bookingId: c.bookingId } });
+    return this.toPassportView(c);
+  }
+
+  /** Скан паспорта как data-URL (расшифровка). Доступ логируется (documentAccessLog). */
+  async passportDocument(tenantId: string, docId: string, actorId: string): Promise<{ dataUrl: string; contentType: string }> {
+    const doc = await this.prisma.document.findFirst({
+      where: { id: docId, kind: 'passport', checkin: { booking: { tenantId } } },
+    });
+    if (!doc) throw new NotFoundException('Скан не найден');
+    const encrypted = await this.storage.get(doc.storageKey);
+    const buf = this.crypto.decryptBuffer(encrypted);
+    await this.prisma.documentAccessLog.create({ data: { documentId: doc.id, actor: actorId, action: 'view' } });
+    return { dataUrl: `data:${doc.contentType};base64,${buf.toString('base64')}`, contentType: doc.contentType };
+  }
+
+  /** Статус распознавания паспортов: провайдер + доступен ли self-hosted OCR-сайдкар. */
+  async ocrStatus(): Promise<{ provider: string; reachable: boolean; note: string }> {
+    const provider = this.config.get('PASSPORT_PROVIDER', { infer: true });
+    if (provider !== 'http') {
+      return { provider, reachable: false, note: 'Демо-режим (mock): скан не распознаётся, поля вводятся вручную. Включите OCR (PASSPORT_PROVIDER=http + сайдкар).' };
+    }
+    const base = this.config.get('PASSPORT_OCR_URL', { infer: true });
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 3000);
+      const res = await fetch(`${base}/health`, { signal: ctrl.signal });
+      clearTimeout(t);
+      return { provider, reachable: res.ok, note: res.ok ? 'OCR-сайдкар доступен — распознавание работает.' : `OCR-сайдкар ответил ${res.status}.` };
+    } catch (e) {
+      return { provider, reachable: false, note: `OCR-сайдкар недоступен (${base}): ${(e as Error).message}` };
+    }
   }
 
   /** Подтвердить регистрацию (§8.4): инструкции, генерация ключа, передача в Bitrix24. */

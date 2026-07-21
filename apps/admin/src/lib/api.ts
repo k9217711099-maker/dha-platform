@@ -2011,6 +2011,16 @@ export interface StaffSavedMessageItem {
   createdAt: string;
 }
 
+/** Паспорт гостя для админки (расшифровано; доступ логируется). */
+export interface AdminPassport {
+  bookingId: string | null;
+  series: string | null;
+  number: string | null;
+  checkStatus: 'VALID' | 'INVALID' | 'MANUAL' | null;
+  checkNote: string | null;
+  documents: { id: string; contentType: string; createdAt: string }[];
+}
+
 export const adminApi = {
   login: (email: string, password: string) =>
     request<{ accessToken: string; role: string }>('/admin/auth/login', {
@@ -2129,6 +2139,11 @@ export const adminApi = {
       method: 'POST',
       body: reason ? { action, reason } : { action },
     }),
+  // Паспорт гостя (данные + сканы). Доступ логируется (152-ФЗ) — загружаем по требованию.
+  pmsPassportByBooking: (bookingId: string) => request<AdminPassport>(`/admin/checkin/${bookingId}/passport`),
+  pmsPassportByGuest: (guestId: string) => request<AdminPassport>(`/admin/checkin/guest/${guestId}/passport`),
+  pmsPassportDoc: (docId: string) => request<{ dataUrl: string; contentType: string }>(`/admin/checkin/passport/doc/${docId}`),
+  pmsPassportOcrStatus: () => request<{ provider: string; reachable: boolean; note: string }>(`/admin/checkin/passport/ocr-status`),
   // Очередь заезда + отчёт воронки (CHECK-IN-TZ §11, право checkin_desk)
   checkinQueue: (date?: string, propertyId?: string) => {
     const qs = new URLSearchParams();

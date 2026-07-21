@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/co
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CheckinStatus } from '@prisma/client';
 import { AdminAuthGuard } from '../admin/admin-auth.guard.js';
+import { CurrentAdminId } from '../admin/current-admin.decorator.js';
 import { RequirePermission } from '../admin/require-permission.decorator.js';
 import { TenantService } from '../pms/tenant/tenant.service.js';
 import { CheckinService } from './checkin.service.js';
@@ -44,5 +45,39 @@ export class CheckinReviewController {
   @ApiOperation({ summary: 'Вернуть на исправление или отклонить регистрацию' })
   reject(@Param('bookingId') bookingId: string, @Body() dto: ReviewCheckinDto) {
     return this.checkin.reject(bookingId, dto.reason, dto.needsFix ?? true);
+  }
+
+  /** Статус распознавания паспортов (провайдер + доступность OCR-сайдкара). */
+  @Get('passport/ocr-status')
+  @RequirePermission('checkins')
+  ocrStatus() {
+    return this.checkin.ocrStatus();
+  }
+
+  /** Скан паспорта (data-URL, расшифровка). Доступ логируется (152-ФЗ). */
+  @Get('passport/doc/:docId')
+  @RequirePermission('checkins')
+  @ApiOperation({ summary: 'Скан паспорта (расшифрованный, для просмотра)' })
+  async passportDoc(@Param('docId') docId: string, @CurrentAdminId() adminId: string) {
+    const tenantId = await this.tenant.getDefaultTenantId();
+    return this.checkin.passportDocument(tenantId, docId, adminId);
+  }
+
+  /** Паспортные данные + сканы гостя (последняя регистрация). Доступ логируется. */
+  @Get('guest/:guestId/passport')
+  @RequirePermission('checkins')
+  @ApiOperation({ summary: 'Паспорт гостя (карточка гостя)' })
+  async passportByGuest(@Param('guestId') guestId: string, @CurrentAdminId() adminId: string) {
+    const tenantId = await this.tenant.getDefaultTenantId();
+    return this.checkin.passportForGuest(tenantId, guestId, adminId);
+  }
+
+  /** Паспортные данные + сканы по брони. Доступ логируется (152-ФЗ). */
+  @Get(':bookingId/passport')
+  @RequirePermission('checkins')
+  @ApiOperation({ summary: 'Паспорт гостя по брони (карточка брони)' })
+  async passportByBooking(@Param('bookingId') bookingId: string, @CurrentAdminId() adminId: string) {
+    const tenantId = await this.tenant.getDefaultTenantId();
+    return this.checkin.passportForBooking(tenantId, bookingId, adminId);
   }
 }
