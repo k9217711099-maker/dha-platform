@@ -74,6 +74,20 @@ export class CheckinPortalController {
     // Фото-инструкция номера (режим апартаментов) — только после шлюзов и только в этом режиме.
     const instructionPhotos = gatesPassed && booking.property.perRoomInstructions ? (booking.room?.checkinPhotos ?? []) : [];
 
+    // Ранний заезд: стандартное время объекта + % доплаты из тарифа (для сообщения в портале).
+    const standardCheckIn = booking.property.checkInTime ?? '14:00';
+    let earlyPercent: number | null = null;
+    if (booking.ratePlanId && booking.ratePlanId !== 'manual') {
+      const plan = await this.prisma.ratePlan
+        .findFirst({ where: { id: booking.ratePlanId, tenantId }, select: { earlyLateMode: true, earlyLateConfig: true } })
+        .catch(() => null);
+      if (plan?.earlyLateMode === 'PERCENT' && plan.earlyLateConfig) {
+        const cfg = plan.earlyLateConfig as { early?: { percent?: number } };
+        earlyPercent = typeof cfg.early?.percent === 'number' ? cfg.early.percent : null;
+      }
+    }
+    const nightBase = booking.nights > 0 ? Math.round(booking.totalPrice / booking.nights) : null;
+
     return {
       booking: {
         id: booking.id,
@@ -101,6 +115,13 @@ export class CheckinPortalController {
       window: panel.window,
       checkin: checkinView,
       payment: payInfo ? { remaining: payInfo.remaining, prepayment: payInfo.prepayment } : null,
+      // Ранний заезд: стандартное время, бесплатный порог (ч), % и оценка доплаты за сутки.
+      earlyCheckin: {
+        standardTime: standardCheckIn,
+        freeWithinHours: 2,
+        percent: earlyPercent,
+        estCost: earlyPercent != null && nightBase != null ? Math.round((nightBase * earlyPercent) / 100) : null,
+      },
       stages: (funnel?.stages ?? [])
         .filter((s) => s.enabled)
         .map((s) => ({ key: s.key, title: s.title, order: s.order, guestDescription: s.guestDescription })),

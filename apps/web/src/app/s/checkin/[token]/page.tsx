@@ -37,6 +37,7 @@ interface PortalContext {
   window: { start: string; end: string };
   checkin: CheckinView;
   payment: { remaining: number; prepayment: number } | null;
+  earlyCheckin: { standardTime: string; freeWithinHours: number; percent: number | null; estCost: number | null };
   stages: { key: string; title: string; order: number; guestDescription: string | null }[];
 }
 
@@ -125,7 +126,7 @@ export default function GuestCheckinPortal() {
         ) : regDone ? (
           <p className="text-sm text-dark-gray">Анкета отправлена и проверяется администратором.</p>
         ) : (
-          <RegistrationForm token={token} checkin={ctx.checkin} busy={busy} run={run} />
+          <RegistrationForm token={token} checkin={ctx.checkin} earlyCheckin={ctx.earlyCheckin} busy={busy} run={run} />
         )}
         {ctx.checkin.rejectionReason && !regDone ? (
           <p className="mt-2 text-sm text-red-700">Замечание администратора: {ctx.checkin.rejectionReason}</p>
@@ -249,11 +250,26 @@ function StepCard({ n, title, done, hint, children }: {
 }
 
 /** Анкета регистрации — та же, что в ЛК, но через токен-эндпоинты. */
-function RegistrationForm({ token, checkin, busy, run }: {
-  token: string; checkin: CheckinView; busy: boolean; run: (fn: () => Promise<unknown>) => Promise<void>;
+function RegistrationForm({ token, checkin, earlyCheckin, busy, run }: {
+  token: string; checkin: CheckinView; earlyCheckin: PortalContext['earlyCheckin'];
+  busy: boolean; run: (fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const [arrivalTime, setArrival] = useState(checkin.arrivalTime ?? '14:00');
   const [adults, setAdults] = useState(checkin.adults);
+  // Сообщение о раннем заезде: ≤ порога — бесплатно при возможности; больше — доплата + звонок.
+  const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+  const std = earlyCheckin.standardTime;
+  const early = (!arrivalTime || arrivalTime >= std) ? null : (() => {
+    const deltaMin = toMin(std) - toMin(arrivalTime);
+    if (deltaMin <= earlyCheckin.freeWithinHours * 60) {
+      return { free: true, text: `Ранний заезд к ${arrivalTime}: предоставим бесплатно при наличии свободного номера.` };
+    }
+    const cost = earlyCheckin.estCost;
+    return {
+      free: false,
+      text: `Ранний заезд к ${arrivalTime} (более чем на ${earlyCheckin.freeWithinHours} ч раньше ${std}): ${cost ? `ориентировочная доплата ${cost.toLocaleString('ru-RU')} ₽` : 'возможна доплата за ранний заезд'}. Точные условия подтвердит администратор — мы свяжемся с вами.`,
+    };
+  })();
   const [p, setP] = useState<PassportData>(checkin.passport ?? {});
   const set = (k: keyof PassportData) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setP((prev) => ({ ...prev, [k]: e.target.value }));
@@ -367,6 +383,11 @@ function RegistrationForm({ token, checkin, busy, run }: {
         <Input id="p-arr" label="Время заезда" type="time" value={arrivalTime} onChange={(e) => setArrival(e.target.value)} />
         <Input id="p-adults" label="Взрослых" type="number" min={1} value={adults} onChange={(e) => setAdults(Number(e.target.value))} />
       </div>
+      {early ? (
+        <p className={`rounded-lg px-3 py-2 text-xs ${early.free ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>
+          {early.free ? '🕑 ' : 'ℹ️ '}{early.text}
+        </p>
+      ) : null}
 
       <label className="flex items-start gap-2 text-sm text-dark-gray">
         <input type="checkbox" checked={consents} onChange={(e) => setConsents(e.target.checked)} className="mt-0.5" />
