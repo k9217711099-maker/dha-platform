@@ -225,6 +225,8 @@ function RegistrationForm({ token, checkin, busy, run }: {
   const [consents, setConsents] = useState(checkin.consentsSigned);
   const [houseRules, setHouseRules] = useState(checkin.houseRulesAccepted);
   const [file, setFile] = useState<File | null>(null);
+  const [uploaded, setUploaded] = useState(false);
+  const [recog, setRecog] = useState<{ ok: boolean; text: string } | null>(null);
 
   const save = (): Promise<unknown> => {
     const body: SaveCheckinInput = {
@@ -237,28 +239,70 @@ function RegistrationForm({ token, checkin, busy, run }: {
     return portal(token, '/registration', { method: 'PUT', body: JSON.stringify(body) });
   };
 
-  const upload = async () => {
-    if (!file) throw new Error('Выберите файл скана');
+  const uploadOnly = async () => {
+    if (!file) return;
     const fd = new FormData();
     fd.append('file', file);
     const res = await fetch(`${API_BASE}/s/checkin/${token}/passport`, { method: 'POST', body: fd });
     if (!res.ok) throw new Error('Не удалось загрузить скан');
+    setUploaded(true);
+  };
+
+  /** Шаг 1: загрузить скан и распознать → автозаполнить серию/номер. */
+  const uploadAndRecognize = async () => {
+    if (!file) throw new Error('Выберите файл скана паспорта');
+    setRecog(null);
+    await save(); // регистрация должна существовать, чтобы привязать скан
+    await uploadOnly();
+    try {
+      const r = await portal<{ fields: { series?: string; number?: string } }>(
+        token,
+        '/passport/recognize',
+        { method: 'POST' },
+      );
+      const got = Boolean(r.fields.series || r.fields.number);
+      if (r.fields.series) setSeries(r.fields.series);
+      if (r.fields.number) setNumber(r.fields.number);
+      setRecog({
+        ok: got,
+        text: got
+          ? 'Паспорт распознан — проверьте поля ниже и при необходимости поправьте.'
+          : 'Скан загружен. Автораспознавание недоступно — заполните серию и номер вручную.',
+      });
+    } catch {
+      setRecog({ ok: false, text: 'Скан загружен. Заполните серию и номер вручную.' });
+    }
   };
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Input id="p-arr" label="Время заезда" type="time" value={arrivalTime} onChange={(e) => setArrival(e.target.value)} />
-        <Input id="p-adults" label="Взрослых" type="number" min={1} value={adults} onChange={(e) => setAdults(Number(e.target.value))} />
+      {/* Шаг 1 — скан паспорта: серия/номер подставятся автоматически */}
+      <div className="rounded-lg border border-ink/10 p-3">
+        <p className="text-sm text-ink">Шаг 1. Скан или фото паспорта {checkin.documentsCount > 0 ? `(загружено: ${checkin.documentsCount})` : ''}</p>
+        <p className="mb-2 mt-0.5 text-xs text-dark-gray">Загрузите разворот паспорта — серию и номер подставим автоматически, останется проверить. Данные шифруются.</p>
+        <input type="file" accept="image/*,application/pdf"
+          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setUploaded(false); setRecog(null); }}
+          className="text-sm" />
+        <div className="mt-2">
+          <Button variant="secondary" disabled={busy || !file} onClick={() => void run(uploadAndRecognize)}>
+            Загрузить и распознать
+          </Button>
+        </div>
+        {recog ? <p className={`mt-2 text-xs ${recog.ok ? 'text-emerald-700' : 'text-dark-gray'}`}>{recog.text}</p> : null}
       </div>
+
+      {/* Шаг 2 — данные паспорта (автозаполнены, можно поправить) */}
       <div className="grid gap-3 sm:grid-cols-2">
         <Input id="p-series" label="Паспорт: серия" value={series} onChange={(e) => setSeries(e.target.value)} />
         <Input id="p-number" label="Паспорт: номер" value={number} onChange={(e) => setNumber(e.target.value)} />
       </div>
-      <div className="text-sm">
-        <p className="mb-1 text-dark-gray">Скан паспорта {checkin.documentsCount > 0 ? `(загружено: ${checkin.documentsCount})` : ''}</p>
-        <input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-sm" />
+
+      {/* Шаг 3 — данные заезда */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Input id="p-arr" label="Время заезда" type="time" value={arrivalTime} onChange={(e) => setArrival(e.target.value)} />
+        <Input id="p-adults" label="Взрослых" type="number" min={1} value={adults} onChange={(e) => setAdults(Number(e.target.value))} />
       </div>
+
       <label className="flex items-start gap-2 text-sm text-dark-gray">
         <input type="checkbox" checked={consents} onChange={(e) => setConsents(e.target.checked)} className="mt-0.5" />
         <span>Подписываю согласия на обработку персональных данных.</span>
@@ -268,12 +312,12 @@ function RegistrationForm({ token, checkin, busy, run }: {
         <span>Подтверждаю правила проживания.</span>
       </label>
       <div className="flex gap-2">
-        <Button variant="secondary" disabled={busy} onClick={() => void run(async () => { await save(); if (file) await upload(); })}>
+        <Button variant="secondary" disabled={busy} onClick={() => void run(async () => { await save(); if (file && !uploaded) await uploadOnly(); })}>
           Сохранить
         </Button>
         <Button disabled={busy} onClick={() => void run(async () => {
           await save();
-          if (file) await upload();
+          if (file && !uploaded) await uploadOnly();
           await portal(token, '/registration/submit', { method: 'POST' });
         })}>
           Отправить на проверку

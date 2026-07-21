@@ -132,6 +132,13 @@ export class CheckinPortalController {
     return this.checkin.uploadPassport(booking.guestId, booking.id, file);
   }
 
+  /** Распознать загруженный скан паспорта (OCR) для автозаполнения полей. */
+  @Post(':token/passport/recognize')
+  async recognizePassport(@Param('token') token: string) {
+    const { booking } = await this.resolve(token);
+    return this.checkin.recognizePassport(booking.guestId, booking.id);
+  }
+
   /** Ссылка на оплату остатка (эквайринг — как в ЛК/админке). */
   @Post(':token/pay')
   async pay(@Param('token') token: string) {
