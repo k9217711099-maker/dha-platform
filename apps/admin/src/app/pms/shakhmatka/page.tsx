@@ -37,7 +37,9 @@ const fmtDM = (iso?: string) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00Z`)
 
 interface TreeNode { propertyId: string; name: string; cats: { roomTypeId: string; name: string; sortOrder: number; rooms: PmsRoom[] }[]; roomCount: number; }
 type FlatRow = { kind: 'property'; node: TreeNode } | { kind: 'category'; cat: TreeNode['cats'][number] } | { kind: 'room'; room: PmsRoom };
-interface DragState { roomId: string; room: PmsRoom; startIdx: number; endIdx: number; }
+// Drag-создание брони: по строке номера (roomId/room) ИЛИ по строке категории (без roomId —
+// номер назначится позже). Всегда несёт propertyId + roomTypeId для модалки создания (#3).
+interface DragState { startIdx: number; endIdx: number; propertyId: string; roomTypeId: string; roomId?: string; room?: PmsRoom; }
 interface Hover { booking: PmsBooking; x: number; y: number; }
 /** Перетаскивание существующей брони: перенос по датам (dayDelta), в другой номер (overRoomId)
  *  или в другую категорию (overCatId — бронь становится нераспределённой в новой категории). */
@@ -258,7 +260,7 @@ export default function ShakhmatkaPage() {
     const onUp = () => {
       const lo = Math.min(drag.startIdx, drag.endIdx), hi = Math.max(drag.startIdx, drag.endIdx);
       const ci = dates[lo], last = dates[hi];
-      if (ci && last) setModal({ propertyId: drag.room.property.id, roomTypeId: drag.room.roomType.id, roomId: drag.room.id, checkIn: ci, checkOut: plusDays(last, 1) });
+      if (ci && last) setModal({ propertyId: drag.propertyId, roomTypeId: drag.roomTypeId, roomId: drag.roomId, checkIn: ci, checkOut: plusDays(last, 1) });
       setDrag(null);
     };
     window.addEventListener('mouseup', onUp);
@@ -489,9 +491,14 @@ export default function ShakhmatkaPage() {
                       onMouseEnter={() => { if (move) { if (solo) setOverRoom(solo.id); else setOverCat(row.cat.roomTypeId); } }}>
                       {dates.map((d, di) => {
                         const f = free?.[di];
+                        // Выделение при drag-создании брони прямо на категории (#3, номер назначится позже).
+                        const catSel = drag != null && !drag.roomId && drag.roomTypeId === row.cat.roomTypeId && di >= Math.min(drag.startIdx, drag.endIdx) && di <= Math.max(drag.startIdx, drag.endIdx);
                         // Число свободных номеров — в НИЖНЕЙ полосе ячейки, чтобы бронь-плашка сверху его не перекрывала (§2).
                         return (
-                          <div key={d} className={`relative border-l border-ink/[0.06] ${isWeekend(d) ? 'bg-amber-50/40' : ''}`} style={{ width: COLW }}>
+                          <div key={d}
+                            onMouseDown={() => { if (!move) setDrag({ propertyId: row.cat.rooms[0]?.property.id ?? '', roomTypeId: row.cat.roomTypeId, startIdx: di, endIdx: di }); }}
+                            onMouseEnter={() => setDrag((prev) => (prev && !prev.roomId && prev.roomTypeId === row.cat.roomTypeId ? { ...prev, endIdx: di } : prev))}
+                            className={`relative border-l border-ink/[0.06] ${isWeekend(d) ? 'bg-amber-50/40' : ''} ${catSel ? 'bg-primary/20' : move ? '' : 'hover:bg-ink/[0.05]'}`} style={{ width: COLW }}>
                             {f !== undefined ? <span className={`pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center pb-0.5 text-[11px] font-medium ${f === 0 ? 'text-red-500' : 'text-ink/50'}`}>{f}</span> : null}
                           </div>
                         );
@@ -562,7 +569,7 @@ export default function ShakhmatkaPage() {
                     <div className="flex h-full">
                       {dates.map((d, idx) => {
                         const selected = drag && drag.roomId === room.id && idx >= Math.min(drag.startIdx, drag.endIdx) && idx <= Math.max(drag.startIdx, drag.endIdx);
-                        return <div key={d} onMouseDown={() => { if (!move) setDrag({ roomId: room.id, room, startIdx: idx, endIdx: idx }); }}
+                        return <div key={d} onMouseDown={() => { if (!move) setDrag({ roomId: room.id, room, propertyId: room.property.id, roomTypeId: room.roomType.id, startIdx: idx, endIdx: idx }); }}
                           onMouseEnter={() => setDrag((prev) => (prev && prev.roomId === room.id ? { ...prev, endIdx: idx } : prev))}
                           className={`border-l border-ink/[0.06] ${isWeekend(d) ? 'bg-amber-50/40' : ''} ${selected ? '' : move ? '' : 'hover:bg-ink/[0.03]'}`} style={{ width: COLW }} />;
                       })}
