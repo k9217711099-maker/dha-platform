@@ -8,6 +8,7 @@ import { AttachmentStorageService } from '../staff-chat/attachment-storage.servi
 import { KbController } from './kb.controller.js';
 import { KbService } from './kb.service.js';
 import { KbAskService } from './kb-ask.service.js';
+import { KbSeedService } from './kb-seed.service.js';
 import { KbImportService } from './import/kb-import.service.js';
 
 /**
@@ -18,7 +19,7 @@ import { KbImportService } from './import/kb-import.service.js';
 @Module({
   imports: [LlmModule, PiiModule, AclModule],
   controllers: [KbController],
-  providers: [AdminAuthGuard, KbService, KbAskService, KbImportService, AuditService, AttachmentStorageService],
+  providers: [AdminAuthGuard, KbService, KbAskService, KbSeedService, KbImportService, AuditService, AttachmentStorageService],
   exports: [KbService, KbAskService],
 })
 export class KbModule {}
