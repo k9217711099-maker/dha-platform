@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { DriveNodeKind, Prisma } from '@prisma/client';
+import { AclLevel, DriveNodeKind, Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { TenantService } from '../pms/tenant/tenant.service.js';
 import { SecretsService } from '../secrets/secrets.service.js';
+import { AclService } from '../acl/acl.service.js';
 import { newShortId } from '../kb/content.js';
 import { ALL_PERMISSION_KEYS, DEFAULT_ROLES, PERMISSIONS } from './permissions.js';
 
@@ -25,6 +26,7 @@ export class RolesService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly tenant: TenantService,
     private readonly secrets: SecretsService,
+    private readonly acl: AclService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -55,6 +57,8 @@ export class RolesService implements OnModuleInit {
     // Миграция учёток без roleKey из enum role
     await this.prisma.adminUser.updateMany({ where: { roleKey: null, role: 'ADMIN' }, data: { roleKey: 'superadmin' } });
     await this.prisma.adminUser.updateMany({ where: { roleKey: null, role: 'MANAGER' }, data: { roleKey: 'manager' } });
+    // Общие папки для уже существующих отделов (#8) — чтобы появились и без нового найма.
+    await this.provisionAllDepartmentFolders().catch(() => undefined);
   }
 
   permissionsCatalog() {
@@ -151,7 +155,62 @@ export class RolesService implements OnModuleInit {
         },
       })
       .catch(() => undefined); // не роняем создание сотрудника
+    // Общие папки отделов сотрудника (#8): если у отдела ещё нет общей папки — заводим её,
+    // доступ выдаётся всей группе (ACL) → новый сотрудник сразу её видит.
+    if (dto.groupIds?.length) {
+      await this.ensureDepartmentFolders(tenantId, dto.groupIds).catch(() => undefined);
+    }
     return { ...user, groupIds: dto.groupIds ?? [] };
+  }
+
+  /**
+   * Общие папки отделов (#8): у каждого отдела (UserGroup) — своя общая папка на Диске.
+   * Доступ выдаётся ГРУППЕ через ACL, поэтому все её участники видят папку автоматически, а
+   * при увольнении (выходе из группы) теряют доступ — без пофамильной раздачи прав. Идемпотентно:
+   * общую папку отдела находим по ACL-гранту group:<id>, создаём только если её ещё нет.
+   */
+  async ensureDepartmentFolders(tenantId: string, groupIds: string[]): Promise<void> {
+    const groups = await this.prisma.userGroup.findMany({
+      where: { id: { in: [...new Set(groupIds)] } },
+      select: { id: true, name: true },
+    });
+    for (const g of groups) {
+      const grant = await this.prisma.aclEntry.findFirst({
+        where: { tenantId, resourceType: 'drive_node', subjectType: 'group', subjectId: g.id },
+      });
+      if (grant) {
+        const node = await this.prisma.driveNode.findFirst({
+          where: { id: grant.resourceId, tenantId, deletedAt: null },
+          select: { id: true },
+        });
+        if (node) continue; // общая папка отдела уже есть
+      }
+      const folder = await this.prisma.driveNode.create({
+        data: {
+          tenantId,
+          parentId: null,
+          kind: DriveNodeKind.FOLDER,
+          name: `Общая папка · ${g.name}`,
+          shortId: newShortId(),
+          ownerId: null,
+        },
+      });
+      await this.acl.setEntries(tenantId, 'drive_node', folder.id, [
+        { subjectType: 'group', subjectId: g.id, level: AclLevel.EDITOR },
+      ]);
+    }
+  }
+
+  /** Разово завести общие папки для уже существующих отделов с участниками (#8). Идемпотентно. */
+  private async provisionAllDepartmentFolders(): Promise<void> {
+    const tenantId = await this.tenant.getDefaultTenantId();
+    const groups = await this.prisma.userGroup.findMany({ select: { id: true } });
+    const withMembers: string[] = [];
+    for (const g of groups) {
+      const cnt = await this.prisma.userGroupMember.count({ where: { groupId: g.id } });
+      if (cnt > 0) withMembers.push(g.id);
+    }
+    if (withMembers.length) await this.ensureDepartmentFolders(tenantId, withMembers);
   }
 
   /**
