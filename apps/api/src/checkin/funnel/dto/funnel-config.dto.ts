@@ -8,6 +8,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
   ValidateNested,
@@ -17,6 +18,11 @@ import { FUNNEL_CHANNELS, FUNNEL_CONDITIONS, FUNNEL_STAGE_KEYS } from '@dha/doma
 const STAGE_KEYS = FUNNEL_STAGE_KEYS.map((s) => s.key);
 const CHANNEL_KEYS = FUNNEL_CHANNELS.map((c) => c.key);
 const CONDITION_TYPES = FUNNEL_CONDITIONS.map((c) => c.type);
+// Допустимые ключи каналов этапа: базовые (FUNNEL_CHANNELS) + MAX + динамические
+// каналы Umnico вида umnico:<id>. ВАЖНО: словарь конструктора отдаёт max/umnico:*,
+// поэтому DTO обязан их принимать — иначе PATCH этапа падает 400 и НИ ОДИН канал
+// (включая базовые) не сохраняется, т.к. шлётся весь массив каналов этапа.
+const CHANNEL_KEY_RE = new RegExp(`^(?:${[...CHANNEL_KEYS, 'max'].join('|')}|umnico:\\d+)$`);
 
 /** Условие-шлюз этапа: только из словаря FUNNEL_CONDITIONS (§2.1). */
 export class FunnelConditionDto {
@@ -75,10 +81,10 @@ export class UpsertStageDto {
   @Type(() => FunnelConditionDto)
   conditions?: FunnelConditionDto[];
 
-  @ApiPropertyOptional({ enum: CHANNEL_KEYS, isArray: true })
+  @ApiPropertyOptional({ description: 'push|sms|email|telegram|whatsapp|ota_messaging|guest_portal|max|umnico:<id>', isArray: true })
   @IsOptional()
   @IsArray()
-  @IsIn(CHANNEL_KEYS, { each: true })
+  @Matches(CHANNEL_KEY_RE, { each: true, message: 'channels: недопустимый ключ канала' })
   channels?: string[];
 
   @IsOptional()
