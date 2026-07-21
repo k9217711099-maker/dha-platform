@@ -4,6 +4,7 @@ import { AuditService } from '../warehouse/audit/audit.service.js';
 import { LlmModule } from '../ai/llm/llm.module.js';
 import { PiiModule } from '../ai/pii/pii.module.js';
 import { AclModule } from '../acl/acl.module.js';
+import { AttachmentStorageService } from '../staff-chat/attachment-storage.service.js';
 import { KbController } from './kb.controller.js';
 import { KbService } from './kb.service.js';
 import { KbAskService } from './kb-ask.service.js';
@@ -17,7 +18,7 @@ import { KbImportService } from './import/kb-import.service.js';
 @Module({
   imports: [LlmModule, PiiModule, AclModule],
   controllers: [KbController],
-  providers: [AdminAuthGuard, KbService, KbAskService, KbImportService, AuditService],
+  providers: [AdminAuthGuard, KbService, KbAskService, KbImportService, AuditService, AttachmentStorageService],
   exports: [KbService, KbAskService],
 })
 export class KbModule {}

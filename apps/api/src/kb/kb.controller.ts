@@ -9,6 +9,7 @@ import { AdminAuthGuard, type AdminRequest } from '../admin/admin-auth.guard.js'
 import { RequirePermission } from '../admin/require-permission.decorator.js';
 import { TenantService } from '../pms/tenant/tenant.service.js';
 import type { AclActor } from '../acl/acl.service.js';
+import { AttachmentStorageService } from '../staff-chat/attachment-storage.service.js';
 import { KbImportService } from './import/kb-import.service.js';
 import { KbAskService } from './kb-ask.service.js';
 import { KbService, type KbPageInput } from './kb.service.js';
@@ -32,7 +33,18 @@ export class KbController {
     private readonly kbImport: KbImportService,
     private readonly kbAsk: KbAskService,
     private readonly tenant: TenantService,
+    private readonly storage: AttachmentStorageService,
   ) {}
+
+  /** Загрузка медиа/файла для вставки в статью (WYSIWYG-редактор, #4). Возвращает URL. */
+  @Post('upload')
+  @RequirePermission('kb_manage')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
+  async upload(@UploadedFile() file: Express.Multer.File) {
+    const saved = await this.storage.save(file);
+    return { url: saved.url, name: saved.name, mime: saved.mime, size: saved.size };
+  }
 
   // ─── Базы ───
 

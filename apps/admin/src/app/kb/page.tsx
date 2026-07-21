@@ -8,6 +8,7 @@ import { adminApi, fileUrl, publicLinkUrl, type KbAskResult, type KbBaseRow, typ
 import { useAdminMe, useRequireAdmin } from '../../lib/use-admin';
 import { AccessModal } from '../../components/AccessModal';
 import { MindmapEmbed } from '../../components/MindmapEmbed';
+import { RichTextEditor } from '../../components/RichTextEditor';
 
 /** Ссылки на страницы БЗ в контенте: kb:<shortId> (проставляет импортёр/редактор). */
 const KB_HREF = /^kb:([a-z0-9]+)$/i;
@@ -169,7 +170,11 @@ function BlockEditor({ blocks, onChange }: { blocks: KbBlock[]; onChange: (b: Kb
             <input value={b.text ?? ''} onChange={(e) => set(i, { ...b, text: e.target.value })} className="w-full rounded border border-neutral-300 px-2 py-1 text-lg font-medium" />
           )}
           {(b.type === 'text' || b.type === 'raw') && (
-            <textarea value={b.html ?? ''} onChange={(e) => set(i, { ...b, html: e.target.value })} rows={Math.min(10, Math.max(2, (b.html ?? '').length / 90))} className="w-full rounded border border-neutral-300 px-2 py-1 font-mono text-xs" />
+            <RichTextEditor
+              value={b.html ?? ''}
+              onChange={(html) => set(i, { ...b, html })}
+              uploadFile={async (f) => fileUrl((await adminApi.kbUpload(f)).url)}
+            />
           )}
           {b.type === 'image' && <p className="truncate text-xs text-neutral-500">{b.src}</p>}
           {b.type === 'video' && <p className="truncate text-xs text-neutral-500">{b.source ?? b.src}</p>}

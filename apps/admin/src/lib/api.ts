@@ -2798,6 +2798,8 @@ export const adminApi = {
   kbUpdatePage: (id: string, body: Partial<Pick<KbPageDetail, 'title' | 'icon' | 'content' | 'parentId' | 'sortOrder' | 'status' | 'tags' | 'guestAgentVisible'>>) =>
     request<KbPageDetail>(`/v1/kb/pages/${id}`, { method: 'PATCH', body }),
   kbDeletePage: (id: string) => request<{ ok: boolean; deleted: number }>(`/v1/kb/pages/${id}`, { method: 'DELETE' }),
+  /** Загрузка фото/видео/файла для вставки в статью (WYSIWYG, #4). */
+  kbUpload: (file: File) => upload<UploadResult>('/v1/kb/upload', file),
   kbVersions: (pageId: string) => request<KbVersionRow[]>(`/v1/kb/pages/${pageId}/versions`),
   kbVersion: (pageId: string, n: number) =>
     request<KbVersionRow & { content: { blocks: KbBlock[] } }>(`/v1/kb/pages/${pageId}/versions/${n}`),
