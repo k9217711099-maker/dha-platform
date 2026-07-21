@@ -5,10 +5,10 @@
  * Один экран ведёт гостя по воронке: данные заезда → онлайн-регистрация → оплата →
  * цифровой ключ. Тексты шагов приходят из конструктора воронки (guestDescription).
  */
-import { useCallback, useEffect, useState } from 'react';
+import { type ChangeEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Button, Card, Input } from '@dha/ui';
-import type { CheckinView, KeysView, SaveCheckinInput } from '../../../../lib/api-types';
+import type { CheckinView, KeysView, PassportData, SaveCheckinInput } from '../../../../lib/api-types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
@@ -254,19 +254,21 @@ function RegistrationForm({ token, checkin, busy, run }: {
 }) {
   const [arrivalTime, setArrival] = useState(checkin.arrivalTime ?? '14:00');
   const [adults, setAdults] = useState(checkin.adults);
-  const [series, setSeries] = useState('');
-  const [number, setNumber] = useState('');
+  const [p, setP] = useState<PassportData>(checkin.passport ?? {});
+  const set = (k: keyof PassportData) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setP((prev) => ({ ...prev, [k]: e.target.value }));
   const [consents, setConsents] = useState(checkin.consentsSigned);
   const [houseRules, setHouseRules] = useState(checkin.houseRulesAccepted);
   const [file, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState(false);
   const [recog, setRecog] = useState<{ ok: boolean; text: string } | null>(null);
+  const prefilled = !checkin.hasPassportData && Boolean(checkin.passport);
 
   const save = (): Promise<unknown> => {
     const body: SaveCheckinInput = {
       arrivalTime,
       adults,
-      passport: series && number ? { series, number } : undefined,
+      passport: p,
       consentsSigned: consents,
       houseRulesAccepted: houseRules,
     };
@@ -282,38 +284,33 @@ function RegistrationForm({ token, checkin, busy, run }: {
     setUploaded(true);
   };
 
-  /** Шаг 1: загрузить скан и распознать → автозаполнить серию/номер. */
+  /** Шаг 1: загрузить скан и распознать → автозаполнить поля документа. */
   const uploadAndRecognize = async () => {
     if (!file) throw new Error('Выберите файл скана паспорта');
     setRecog(null);
     await save(); // регистрация должна существовать, чтобы привязать скан
     await uploadOnly();
     try {
-      const r = await portal<{ fields: { series?: string; number?: string } }>(
-        token,
-        '/passport/recognize',
-        { method: 'POST' },
-      );
-      const got = Boolean(r.fields.series || r.fields.number);
-      if (r.fields.series) setSeries(r.fields.series);
-      if (r.fields.number) setNumber(r.fields.number);
+      const r = await portal<{ fields: PassportData }>(token, '/passport/recognize', { method: 'POST' });
+      const filled = Object.entries(r.fields).filter(([, v]) => v);
+      if (filled.length) setP((prev) => ({ ...prev, ...Object.fromEntries(filled) }));
       setRecog({
-        ok: got,
-        text: got
+        ok: filled.length > 0,
+        text: filled.length
           ? 'Паспорт распознан — проверьте поля ниже и при необходимости поправьте.'
-          : 'Скан загружен. Автораспознавание недоступно — заполните серию и номер вручную.',
+          : 'Скан загружен. Автораспознавание недоступно — заполните поля вручную.',
       });
     } catch {
-      setRecog({ ok: false, text: 'Скан загружен. Заполните серию и номер вручную.' });
+      setRecog({ ok: false, text: 'Скан загружен. Заполните поля вручную.' });
     }
   };
 
   return (
-    <div className="space-y-3">
-      {/* Шаг 1 — скан паспорта: серия/номер подставятся автоматически */}
+    <div className="space-y-4">
+      {/* Шаг 1 — скан паспорта: поля документа подставятся автоматически */}
       <div className="rounded-lg border border-ink/10 p-3">
         <p className="text-sm text-ink">Шаг 1. Скан или фото паспорта {checkin.documentsCount > 0 ? `(загружено: ${checkin.documentsCount})` : ''}</p>
-        <p className="mb-2 mt-0.5 text-xs text-dark-gray">Загрузите разворот паспорта — серию и номер подставим автоматически, останется проверить. Данные шифруются.</p>
+        <p className="mb-2 mt-0.5 text-xs text-dark-gray">Загрузите разворот паспорта — данные подставим автоматически, останется проверить. Данные шифруются.</p>
         <input type="file" accept="image/*,application/pdf"
           onChange={(e) => { setFile(e.target.files?.[0] ?? null); setUploaded(false); setRecog(null); }}
           className="text-sm" />
@@ -325,10 +322,44 @@ function RegistrationForm({ token, checkin, busy, run }: {
         {recog ? <p className={`mt-2 text-xs ${recog.ok ? 'text-emerald-700' : 'text-dark-gray'}`}>{recog.text}</p> : null}
       </div>
 
-      {/* Шаг 2 — данные паспорта (автозаполнены, можно поправить) */}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Input id="p-series" label="Паспорт: серия" value={series} onChange={(e) => setSeries(e.target.value)} />
-        <Input id="p-number" label="Паспорт: номер" value={number} onChange={(e) => setNumber(e.target.value)} />
+      {/* Шаг 2 — данные для регистрации (полный набор МВД) */}
+      <div className="space-y-3 rounded-lg border border-ink/10 p-3">
+        <p className="text-sm font-medium text-ink">Шаг 2. Данные для регистрации</p>
+        {prefilled ? <p className="-mt-1 text-xs text-emerald-700">Подставлены из вашей прошлой регистрации — проверьте актуальность.</p> : null}
+        <label className="block text-xs text-dark-gray">Документ
+          <select value={p.docType ?? 'passport_rf'} onChange={set('docType')} className="mt-1 w-full rounded-md border border-ink/20 bg-white px-3 py-2 text-sm">
+            <option value="passport_rf">Паспорт РФ</option>
+            <option value="foreign_passport">Загранпаспорт РФ</option>
+            <option value="foreign_citizen_passport">Паспорт иностранного гражданина</option>
+            <option value="residence_permit">Вид на жительство / иной документ</option>
+          </select>
+        </label>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Input id="p-last" label="Фамилия" value={p.lastName ?? ''} onChange={set('lastName')} />
+          <Input id="p-first" label="Имя" value={p.firstName ?? ''} onChange={set('firstName')} />
+          <Input id="p-mid" label="Отчество" value={p.middleName ?? ''} onChange={set('middleName')} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Input id="p-bdate" label="Дата рождения" type="date" value={p.birthDate ?? ''} onChange={set('birthDate')} />
+          <label className="block text-xs text-dark-gray">Пол
+            <select value={p.sex ?? ''} onChange={set('sex')} className="mt-1 w-full rounded-md border border-ink/20 bg-white px-3 py-2 text-sm">
+              <option value="">—</option>
+              <option value="M">Мужской</option>
+              <option value="F">Женский</option>
+            </select>
+          </label>
+          <Input id="p-cit" label="Гражданство" value={p.citizenship ?? ''} onChange={set('citizenship')} />
+        </div>
+        <Input id="p-bplace" label="Место рождения" value={p.birthPlace ?? ''} onChange={set('birthPlace')} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input id="p-series" label="Серия" value={p.series ?? ''} onChange={set('series')} />
+          <Input id="p-number" label="Номер" value={p.number ?? ''} onChange={set('number')} />
+        </div>
+        <Input id="p-issuedby" label="Кем выдан" value={p.issuedBy ?? ''} onChange={set('issuedBy')} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input id="p-issued" label="Дата выдачи" type="date" value={p.issuedDate ?? ''} onChange={set('issuedDate')} />
+          <Input id="p-regaddr" label="Адрес регистрации (прописка)" value={p.registrationAddress ?? ''} onChange={set('registrationAddress')} />
+        </div>
       </div>
 
       {/* Шаг 3 — данные заезда */}

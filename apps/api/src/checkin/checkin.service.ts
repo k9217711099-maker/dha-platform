@@ -13,17 +13,34 @@ import { AuditService } from '../warehouse/audit/audit.service.js';
 import type { Env } from '../config/env.schema.js';
 import type { SaveCheckinDto } from './dto/save-checkin.dto.js';
 
+/** Паспортные/регистрационные данные гостя (набор для уведомления о прибытии, МВД). */
+export interface PassportData {
+  docType?: string;
+  lastName?: string;
+  firstName?: string;
+  middleName?: string;
+  birthDate?: string;
+  birthPlace?: string;
+  sex?: string;
+  citizenship?: string;
+  series?: string;
+  number?: string;
+  issuedBy?: string;
+  issuedDate?: string;
+  registrationAddress?: string;
+}
+
 /** Паспорт гостя для админки (расшифровано; доступ логируется, 152-ФЗ). */
 export interface AdminPassportView {
   bookingId: string | null;
-  series: string | null;
-  number: string | null;
+  passport: PassportData | null;
   checkStatus: 'VALID' | 'INVALID' | 'MANUAL' | null;
   checkNote: string | null;
   documents: { id: string; contentType: string; createdAt: Date }[];
 }
 
 export interface CheckinView {
+  passport: PassportData | null;
   id: string;
   bookingId: string;
   status: CheckinStatus;
@@ -82,12 +99,30 @@ export class CheckinService {
       where: { bookingId },
       include: { _count: { select: { documents: true } } },
     });
-    if (existing) return this.toView(existing, existing._count.documents);
+    if (existing) {
+      const view = this.toView(existing, existing._count.documents);
+      // Предзаполнение: если в этой брони паспорта ещё нет — подставляем из прошлой
+      // регистрации гостя (данные уже есть в системе). Гость проверяет и сохраняет.
+      if (!view.passport) view.passport = await this.lastPassportForGuest(guestId, bookingId);
+      return view;
+    }
 
     const created = await this.prisma.checkin.create({
       data: { bookingId, guestId, status: CheckinStatus.DRAFT },
     });
-    return this.toView(created, 0);
+    const view = this.toView(created, 0);
+    view.passport = await this.lastPassportForGuest(guestId, bookingId);
+    return view;
+  }
+
+  /** Паспорт из последней прошлой регистрации гостя (для предзаполнения новой брони). */
+  private async lastPassportForGuest(guestId: string, exceptBookingId: string): Promise<PassportData | null> {
+    const prev = await this.prisma.checkin.findFirst({
+      where: { guestId, passportEncrypted: { not: null }, bookingId: { not: exceptBookingId } },
+      orderBy: { updatedAt: 'desc' },
+      select: { passportEncrypted: true },
+    });
+    return prev ? this.decodePassport(prev.passportEncrypted) : null;
   }
 
   /** Сохранить черновик анкеты. */
@@ -284,22 +319,21 @@ export class CheckinService {
   }
 
   /** Расшифровать паспорт {series, number} из зашифрованного поля (пустой при ошибке). */
-  private decodePassport(enc: string | null): { series: string | null; number: string | null } {
-    if (!enc) return { series: null, number: null };
+  /** Расшифровать полный набор паспортных полей из JSON (null при отсутствии/ошибке). */
+  private decodePassport(enc: string | null): PassportData | null {
+    if (!enc) return null;
     try {
-      const p = JSON.parse(this.crypto.decryptPii(enc)) as { series?: string; number?: string };
-      return { series: p.series ?? null, number: p.number ?? null };
+      return JSON.parse(this.crypto.decryptPii(enc)) as PassportData;
     } catch {
-      return { series: null, number: null };
+      return null;
     }
   }
 
   private toPassportView(
     c: { bookingId: string; passportEncrypted: string | null; passportCheckStatus: 'VALID' | 'INVALID' | 'MANUAL' | null; passportCheckNote: string | null; documents: { id: string; contentType: string; createdAt: Date }[] } | null,
   ): AdminPassportView {
-    if (!c) return { bookingId: null, series: null, number: null, checkStatus: null, checkNote: null, documents: [] };
-    const { series, number } = this.decodePassport(c.passportEncrypted);
-    return { bookingId: c.bookingId, series, number, checkStatus: c.passportCheckStatus, checkNote: c.passportCheckNote, documents: c.documents };
+    if (!c) return { bookingId: null, passport: null, checkStatus: null, checkNote: null, documents: [] };
+    return { bookingId: c.bookingId, passport: this.decodePassport(c.passportEncrypted), checkStatus: c.passportCheckStatus, checkNote: c.passportCheckNote, documents: c.documents };
   }
 
   private static readonly PASSPORT_DOC_SELECT = {
@@ -447,6 +481,7 @@ export class CheckinService {
       adults: c.adults,
       children: c.children,
       hasPassportData: c.passportEncrypted !== null,
+      passport: this.decodePassport(c.passportEncrypted),
       documentsCount,
       consentsSigned: c.consentsSigned,
       houseRulesAccepted: c.houseRulesAccepted,

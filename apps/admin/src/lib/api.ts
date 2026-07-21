@@ -2017,11 +2017,27 @@ export interface StaffSavedMessageItem {
   createdAt: string;
 }
 
+/** Паспортные/регистрационные данные гостя (набор для уведомления о прибытии, МВД). */
+export interface PassportData {
+  docType?: string;
+  lastName?: string;
+  firstName?: string;
+  middleName?: string;
+  birthDate?: string;
+  birthPlace?: string;
+  sex?: string;
+  citizenship?: string;
+  series?: string;
+  number?: string;
+  issuedBy?: string;
+  issuedDate?: string;
+  registrationAddress?: string;
+}
+
 /** Паспорт гостя для админки (расшифровано; доступ логируется). */
 export interface AdminPassport {
   bookingId: string | null;
-  series: string | null;
-  number: string | null;
+  passport: PassportData | null;
   checkStatus: 'VALID' | 'INVALID' | 'MANUAL' | null;
   checkNote: string | null;
   documents: { id: string; contentType: string; createdAt: string }[];

@@ -21,27 +21,54 @@ export class ChildDto {
   age!: number;
 }
 
+/**
+ * Паспортные/регистрационные данные гостя — набор для уведомления о прибытии (МВД).
+ * Все поля опциональны (черновик); хранится JSON'ом в Checkin.passportEncrypted.
+ */
 export class PassportDto {
-  @ApiPropertyOptional()
-  @IsString()
-  @MaxLength(20)
-  series!: string;
+  @ApiPropertyOptional({ description: 'Тип документа: passport_rf | foreign_passport | residence_permit | ...' })
+  @IsOptional() @IsString() @MaxLength(40)
+  docType?: string;
 
-  @ApiPropertyOptional()
-  @IsString()
-  @MaxLength(20)
-  number!: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100)
+  lastName?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(200)
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100)
+  firstName?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100)
+  middleName?: string;
+
+  @ApiPropertyOptional({ description: 'Дата рождения YYYY-MM-DD' })
+  @IsOptional() @IsString() @MaxLength(20)
+  birthDate?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200)
+  birthPlace?: string;
+
+  @ApiPropertyOptional({ description: 'Пол: M | F' })
+  @IsOptional() @IsString() @MaxLength(10)
+  sex?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(100)
+  citizenship?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20)
+  series?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20)
+  number?: string;
+
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(300)
   issuedBy?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @ApiPropertyOptional({ description: 'Дата выдачи YYYY-MM-DD' })
+  @IsOptional() @IsString() @MaxLength(20)
   issuedDate?: string;
+
+  @ApiPropertyOptional({ description: 'Адрес постоянной регистрации (прописка)' })
+  @IsOptional() @IsString() @MaxLength(300)
+  registrationAddress?: string;
 }
 
 /** Сохранение черновика онлайн-регистрации (§8.2). */

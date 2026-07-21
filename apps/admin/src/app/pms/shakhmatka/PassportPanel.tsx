@@ -63,7 +63,27 @@ export function PassportPanel({ bookingId, guestId }: { bookingId?: string; gues
     );
   }
 
-  const hasData = data && (data.series || data.number || data.documents.length > 0);
+  const pp = data?.passport ?? null;
+  const fio = pp ? [pp.lastName, pp.firstName, pp.middleName].filter(Boolean).join(' ') : '';
+  const docLabel: Record<string, string> = {
+    passport_rf: 'Паспорт РФ', foreign_passport: 'Загранпаспорт РФ',
+    foreign_citizen_passport: 'Паспорт иностр. гражданина', residence_permit: 'ВНЖ / иной документ',
+  };
+  const rows: [string, string | undefined][] = pp
+    ? [
+        ['ФИО', fio || undefined],
+        ['Документ', pp.docType ? docLabel[pp.docType] ?? pp.docType : undefined],
+        ['Серия / номер', [pp.series, pp.number].filter(Boolean).join(' ') || undefined],
+        ['Дата рождения', pp.birthDate || undefined],
+        ['Пол', pp.sex === 'M' ? 'Мужской' : pp.sex === 'F' ? 'Женский' : undefined],
+        ['Место рождения', pp.birthPlace || undefined],
+        ['Гражданство', pp.citizenship || undefined],
+        ['Кем выдан', pp.issuedBy || undefined],
+        ['Дата выдачи', pp.issuedDate || undefined],
+        ['Адрес регистрации', pp.registrationAddress || undefined],
+      ]
+    : [];
+  const hasData = data && ((pp && rows.some(([, v]) => v)) || data.documents.length > 0);
   return (
     <div className="rounded-xl border border-ink/10 bg-white p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -79,14 +99,14 @@ export function PassportPanel({ bookingId, guestId }: { bookingId?: string; gues
         <p className="text-sm text-dark-gray">Гость ещё не заполнял паспортные данные.</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>
-              <span className="text-dark-gray">Серия:</span> <span className="text-ink">{data!.series ?? '—'}</span>
-            </div>
-            <div>
-              <span className="text-dark-gray">Номер:</span> <span className="text-ink">{data!.number ?? '—'}</span>
-            </div>
-          </div>
+          <dl className="grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
+            {rows.filter(([, v]) => v).map(([k, v]) => (
+              <div key={k} className="flex gap-1">
+                <dt className="flex-none text-dark-gray">{k}:</dt>
+                <dd className="min-w-0 break-words text-ink">{v}</dd>
+              </div>
+            ))}
+          </dl>
           {data!.documents.length > 0 ? (
             <div className="mt-2">
               <p className="mb-1 text-xs text-dark-gray">Сканы ({data!.documents.length}):</p>

@@ -289,6 +289,23 @@ export type CheckinStatus =
   | 'REJECTED'
   | 'NEEDS_FIX';
 
+/** Паспортные/регистрационные данные (набор для уведомления о прибытии, МВД). */
+export interface PassportData {
+  docType?: string;
+  lastName?: string;
+  firstName?: string;
+  middleName?: string;
+  birthDate?: string;
+  birthPlace?: string;
+  sex?: string;
+  citizenship?: string;
+  series?: string;
+  number?: string;
+  issuedBy?: string;
+  issuedDate?: string;
+  registrationAddress?: string;
+}
+
 export interface CheckinView {
   id: string;
   bookingId: string;
@@ -298,6 +315,7 @@ export interface CheckinView {
   adults: number;
   children: { age: number }[];
   hasPassportData: boolean;
+  passport: PassportData | null;
   documentsCount: number;
   consentsSigned: boolean;
   houseRulesAccepted: boolean;
@@ -311,7 +329,7 @@ export interface SaveCheckinInput {
   departureTime?: string;
   adults?: number;
   children?: { age: number }[];
-  passport?: { series: string; number: string; issuedBy?: string; issuedDate?: string };
+  passport?: PassportData;
   consentsSigned?: boolean;
   houseRulesAccepted?: boolean;
 }
