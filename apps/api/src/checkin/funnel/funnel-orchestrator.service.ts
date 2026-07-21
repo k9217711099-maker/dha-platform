@@ -92,6 +92,40 @@ export class FunnelOrchestratorService {
     return { processed: candidates.length };
   }
 
+  /**
+   * Ручной override брони оператором в критических ситуациях (CHECK-IN-TZ §11): не
+   * подделывает вычисляемый этап, а закрывает «ворота»/форсит исход штатными сервисами
+   * (issue_key/no_show/cancel). Не бросает — возвращает { ok, message } для UI.
+   */
+  async manualOverride(
+    bookingId: string,
+    action: 'issue_key' | 'no_show' | 'cancel',
+    opts: { reason?: string } = {},
+  ): Promise<{ ok: boolean; message: string }> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { id: true, tenantId: true, guestId: true, status: true },
+    });
+    if (!booking) return { ok: false, message: 'Бронь не найдена' };
+    try {
+      if (action === 'issue_key') {
+        await this.keys.issue(booking.guestId, booking.id);
+        await this.processBooking(bookingId); // пересчёт этапа (авто-заезд при autoCheckin)
+        return { ok: true, message: 'Ключ выдан' };
+      }
+      if (action === 'no_show') {
+        await this.pmsBookings.noShow(booking.tenantId, booking.id);
+        return { ok: true, message: 'Бронь отмечена как незаезд' };
+      }
+      await this.pmsBookings.cancel(booking.tenantId, booking.id, {
+        reason: opts.reason || 'Отменено вручную из воронки заселения',
+      });
+      return { ok: true, message: 'Бронь отменена' };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : 'Не удалось выполнить действие' };
+    }
+  }
+
   /** Точечный прогон одной брони (хук событий: approve регистрации, оплата). */
   async processBooking(bookingId: string, now: Date = new Date()): Promise<void> {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId }, include: BOOKING_INCLUDE });

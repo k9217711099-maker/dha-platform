@@ -48,6 +48,21 @@ export function CheckinFunnelPanel({ bookingId, bookingStatus }: { bookingId: st
   const [linkMsg, setLinkMsg] = useState('');
   const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [sending, setSending] = useState(false);
+  const [ovMsg, setOvMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [working, setWorking] = useState(false);
+
+  const reload = () =>
+    adminApi.pmsCheckinPanel(bookingId).then((d) => { setData(d); setErr(false); }).catch(() => setErr(true));
+
+  /** Ручной override брони в критической ситуации (§11) с подтверждением. */
+  const doOverride = (action: 'issue_key' | 'no_show' | 'cancel', confirmText: string) => {
+    if (!confirm(confirmText)) return;
+    setWorking(true); setOvMsg(null);
+    void adminApi.pmsCheckinOverride(bookingId, action)
+      .then((r) => { setOvMsg({ ok: r.ok, text: r.message }); if (r.ok) void reload(); })
+      .catch(() => setOvMsg({ ok: false, text: 'Не удалось выполнить действие' }))
+      .finally(() => setWorking(false));
+  };
 
   /** Выпустить magic-link гостевого портала и скопировать в буфер (CHECK-IN-TZ §4). */
   const copyLink = () => {
@@ -151,6 +166,32 @@ export function CheckinFunnelPanel({ bookingId, bookingStatus }: { bookingId: st
         {linkMsg ? <p className="mt-1 break-all text-[11px] text-indigo-600">{linkMsg}</p> : null}
         {inviteMsg ? <p className={`mt-1 break-words text-[11px] ${inviteMsg.ok ? 'text-emerald-600' : 'text-rose-600'}`}>{inviteMsg.text}</p> : null}
       </div>
+
+      {/* Критические действия (ручной override, §11) — только пока бронь подтверждена */}
+      {bookingStatus === 'CONFIRMED' ? (
+        <div className="mt-2 border-t border-ink/10 pt-2">
+          <p className="mb-1 text-xs uppercase tracking-wide text-dark-gray">Критические действия</p>
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" disabled={working}
+              onClick={() => doOverride('issue_key', 'Выдать цифровой ключ сейчас, минуя обычные проверки воронки?')}
+              className="rounded-md border border-emerald-300 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">
+              🔑 Выдать ключ сейчас
+            </button>
+            <button type="button" disabled={working}
+              onClick={() => doOverride('no_show', 'Отметить бронь как НЕЗАЕЗД? Статус на шахматке изменится.')}
+              className="rounded-md border border-amber-300 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+              🚫 Незаезд
+            </button>
+            <button type="button" disabled={working}
+              onClick={() => doOverride('cancel', 'ОТМЕНИТЬ бронь? Статус на шахматке изменится на «Отменена».')}
+              className="rounded-md border border-rose-300 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+              ✖ Отменить бронь
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-dark-gray">Действия закрывают «ворота»/меняют статус штатно, а не подделывают этап.</p>
+          {ovMsg ? <p className={`mt-1 text-[11px] ${ovMsg.ok ? 'text-emerald-600' : 'text-rose-600'}`}>{ovMsg.text}</p> : null}
+        </div>
+      ) : null}
 
       {/* Журнал ключей */}
       {data.keys.length > 0 ? (

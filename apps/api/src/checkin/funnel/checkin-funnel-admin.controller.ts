@@ -71,6 +71,24 @@ export class CheckinFunnelAdminController {
     return this.orchestrator.sendInviteNow(bookingId, mapped);
   }
 
+  /**
+   * Ручной override брони в критической ситуации (§11): выдать ключ сейчас / отметить
+   * незаезд / отменить. Не подделывает вычисляемый этап — закрывает «ворота» штатно.
+   * Тело: { action: 'issue_key'|'no_show'|'cancel', reason? }.
+   */
+  @Post(':bookingId/override')
+  @RequirePermission('pms_bookings')
+  override(
+    @Param('bookingId') bookingId: string,
+    @Body('action') action: 'issue_key' | 'no_show' | 'cancel',
+    @Body('reason') reason?: string,
+  ) {
+    if (!['issue_key', 'no_show', 'cancel'].includes(action)) {
+      return { ok: false, message: 'Неизвестное действие' };
+    }
+    return this.orchestrator.manualOverride(bookingId, action, { reason });
+  }
+
   /** Ручной тик оркестратора (отладка/операционка); штатно — cron каждые 5 мин. */
   @Post('tick')
   @RequirePermission('checkin_funnel_manage')

@@ -46,8 +46,11 @@ export class FunnelConfigController {
       { key: 'max', label: 'MAX' },
     ].map((c) => ({ ...c, active: active[c.key] ?? true }));
     // Каналы, подключённые в Umnico (WhatsApp/Telegram/VK/Avito): ключ umnico:<id>.
+    // Раз интеграция вернулась из listChannels — она подключена и пригодна для «написать
+    // первым», поэтому active: true (не завязываемся на строку status, значения которой у
+    // Umnico разнятся — иначе рабочий канал ошибочно прячется фильтром «только подключённые»).
     for (const ch of await this.umnico.listChannels()) {
-      channels.push({ key: `umnico:${ch.id}`, label: `Umnico · ${ch.label}`, active: ch.status === 'active' });
+      channels.push({ key: `umnico:${ch.id}`, label: `Umnico · ${ch.label}`, active: true });
     }
     return {
       conditions: FUNNEL_CONDITIONS,
