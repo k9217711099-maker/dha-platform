@@ -1,7 +1,7 @@
 'use client';
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { adminApi, fileUrl, type BookingAuditEntry, type BookingTag, type Extra, type GuestConversation, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory, type UmnicoReachChannel } from '../../../lib/api';
+import { adminApi, fileUrl, type BookingAuditEntry, type BookingKeyView, type BookingTag, type Extra, type GuestConversation, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory, type UmnicoReachChannel } from '../../../lib/api';
 import { STATUS as OPS_STATUS } from '../../ops/shared';
 import { CheckinFunnelPanel } from './CheckinFunnelPanel';
 import { FinanceTab } from './FinanceTab';
@@ -17,10 +17,11 @@ import { DatePicker } from '../../../components/DatePicker';
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('ru-RU');
 const fmtDow = (iso: string) => ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][new Date(`${iso.slice(0, 10)}T00:00:00Z`).getUTCDay()];
 
-type Tab = 'main' | 'invoice' | 'journal';
+type Tab = 'main' | 'invoice' | 'lock' | 'journal';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'main', label: 'Основное' },
   { id: 'invoice', label: 'Счёт' },
+  { id: 'lock', label: 'Пульт от замка' },
   { id: 'journal', label: 'Журнал' },
 ];
 
@@ -85,6 +86,7 @@ export function BookingWindow({ booking, rooms, onClose, onChanged }: {
         <div className="px-6 py-5">
           {tab === 'main' ? <MainTab b={b} rooms={rooms} busy={busy} act={act} can={can} reloadAll={reloadAll} /> : null}
           {tab === 'invoice' ? <FinanceTab b={b} onChanged={reloadAll} /> : null}
+          {tab === 'lock' ? <LockTab b={b} can={can} /> : null}
           {tab === 'journal' ? <JournalTab bookingId={b.id} /> : null}
         </div>
       </div>
@@ -113,6 +115,84 @@ function StatusControls({ b, busy, act, canReopen }: { b: PmsBooking; busy: bool
 }
 
 /** Вкладка «Основное»: примечание, заказчик (связь/редактирование), бронирование (правки), услуги, финансы; задачи справа. */
+/**
+ * Вкладка «Пульт от замка» (#2): окно доступа (преднастроено по датам/часам заезда-выезда),
+ * PIN-коды дверей, выдать/отозвать ключ. Коды видны только пока ключ активен.
+ */
+function LockTab({ b, can }: { b: PmsBooking; can: (p: string) => boolean }) {
+  const [view, setView] = useState<BookingKeyView | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const canManage = can('guests');
+  const load = () => {
+    void adminApi.bookingKey(b.id).then(setView).catch(() => setNote('Не удалось загрузить состояние ключа'));
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [b.id]);
+  const issue = async () => {
+    setBusy(true); setNote(null);
+    try { setView(await adminApi.issueKey(b.id)); setNote('Ключ выдан.'); }
+    catch (e) { setNote(e instanceof Error ? e.message : 'Не удалось выдать ключ'); }
+    finally { setBusy(false); }
+  };
+  const revoke = async () => {
+    setBusy(true); setNote(null);
+    try { await adminApi.revokeKey(b.id); load(); setNote('Ключ отозван.'); }
+    catch (e) { setNote(e instanceof Error ? e.message : 'Ошибка'); }
+    finally { setBusy(false); }
+  };
+  const dt = (iso: string | null) => iso ? new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  const statusRu = (s: string) => s === 'ACTIVE' ? 'активен' : s === 'NOT_ISSUED' ? 'не выдан' : s === 'REVOKED' ? 'отозван' : s === 'EXPIRED' ? 'истёк' : s.toLowerCase();
+  const hasActive = view?.doors.some((d) => d.status === 'ACTIVE') ?? false;
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-ink/10 p-4">
+        <p className="mb-2 text-xs uppercase tracking-wide text-dark-gray">Окно доступа (преднастроено по заезду/выезду)</p>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div><span className="block text-xs text-dark-gray">Заезд</span><span className="text-ink">{fmtDate(b.checkIn)}</span></div>
+          <div><span className="block text-xs text-dark-gray">Выезд</span><span className="text-ink">{fmtDate(b.checkOut)}</span></div>
+          <div><span className="block text-xs text-dark-gray">Ключ действует с</span><span className="text-ink">{dt(view?.validFrom ?? null)}</span></div>
+          <div><span className="block text-xs text-dark-gray">по</span><span className="text-ink">{dt(view?.validUntil ?? null)}</span></div>
+        </div>
+      </div>
+
+      {note ? <p className="text-sm text-primary">{note}</p> : null}
+
+      <div className="rounded-xl border border-ink/10 p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs uppercase tracking-wide text-dark-gray">Двери и коды</p>
+          {canManage ? (
+            <div className="flex gap-2">
+              <button type="button" onClick={() => void issue()} disabled={busy} className="rounded-md bg-ink px-3 py-1.5 text-xs text-beige disabled:opacity-40">{busy ? '…' : 'Выдать ключ'}</button>
+              {hasActive ? <button type="button" onClick={() => void revoke()} disabled={busy} className="rounded-md border border-ink/20 px-3 py-1.5 text-xs disabled:opacity-40">Отозвать</button> : null}
+            </div>
+          ) : null}
+        </div>
+        {view === null ? (
+          <p className="text-sm text-dark-gray">Загрузка…</p>
+        ) : view.doors.length === 0 ? (
+          <div>
+            <p className="text-sm text-dark-gray">Ключей пока нет.</p>
+            {view.reasons.length ? <ul className="mt-1 list-disc pl-4 text-xs text-dark-gray">{view.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul> : null}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {view.doors.map((d, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg border border-ink/10 px-3 py-2 text-sm">
+                <div>
+                  <p className="text-ink">{d.doorName}</p>
+                  <p className="text-xs text-dark-gray">{statusRu(d.status)}{d.canRemoteOpen ? ' · удалённое открытие' : ''}</p>
+                </div>
+                {d.pin ? <span className="rounded-md bg-ink/5 px-3 py-1 font-mono text-base tracking-widest text-ink">{d.pin}</span> : <span className="text-xs text-dark-gray">PIN скрыт</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <p className="text-[11px] text-dark-gray">Коды показываются, пока ключ активен и действует сейчас. После выезда доступ удаляется автоматически.</p>
+    </div>
+  );
+}
+
 function MainTab({ b, rooms, busy, act, can, reloadAll }: { b: PmsBooking; rooms: PmsRoom[]; busy: boolean; act: (fn: () => Promise<PmsBooking>) => void; can: (p: string) => boolean; reloadAll: () => void }) {
   const [note, setNote] = useState(b.comment ?? '');
   useEffect(() => setNote(b.comment ?? ''), [b.comment]);

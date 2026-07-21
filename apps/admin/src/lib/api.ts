@@ -316,6 +316,22 @@ export interface GuestListRow {
   createdAt: string;
   bookingsCount: number;
 }
+/** Состояние цифрового ключа брони — «пульт от замка» в карточке (#2). */
+export interface BookingKeyDoor {
+  doorName: string;
+  status: string;
+  pin: string | null;
+  ttlockLockId: string;
+  canRemoteOpen: boolean;
+}
+export interface BookingKeyView {
+  eligible: boolean;
+  reasons: string[];
+  validFrom: string | null;
+  validUntil: string | null;
+  doors: BookingKeyDoor[];
+}
+
 /** Диалог гостя (история переписки в карточке гостя, #8). */
 export interface GuestConversation {
   id: string;
@@ -2530,10 +2546,11 @@ export const adminApi = {
     request(`/admin/loyalty/${guestId}/deduct`, { method: 'POST', body: { amount, comment } }),
   adjustTier: (guestId: string, tier: string) =>
     request(`/admin/loyalty/${guestId}/tier`, { method: 'PUT', body: { tier } }),
+  bookingKey: (bookingId: string) => request<BookingKeyView>(`/admin/bookings/${bookingId}/key`),
   issueKey: (bookingId: string) =>
-    request(`/admin/bookings/${bookingId}/key/issue`, { method: 'POST' }),
+    request<BookingKeyView>(`/admin/bookings/${bookingId}/key/issue`, { method: 'POST' }),
   revokeKey: (bookingId: string) =>
-    request(`/admin/bookings/${bookingId}/key/revoke`, { method: 'POST' }),
+    request<{ ok: true }>(`/admin/bookings/${bookingId}/key/revoke`, { method: 'POST' }),
 
   // Замки
   catalogProperties: () => request<PropertyTree[]>('/catalog/properties'),

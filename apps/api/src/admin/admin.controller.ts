@@ -135,6 +135,13 @@ export class AdminController {
   }
 
   // --- Цифровые ключи ---
+  @Get('bookings/:bookingId/key')
+  @RequirePermission('guests')
+  @ApiOperation({ summary: 'Состояние цифрового ключа брони (пульт от замка, #2)' })
+  bookingKey(@Param('bookingId') bookingId: string) {
+    return this.keys.adminGet(bookingId);
+  }
+
   @Post('bookings/:bookingId/key/issue')
   @RequirePermission('guests')
   @ApiOperation({ summary: 'Выдать цифровой ключ' })

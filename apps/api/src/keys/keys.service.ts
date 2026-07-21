@@ -175,6 +175,13 @@ export class KeysService {
     return this.issue(booking.guestId, bookingId);
   }
 
+  /** Админ: текущее состояние ключей брони (для «пульта от замка» в карточке, #2). */
+  async adminGet(bookingId: string): Promise<KeysView> {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) throw new NotFoundException('Бронирование не найдено');
+    return this.getForBooking(booking.guestId, bookingId);
+  }
+
   /** Отозвать все активные ключи брони (удаляем коды, §9.4). */
   async revoke(bookingId: string, actor = 'system'): Promise<void> {
     const keys = await this.prisma.digitalKey.findMany({
