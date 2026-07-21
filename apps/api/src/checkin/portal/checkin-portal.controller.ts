@@ -145,7 +145,8 @@ export class CheckinPortalController {
     const { booking, tenantId } = await this.resolve(token);
     const info = await this.bookings.paymentInfo(tenantId, booking.id);
     if (!info.remaining || info.remaining <= 0) return { error: 'Оплата не требуется' };
-    return this.payments.createForBookingByAdmin(booking.id, { amount: info.remaining });
+    // Возврат после оплаты — обратно в портал гостя (magic-link), а не на дефолтный адрес.
+    return this.payments.createForBookingByAdmin(booking.id, { amount: info.remaining, returnUrl: this.links.url(token) });
   }
 
   /** Состояние ключей (двери, PIN в окне действия, причины отказа). */

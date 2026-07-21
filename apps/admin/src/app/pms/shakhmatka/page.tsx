@@ -137,6 +137,12 @@ export default function ShakhmatkaPage() {
     void adminApi.pmsBlocks(filter).then(setBlocks).catch(() => undefined);
   }, [ready, propertyId, start, rangeEnd]);
   useEffect(() => { load(); }, [load]);
+  // Открыть бронь по ссылке ?booking=<id> (переход из карточки гостя / «Заездов»).
+  useEffect(() => {
+    if (!ready) return;
+    const bid = new URLSearchParams(window.location.search).get('booking');
+    if (bid) void adminApi.pmsBooking(bid).then(setFullBooking).catch(() => undefined);
+  }, [ready]);
 
   // Режим доски: брони / уборка (§7-A).
   const [boardMode, setBoardMode] = useState<'bookings' | 'housekeeping'>('bookings');

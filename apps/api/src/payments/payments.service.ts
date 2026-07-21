@@ -138,7 +138,7 @@ export class PaymentsService {
    * на оплату/предоплату. В отличие от гостевого метода не требует guestId и позволяет
    * указать сумму (предоплата) — иначе берётся полный остаток. Возвращает ссылку оплаты.
    */
-  async createForBookingByAdmin(bookingId: string, opts?: { amount?: number }): Promise<CreatePaymentResult> {
+  async createForBookingByAdmin(bookingId: string, opts?: { amount?: number; returnUrl?: string }): Promise<CreatePaymentResult> {
     const booking = await this.prisma.booking.findFirst({
       where: { id: bookingId },
       include: { property: true, guest: true },
@@ -161,7 +161,9 @@ export class PaymentsService {
       description,
       capture: true,
       bookingId: booking.id,
-      returnUrl: this.config.get('PAYMENT_RETURN_URL', { infer: true }),
+      // Возврат после оплаты: переданный адрес (напр. портал гостя по magic-link) в приоритете,
+      // иначе — глобальный PAYMENT_RETURN_URL (для админ-инициированных оплат).
+      returnUrl: opts?.returnUrl || this.config.get('PAYMENT_RETURN_URL', { infer: true }),
       receipt: buildReceipt({ description, amountRub: amount, email: booking.guest.email, phone: booking.guest.phone }),
       idempotenceKey: randomUUID(),
       allowedMethods: await this.allowedMethods(),

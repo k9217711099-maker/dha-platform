@@ -142,6 +142,8 @@ function QueueTab({ can }: { can: (p: string) => boolean }) {
                         await navigator.clipboard.writeText(url).catch(() => undefined);
                       }, 'Ссылка скопирована')}
                       className="rounded-md border border-ink/20 px-2.5 py-1 text-xs text-ink hover:bg-ink/5 disabled:opacity-40">🔗</button>
+                    <a href={`/pms/shakhmatka?booking=${it.bookingId}`} title="Открыть бронь в шахматке"
+                      className="rounded-md border border-ink/20 px-2.5 py-1 text-xs text-ink hover:bg-ink/5">Открыть бронь →</a>
                   </span>
                 </div>
                 {openId === it.bookingId ? (

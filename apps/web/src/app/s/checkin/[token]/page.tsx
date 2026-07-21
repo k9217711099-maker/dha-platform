@@ -62,6 +62,7 @@ export default function GuestCheckinPortal() {
   const [dead, setDead] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [lockOpened, setLockOpened] = useState(false);
 
   const reload = useCallback(() => {
     portal<PortalContext>(token)
@@ -86,6 +87,15 @@ export default function GuestCheckinPortal() {
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError(null);
     try { await fn(); reload(); } catch (e) { setError(e instanceof Error ? e.message : 'Ошибка'); } finally { setBusy(false); }
+  };
+
+  /** Открыть замок дистанционно + показать подтверждающий попап. */
+  const openLock = (lockId: string) => {
+    setBusy(true); setError(null);
+    portal(token, '/key/open', { method: 'POST', body: JSON.stringify({ lockId }) })
+      .then(() => { setLockOpened(true); reload(); })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Не удалось открыть замок'))
+      .finally(() => setBusy(false));
   };
 
   const b = ctx.booking;
@@ -152,10 +162,14 @@ export default function GuestCheckinPortal() {
                   {d.pin ? <p className="font-mono text-xl tracking-widest text-ink">{d.pin}</p> : <p className="text-xs text-dark-gray">PIN появится в окне действия</p>}
                 </div>
                 {d.canRemoteOpen ? (
-                  <Button variant="secondary" disabled={busy}
-                    onClick={() => void run(() => portal(token, '/key/open', { method: 'POST', body: JSON.stringify({ lockId: d.ttlockLockId }) }))}>
+                  <button type="button" disabled={busy} onClick={() => openLock(d.ttlockLockId)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50">
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2" />
+                      <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                    </svg>
                     Открыть
-                  </Button>
+                  </button>
                 ) : null}
               </div>
             ))}
@@ -193,6 +207,26 @@ export default function GuestCheckinPortal() {
       <p className="pb-6 text-center text-xs text-dark-gray">
         D Hotels & Apartments · бронируйте напрямую и получайте баллы D
       </p>
+
+      {/* Попап подтверждения открытия замка */}
+      {lockOpened ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6" onClick={() => setLockOpened(false)}>
+          <div className="w-full max-w-xs rounded-2xl bg-white p-6 text-center shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+              <svg viewBox="0 0 24 24" className="h-8 w-8 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                <path d="M9 16.5l2 2 4-4" />
+              </svg>
+            </div>
+            <p className="text-lg font-medium text-ink">Замок открыт</p>
+            <p className="mt-1 text-sm text-dark-gray">Дверь разблокирована. Приятного отдыха!</p>
+            <button type="button" onClick={() => setLockOpened(false)} className="mt-4 rounded-lg bg-ink px-4 py-2 text-sm text-white">
+              Готово
+            </button>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

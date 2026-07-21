@@ -47,7 +47,7 @@ export function PassportPanel({ bookingId, guestId }: { bookingId?: string; gues
 
   if (!opened) {
     return (
-      <div className="rounded-xl border border-ink/10 p-4">
+      <div className="rounded-xl border border-ink/10 bg-white p-4">
         <p className="text-xs uppercase tracking-wide text-dark-gray">Паспорт гостя</p>
         <p className="mt-1 text-xs text-dark-gray">Данные и сканы. Просмотр логируется (152-ФЗ).</p>
         <button
@@ -65,7 +65,7 @@ export function PassportPanel({ bookingId, guestId }: { bookingId?: string; gues
 
   const hasData = data && (data.series || data.number || data.documents.length > 0);
   return (
-    <div className="rounded-xl border border-ink/10 p-4">
+    <div className="rounded-xl border border-ink/10 bg-white p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-xs uppercase tracking-wide text-dark-gray">Паспорт гостя</p>
         {data?.checkStatus ? (
@@ -119,7 +119,7 @@ export function PassportPanel({ bookingId, guestId }: { bookingId?: string; gues
       {err ? <p className="mt-2 text-xs text-rose-600">{err}</p> : null}
 
       {scan ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setScan(null)}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4" onClick={() => setScan(null)}>
           <div className="max-h-[92vh] max-w-3xl overflow-auto" onClick={(e) => e.stopPropagation()}>
             {scan.startsWith('data:application/pdf') ? (
               <iframe title="Скан паспорта" src={scan} className="h-[85vh] w-[80vw] bg-white" />

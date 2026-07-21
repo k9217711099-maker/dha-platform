@@ -193,8 +193,10 @@ function GuestDetailCard({ data, amount, setAmount, comment, setComment, op, onC
                 <p className="text-xs text-dark-gray">{new Date(b.checkIn).toLocaleDateString('ru')} — {new Date(b.checkOut).toLocaleDateString('ru')} · {b.status} · {b.paymentStatus}</p>
               </div>
               <div className="flex shrink-0 gap-2">
-                <Button onClick={() => void op(() => adminApi.issueKey(b.id))}>Выдать ключ</Button>
-                <Button variant="secondary" onClick={() => void op(() => adminApi.revokeKey(b.id))}>Отозвать</Button>
+                <a href={`/pms/shakhmatka?booking=${b.id}`}
+                  className="rounded-md border border-ink/20 px-3 py-1.5 text-sm text-ink hover:bg-ink/5">
+                  Открыть бронь →
+                </a>
               </div>
             </div>
           ))}
