@@ -384,6 +384,15 @@ function StageCard({ stage, dict, groups, busy, first, last, onMove, onPatch, on
                 })}
               </div>
               <p className="mt-1.5 text-[11px] text-dark-gray">Показаны только подключённые каналы. Каналы Umnico (WhatsApp/Telegram) пишут гостю <b>первым по номеру телефона</b>; если гостя нет в канале — в воронке появится пометка-задача, а анкету держите на SMS/Email. «Написать первым» идёт через личный аккаунт и может привести к блокировке номера (правила мессенджеров).</p>
+              {dict.umnico && dict.umnico.count === 0 ? (
+                <p className="mt-1 text-[11px] text-amber-600">
+                  {dict.umnico.tokenSet
+                    ? 'Каналы Umnico не найдены: токен задан, но интеграция вернула 0 каналов. Проверьте активные каналы и права токена (AI → Интеграции → Umnico → «Проверить подключение»).'
+                    : 'Каналы Umnico недоступны: не задан API-токен. Подключите в AI → Интеграции → Umnico.'}
+                </p>
+              ) : dict.umnico ? (
+                <p className="mt-1 text-[11px] text-emerald-600">Umnico подключён: каналов — {dict.umnico.count}.</p>
+              ) : null}
             </div>
           </section>
 

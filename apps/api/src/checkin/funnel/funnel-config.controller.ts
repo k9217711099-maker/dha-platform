@@ -49,12 +49,17 @@ export class FunnelConfigController {
     // Раз интеграция вернулась из listChannels — она подключена и пригодна для «написать
     // первым», поэтому active: true (не завязываемся на строку status, значения которой у
     // Umnico разнятся — иначе рабочий канал ошибочно прячется фильтром «только подключённые»).
-    for (const ch of await this.umnico.listChannels()) {
+    const umnicoList = await this.umnico.listChannels();
+    for (const ch of umnicoList) {
       channels.push({ key: `umnico:${ch.id}`, label: `Umnico · ${ch.label}`, active: true });
     }
     return {
       conditions: FUNNEL_CONDITIONS,
       channels,
+      // Диагностика Umnico для конструктора: задан ли токен и сколько каналов вернула
+      // интеграция /v1.3/integrations. Пусто при заданном токене → интеграции не активны/
+      // токен без прав; не задан → подключить в AI → Интеграции → Umnico.
+      umnico: { tokenSet: await this.umnico.hasToken(), count: umnicoList.length },
       stageKeys: FUNNEL_STAGE_KEYS,
       protectedStageKeys: FUNNEL_PROTECTED_STAGE_KEYS,
       // Сценарии для выбора шаблона этапа + предпросмотр дефолтного текста (§5.2).
