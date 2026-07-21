@@ -9,12 +9,110 @@ type Row = { kind: 'HEADER' | 'ITEM' | 'SUBITEM'; text: string; thirdOption: str
 
 const emptyRow = (kind: Row['kind'] = 'ITEM'): Row => ({ kind, text: '', thirdOption: '', requirePhoto: false, excludeFromScore: false });
 
+const R = (kind: Row['kind'], text: string, opts: Partial<Row> = {}): Row => ({ ...emptyRow(kind), text, ...opts });
+
+/** Готовые шаблоны чек-листов (библиотека, #13) — добавляются в один клик и потом правятся. */
+const PRESETS: { name: string; desc: string; rows: Row[] }[] = [
+  {
+    name: 'Уборка номера после выезда',
+    desc: 'Санузел, комната, финальная проверка',
+    rows: [
+      R('HEADER', 'Санузел'),
+      R('ITEM', 'Унитаз вымыт и продезинфицирован', { requirePhoto: true }),
+      R('ITEM', 'Раковина и смеситель без налёта'),
+      R('ITEM', 'Душ/ванна вымыты'),
+      R('ITEM', 'Зеркало без разводов'),
+      R('ITEM', 'Полотенца заменены'),
+      R('ITEM', 'Расходники пополнены (мыло, бумага, шампунь)'),
+      R('HEADER', 'Комната'),
+      R('ITEM', 'Постельное бельё заменено', { requirePhoto: true }),
+      R('ITEM', 'Пол вымыт / пропылесосен'),
+      R('ITEM', 'Пыль вытерта (поверхности, техника)'),
+      R('ITEM', 'Мусор вынесен, корзины чистые'),
+      R('ITEM', 'Окна и подоконники чистые'),
+      R('ITEM', 'Мини-бар проверен и пополнен'),
+      R('HEADER', 'Проверка'),
+      R('ITEM', 'Техника работает (ТВ, кондиционер, свет)'),
+      R('ITEM', 'Номер проветрен, запах свежий'),
+      R('ITEM', 'Забытые вещи гостя проверены'),
+    ],
+  },
+  {
+    name: 'Текущая уборка (в проживании)',
+    desc: 'Быстрое обслуживание занятого номера',
+    rows: [
+      R('ITEM', 'Заправить кровать'),
+      R('ITEM', 'Освежить санузел'),
+      R('ITEM', 'Заменить полотенца по запросу'),
+      R('ITEM', 'Вынести мусор'),
+      R('ITEM', 'Пополнить расходники'),
+      R('ITEM', 'Проветрить номер'),
+    ],
+  },
+  {
+    name: 'Приёмка номера после ремонта',
+    desc: 'Отделка, сантехника, электрика',
+    rows: [
+      R('HEADER', 'Отделка'),
+      R('ITEM', 'Стены/потолок без дефектов', { requirePhoto: true }),
+      R('ITEM', 'Пол и плинтусы ровные, без сколов'),
+      R('ITEM', 'Двери открываются/закрываются, замок работает'),
+      R('HEADER', 'Сантехника'),
+      R('ITEM', 'Нет протечек', { requirePhoto: true }),
+      R('ITEM', 'Напор воды в норме'),
+      R('ITEM', 'Слив работает'),
+      R('HEADER', 'Электрика'),
+      R('ITEM', 'Все розетки работают'),
+      R('ITEM', 'Освещение исправно'),
+      R('ITEM', 'Выключатели работают'),
+    ],
+  },
+  {
+    name: 'Проверка перед заездом гостя',
+    desc: 'Финальная готовность номера',
+    rows: [
+      R('ITEM', 'Номер убран и готов', { requirePhoto: true }),
+      R('ITEM', 'Ключ / замок настроен'),
+      R('ITEM', 'Температура комфортная'),
+      R('ITEM', 'Приветственный набор на месте'),
+      R('ITEM', 'Wi-Fi работает'),
+      R('ITEM', 'Нет следов предыдущего гостя'),
+    ],
+  },
+  {
+    name: 'Общественные зоны (ежедневно)',
+    desc: 'Холл, коридоры, общие санузлы',
+    rows: [
+      R('ITEM', 'Холл и ресепшн убраны'),
+      R('ITEM', 'Лифты чистые'),
+      R('ITEM', 'Коридоры и лестницы вымыты'),
+      R('ITEM', 'Санузлы общего пользования'),
+      R('ITEM', 'Урны опустошены'),
+      R('ITEM', 'Входная зона и стекло'),
+    ],
+  },
+];
+
 /** Конструктор чек-листов (§5.1): заголовки → пункты → подпункты, доп. вариант, фото. */
 export default function ChecklistsPage() {
   const ready = useRequireAdmin();
   const [lists, setLists] = useState<OpsChecklist[]>([]);
   const [editing, setEditing] = useState<{ id?: string; name: string; rows: Row[] } | null>(null);
   const [error, setError] = useState('');
+  const [showLibrary, setShowLibrary] = useState(false);
+
+  // Открыть редактор как НОВЫЙ чек-лист с готовыми строками (дублирование / шаблон из библиотеки, #13).
+  const openDraft = (name: string, rows: Row[]) => {
+    setShowLibrary(false);
+    setEditing({ name, rows: rows.length ? rows.map((r) => ({ ...r })) : [emptyRow()] });
+  };
+  const duplicate = (cl: OpsChecklist) => {
+    const items = [...(cl.items as unknown as (OpsSnapshotItem & { order: number })[])].sort((a, b) => a.order - b.order);
+    openDraft(
+      `${cl.name} (копия)`,
+      items.map((i) => ({ kind: i.kind, text: i.text, thirdOption: i.thirdOption ?? '', requirePhoto: i.requirePhoto, excludeFromScore: i.excludeFromScore })),
+    );
+  };
 
   const load = () => adminApi.opsChecklists().then(setLists).catch(() => undefined);
   useEffect(() => { if (ready) void load(); }, [ready]);
@@ -63,9 +161,35 @@ export default function ChecklistsPage() {
     <main className="px-8 py-8">
       <div className="mb-1 flex items-center justify-between">
         <h1 className="text-3xl font-light text-ink">Операции · Чек-листы</h1>
-        <Button onClick={() => startEdit()}>Создать чек-лист</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => setShowLibrary(true)}>📚 Библиотека шаблонов</Button>
+          <Button onClick={() => startEdit()}>Создать чек-лист</Button>
+        </div>
       </div>
       <p className="mb-6 text-sm text-dark-gray">Прикрепляются к задачам и типам уборок; задача не закроется, пока чек-лист не завершён (§5).</p>
+
+      {showLibrary ? (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4" onClick={() => setShowLibrary(false)}>
+          <div className="my-4 w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-1 flex items-center justify-between">
+              <h2 className="text-lg text-ink">Библиотека шаблонов</h2>
+              <button type="button" onClick={() => setShowLibrary(false)} className="text-2xl leading-none text-slate-400 hover:text-ink">×</button>
+            </div>
+            <p className="mb-3 text-sm text-dark-gray">Готовые чек-листы — добавьте в один клик, дальше можно отредактировать под себя.</p>
+            <div className="space-y-2">
+              {PRESETS.map((p) => (
+                <div key={p.name} className="flex items-center justify-between gap-3 rounded-xl border border-ink/10 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-ink">{p.name}</p>
+                    <p className="text-xs text-dark-gray">{p.desc} · {p.rows.filter((r) => r.kind !== 'HEADER').length} пунктов</p>
+                  </div>
+                  <Button variant="secondary" onClick={() => openDraft(p.name, p.rows)}>Использовать</Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {lists.map((cl) => (
@@ -74,6 +198,7 @@ export default function ChecklistsPage() {
               <p className="font-medium text-ink">{cl.name}</p>
               <div className="flex gap-2 text-sm">
                 <button type="button" className="text-primary-700 hover:underline" onClick={() => startEdit(cl)}>Изменить</button>
+                <button type="button" className="text-slate-500 hover:underline" onClick={() => duplicate(cl)}>Дублировать</button>
                 <button type="button" className="text-rose-500 hover:underline" onClick={() => { if (confirm('Архивировать чек-лист?')) void adminApi.opsArchiveChecklist(cl.id).then(load); }}>В архив</button>
               </div>
             </div>
