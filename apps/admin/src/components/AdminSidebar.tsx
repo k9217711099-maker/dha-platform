@@ -141,6 +141,7 @@ const SECTIONS: Section[] = [
     title: 'Команда', dot: 'bg-fuchsia-400',
     items: [
       { href: '/bonuses', perm: 'bonus_view', label: 'Бонусы', icon: 'award' },
+      { href: '/suggestions', perm: null, label: 'Идеи и пожелания', icon: 'sparkle' },
     ],
   },
   {

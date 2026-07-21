@@ -43,6 +43,7 @@ import { AclModule } from './acl/acl.module.js';
 import { SecretsModule } from './secrets/secrets.module.js';
 import { OpsModule } from './ops/ops.module.js';
 import { BonusModule } from './bonus/bonus.module.js';
+import { SuggestionsModule } from './suggestions/suggestions.module.js';
 import { HealthModule } from './health/health.module.js';
 
 @Module({
@@ -100,6 +101,7 @@ import { HealthModule } from './health/health.module.js';
     SecretsModule,
     OpsModule,
     BonusModule,
+    SuggestionsModule,
     HealthModule,
   ],
   providers: [

@@ -332,6 +332,18 @@ export interface BookingKeyView {
   doors: BookingKeyDoor[];
 }
 
+/** Идея/пожелание по доработке системы (#1). */
+export interface Suggestion {
+  id: string;
+  section: string;
+  text: string;
+  screenshots: string[];
+  status: 'NEW' | 'PLANNED' | 'IN_PROGRESS' | 'DONE' | 'REJECTED';
+  authorId: string;
+  authorName: string;
+  createdAt: string;
+}
+
 /** Диалог гостя (история переписки в карточке гостя, #8). */
 export interface GuestConversation {
   id: string;
@@ -940,6 +952,8 @@ export interface FunnelDictionary {
   stageKeys: { key: string; label: string }[];
   protectedStageKeys: string[];
   templates: { key: string; label: string; preview: { title: string; body: string } }[];
+  /** Диагностика Umnico: задан ли токен и сколько каналов вернула интеграция. */
+  umnico?: { tokenSet: boolean; count: number };
 }
 
 /** Очередь заезда (CHECK-IN-TZ §11). */
@@ -2985,6 +2999,27 @@ export const adminApi = {
     }),
 
   // Бонусная программа сотрудников (§7)
+  // Идеи и пожелания по доработке системы (#1)
+  suggestionsList: () => request<Suggestion[]>('/v1/suggestions'),
+  createSuggestion: async (body: { section: string; text: string }, files: File[]): Promise<{ id: string }> => {
+    const token = adminToken.get();
+    const fd = new FormData();
+    fd.append('section', body.section);
+    fd.append('text', body.text);
+    for (const f of files) fd.append('files', f);
+    const res = await fetch(`${API_BASE}/v1/suggestions`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd,
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) throw new ApiError(res.status, (data.message as string) ?? `Ошибка ${res.status}`);
+    return data as { id: string };
+  },
+  setSuggestionStatus: (id: string, status: Suggestion['status']) =>
+    request<{ ok: true }>(`/v1/suggestions/${id}/status`, { method: 'PATCH', body: { status } }),
+  deleteSuggestion: (id: string) => request<{ ok: true }>(`/v1/suggestions/${id}`, { method: 'DELETE' }),
+
   bonusMe: () => request<BonusOverview>('/v1/bonus/me'),
   bonusLeaderboard: (period: 'all' | 'month' = 'all') =>
     request<BonusLeaderRow[]>(`/v1/bonus/leaderboard?period=${period}`),

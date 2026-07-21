@@ -3506,3 +3506,30 @@ model Deposit {
   @@index([bookingId])
   @@map("deposits")
 }
+
+/// Идея/пожелание по доработке системы — внутренняя доска сотрудников (#1). Автор выбирает
+/// раздел системы, описывает и прикладывает скриншоты. tenantId/authorId — без FK (фильтрация по строке).
+model Suggestion {
+  id          String           @id @default(uuid())
+  tenantId    String
+  authorId    String
+  /// Раздел/модуль системы, к которому относится идея (ключ или произвольный текст).
+  section     String
+  text        String
+  /// URL'ы загруженных скриншотов (string[]).
+  screenshots Json?
+  status      SuggestionStatus @default(NEW)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@map("suggestions")
+}
+
+enum SuggestionStatus {
+  NEW
+  PLANNED
+  IN_PROGRESS
+  DONE
+  REJECTED
+}
