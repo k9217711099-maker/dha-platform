@@ -4,28 +4,59 @@ import 'mind-elixir/style.css';
 import '@mind-elixir/node-menu/dist/style.css';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { type ChangeEvent, Suspense, useEffect, useRef, useState } from 'react';
 import type { MindElixirData, MindElixirInstance } from 'mind-elixir';
 import { Button } from '@dha/ui';
+import { adminApi, fileUrl } from '../../../lib/api';
+import { useAdminMe, useRequireAdmin } from '../../../lib/use-admin';
+import { EmojiPicker } from '../../staff-chat/EmojiPicker';
 
-/** Стартовые шаблоны карт (#7): применяются к пустой/новой карте. */
+/** Топик = выделенный узел (DOM-элемент с .nodeObj). */
+type Topic = NonNullable<MindElixirInstance['currentNode']>;
+
+/**
+ * Стартовые шаблоны карт (#7). Это НЕ разные «движки диаграмм» (mind-elixir рисует
+ * ментальные карты — дерево «узел → ветви»), а разные по СМЫСЛУ и РАСКЛАДКЕ заготовки:
+ * центр + расходящиеся ветви (side), иерархия слева-направо (right) и т.п. Полноценные
+ * fishbone/матрица/оргдиаграмма как отдельные типы в этой библиотеке недоступны — здесь
+ * они сделаны структурой узлов.
+ */
 let _tid = 0;
 const nid = () => `t${Date.now().toString(36)}${_tid++}`;
 type TplNode = { id: string; topic: string; children?: TplNode[] };
 const N = (topic: string, children: TplNode[] = []): TplNode => ({ id: nid(), topic, children });
-const TEMPLATES: { name: string; build: () => MindElixirData }[] = [
-  { name: 'Мозговой штурм', build: () => ({ nodeData: N('Идея', [N('Ветка 1'), N('Ветка 2'), N('Ветка 3'), N('Ветка 4')]) }) as unknown as MindElixirData },
-  { name: 'Проект / задача', build: () => ({ nodeData: N('Проект', [N('Цель'), N('Задачи', [N('Задача 1'), N('Задача 2')]), N('Сроки'), N('Ответственные'), N('Риски')]) }) as unknown as MindElixirData },
-  { name: 'Процесс / этапы', build: () => ({ nodeData: N('Процесс', [N('Шаг 1'), N('Шаг 2'), N('Шаг 3'), N('Результат')]) }) as unknown as MindElixirData },
-  { name: 'SWOT-анализ', build: () => ({ nodeData: N('SWOT', [N('Сильные стороны'), N('Слабые стороны'), N('Возможности'), N('Угрозы')]) }) as unknown as MindElixirData },
+type Layout = 'side' | 'left' | 'right';
+const D = (nodeData: TplNode): MindElixirData => ({ nodeData }) as unknown as MindElixirData;
+
+const TEMPLATES: { name: string; hint: string; layout: Layout; build: () => MindElixirData }[] = [
+  { name: 'Ментальная карта', hint: 'Тема в центре, мысли во все стороны', layout: 'side',
+    build: () => D(N('Тема', [N('Аспект 1', [N('деталь')]), N('Аспект 2'), N('Аспект 3'), N('Аспект 4')])) },
+  { name: 'Оргструктура / дерево', hint: 'Иерархия сверху вниз (кто кому подчиняется)', layout: 'right',
+    build: () => D(N('Руководитель', [N('Отдел 1', [N('Сотрудник'), N('Сотрудник')]), N('Отдел 2', [N('Сотрудник')]), N('Отдел 3')])) },
+  { name: 'Причинно-следственная', hint: '«Рыбья кость»: причины проблемы по категориям', layout: 'side',
+    build: () => D(N('Проблема', [N('Люди'), N('Процессы'), N('Оборудование'), N('Материалы'), N('Внешняя среда')])) },
+  { name: 'Таймлайн / этапы', hint: 'Последовательность шагов слева направо', layout: 'right',
+    build: () => D(N('Проект', [N('1. Старт'), N('2. Подготовка'), N('3. Работа'), N('4. Проверка'), N('5. Запуск')])) },
+  { name: 'SWOT-анализ', hint: 'Сильные/слабые стороны, возможности, угрозы', layout: 'side',
+    build: () => D(N('SWOT', [N('Сильные стороны'), N('Слабые стороны'), N('Возможности'), N('Угрозы')])) },
+  { name: 'Матрица приоритетов', hint: 'Эйзенхауэр: срочно/важно', layout: 'side',
+    build: () => D(N('Задачи', [N('Срочно и важно → сделать'), N('Важно, не срочно → запланировать'), N('Срочно, не важно → делегировать'), N('Не срочно, не важно → убрать')])) },
+  { name: 'Карта проекта', hint: 'Цель, задачи, сроки, команда, риски', layout: 'side',
+    build: () => D(N('Проект', [N('Цель'), N('Задачи', [N('Задача 1'), N('Задача 2')]), N('Сроки'), N('Команда'), N('Риски')])) },
+  { name: 'Цели (OKR)', hint: 'Цель и ключевые результаты-метрики', layout: 'right',
+    build: () => D(N('Цель квартала', [N('КР 1 — метрика'), N('КР 2 — метрика'), N('КР 3 — метрика')])) },
+  { name: 'Мозговой штурм', hint: 'Свободные идеи вокруг темы', layout: 'side',
+    build: () => D(N('Идея', [N('Вариант 1'), N('Вариант 2'), N('Вариант 3'), N('Вариант 4'), N('Вариант 5')])) },
+  { name: 'Дорожная карта', hint: 'Развитие по кварталам', layout: 'right',
+    build: () => D(N('Продукт', [N('Q1'), N('Q2'), N('Q3'), N('Q4')])) },
 ];
-import { adminApi } from '../../../lib/api';
-import { useAdminMe, useRequireAdmin } from '../../../lib/use-admin';
+
+const COLORS = ['#3E362E', '#A5794A', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#6b7280'];
 
 /**
- * Редактор ментальных карт (.dmap, KB-DRIVE-TZ.md §5.5) на mind-elixir.
- * Tab — подузел, Enter — соседний узел, двойной клик — правка, drag-and-drop ветвей.
- * Карта — обычный файл Диска: версии, доступы и поиск работают как у всех файлов.
+ * Редактор ментальных карт (.dmap, KB-DRIVE-TZ.md §5.5) на mind-elixir. Понятная панель
+ * (#7): картинка/эмодзи/цвет прямо в выделенный узел, скобка-сводка над несколькими
+ * узлами, шаблоны с разной раскладкой, экспорт PNG/PDF, встроенная подсказка.
  */
 function MindmapInner() {
   const ready = useRequireAdmin();
@@ -36,11 +67,17 @@ function MindmapInner() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const meRef = useRef<MindElixirInstance | null>(null);
+  const imgInputRef = useRef<HTMLInputElement>(null);
+  const pendingNodeRef = useRef<Topic | null>(null);
   const [name, setName] = useState('');
   const [version, setVersion] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [hint, setHint] = useState('');
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showColors, setShowColors] = useState(false);
 
   useEffect(() => {
     if (!ready || !fileId || !containerRef.current) return;
@@ -62,9 +99,9 @@ function MindmapInner() {
           keypress: canEdit,
         });
         instance.init(JSON.parse(file.content));
-        // Плагин node-menu: панель узла — эмодзи/иконки, теги-приоритеты, цвет/шрифт/фон,
-        // ссылка, картинка (#7.3/#7.6). Ставим защищённо: если API плагина изменится — редактор
-        // всё равно откроется, просто без панели.
+        // Плагин node-menu — правая панель оформления узла (иконка, цвет, ссылка-URL,
+        // картинка). Ставим защищённо: если API плагина изменится, редактор всё равно
+        // откроется. Дублируем главные действия своей понятной панелью сверху (#7).
         if (canEdit) {
           try {
             const { default: nodeMenu } = await import('@mind-elixir/node-menu');
@@ -86,7 +123,6 @@ function MindmapInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, fileId, canEdit]);
 
-  // Предупреждение о несохранённых изменениях
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (dirty) e.preventDefault();
@@ -123,7 +159,6 @@ function MindmapInner() {
     URL.revokeObjectURL(url);
   }
 
-  // Экспорт карты в PDF (#7.7): рендерим PNG и вписываем в страницу A4.
   async function exportPdf() {
     const instance = meRef.current;
     if (!instance) return;
@@ -157,60 +192,186 @@ function MindmapInner() {
     }
   }
 
-  // Сводка/скобка над выделенными узлами (#7.5).
-  const addSummary = () => {
-    try { meRef.current?.createSummary(); setDirty(true); } catch { /* нужно выделить узлы */ }
+  // Действие над выделенным узлом: если ничего не выделено — понятная подсказка.
+  const withNode = (fn: (m: MindElixirInstance, node: Topic) => void) => {
+    const m = meRef.current;
+    const node = m?.currentNode;
+    if (!m || !node) {
+      setHint('Сначала кликните по узлу карты, чтобы выделить его.');
+      return;
+    }
+    setHint('');
+    setError('');
+    fn(m, node);
+    setDirty(true);
   };
-  // Применить стартовый шаблон к карте (#7.1).
+
+  // Картинка в узел (#7): выбираем узел → файл → загрузка → reshapeNode({ image }).
+  const pickImage = () =>
+    withNode((_m, node) => {
+      pendingNodeRef.current = node;
+      imgInputRef.current?.click();
+    });
+  async function onImagePicked(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const m = meRef.current;
+    const node = pendingNodeRef.current;
+    if (!file || !m || !node) return;
+    setBusy(true);
+    setError('');
+    try {
+      const up = await adminApi.kbUpload(file);
+      await m.reshapeNode(node, { image: { url: fileUrl(up.url), width: 300, height: 200, fit: 'contain' } });
+      setDirty(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+      pendingNodeRef.current = null;
+    }
+  }
+
+  // Эмодзи как иконка узла (#7).
+  const addEmoji = (emoji: string) => {
+    withNode((m, node) => {
+      const icons = [...(node.nodeObj.icons ?? []), emoji];
+      void m.reshapeNode(node, { icons });
+    });
+    setShowEmoji(false);
+  };
+
+  // Цвет узла (#7).
+  const setNodeColor = (bg: string) => {
+    withNode((m, node) => {
+      void m.reshapeNode(node, { style: { ...(node.nodeObj.style ?? {}), background: bg, color: '#ffffff' } });
+    });
+    setShowColors(false);
+  };
+
+  // Скобка-сводка над выделенными узлами (#7): нужно выделить 2+ узла (Ctrl/⌘+клик).
+  const addSummary = () => {
+    const m = meRef.current;
+    if (!m) return;
+    if (!m.currentNodes || m.currentNodes.length === 0) {
+      setHint('Скобка объединяет узлы: выделите 2+ узла (Ctrl/⌘ + клик) и нажмите «Скобка».');
+      return;
+    }
+    setHint('');
+    try { m.createSummary(); setDirty(true); } catch { setHint('Выделите узлы одного уровня.'); }
+  };
+
+  // Применить шаблон + его раскладку (#7).
   const applyTemplate = (tpl: (typeof TEMPLATES)[number]) => {
-    if (!meRef.current) return;
+    const m = meRef.current;
+    if (!m) return;
     if (!window.confirm(`Заменить содержимое карты шаблоном «${tpl.name}»?`)) return;
-    meRef.current.refresh(tpl.build());
+    m.refresh(tpl.build());
+    try {
+      if (tpl.layout === 'right') m.initRight();
+      else if (tpl.layout === 'left') m.initLeft();
+      else m.initSide();
+      m.toCenter();
+    } catch {
+      /* раскладка не критична */
+    }
     setDirty(true);
   };
 
   if (!ready) return <main className="px-8 py-12 text-dark-gray">Загрузка…</main>;
   if (!fileId) return <main className="px-8 py-12 text-dark-gray">Не указан файл карты.</main>;
 
+  const btn = 'rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40';
+
   return (
     <main className="flex h-screen flex-col">
-      <div className="flex items-center gap-3 border-b border-neutral-200 bg-white px-6 py-3">
+      <input ref={imgInputRef} type="file" accept="image/*" className="hidden" onChange={onImagePicked} />
+      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 bg-white px-6 py-2.5">
         <Link href="/drive" className="text-sm text-indigo-600 underline">← Диск</Link>
         <h1 className="text-lg text-ink">{name || 'Ментальная карта'}</h1>
-        <span className="text-xs text-neutral-400">v{version}{dirty ? ' · есть несохранённые изменения' : ''}</span>
+        <span className="text-xs text-neutral-400">v{version}{dirty ? ' · не сохранено' : ''}</span>
         <span className="grow" />
         {error && <span className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">{error}</span>}
+
         {canEdit && (
           <>
             <select
               onChange={(e) => { const t = TEMPLATES[Number(e.target.value)]; if (t) applyTemplate(t); e.target.selectedIndex = 0; }}
-              className="rounded-lg border border-neutral-300 px-2 py-1.5 text-sm hover:bg-neutral-100"
-              title="Стартовый шаблон карты"
+              className={btn}
+              title="Стартовый шаблон карты (разные виды и раскладки)"
+              defaultValue=""
             >
-              <option>Шаблон</option>
-              {TEMPLATES.map((t, i) => <option key={t.name} value={i}>{t.name}</option>)}
+              <option value="" disabled>Шаблон карты…</option>
+              {TEMPLATES.map((t, i) => <option key={t.name} value={i}>{t.name} — {t.hint}</option>)}
             </select>
-            <button className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100" onClick={addSummary} title="Скобка-сводка над выделенными узлами">
-              ⎯ Сводка
-            </button>
+
+            <span className="mx-0.5 h-5 w-px bg-neutral-200" />
+
+            <button className={btn} onClick={pickImage} disabled={busy} title="Вставить картинку в выделенный узел">🖼 Картинка</button>
+
+            <div className="relative">
+              <button className={btn} onClick={() => { setShowEmoji((v) => !v); setShowColors(false); }} title="Добавить эмодзи в выделенный узел">😊 Эмодзи</button>
+              {showEmoji && (
+                <EmojiPicker className="absolute right-0 top-full z-40 mt-1" onPick={addEmoji} onClose={() => setShowEmoji(false)} />
+              )}
+            </div>
+
+            <div className="relative">
+              <button className={btn} onClick={() => { setShowColors((v) => !v); setShowEmoji(false); }} title="Цвет выделенного узла">🎨 Цвет</button>
+              {showColors && (
+                <div className="absolute right-0 top-full z-40 mt-1 flex gap-1.5 rounded-lg border border-neutral-200 bg-white p-2 shadow-xl">
+                  {COLORS.map((c) => (
+                    <button key={c} onClick={() => setNodeColor(c)} style={{ background: c }} className="h-6 w-6 rounded-full ring-1 ring-black/10" title={c} />
+                  ))}
+                  <button onClick={() => setNodeColor('')} className="h-6 rounded px-1.5 text-[10px] text-neutral-500 hover:bg-neutral-100" title="Сбросить">сброс</button>
+                </div>
+              )}
+            </div>
+
+            <button className={btn} onClick={addSummary} title="Скобка-сводка над несколькими узлами (выделите 2+ узла)">⌐ Скобка</button>
+
+            <span className="mx-0.5 h-5 w-px bg-neutral-200" />
           </>
         )}
-        <div className="hidden text-xs text-neutral-400 lg:block" title="ПКМ по узлу — связь между нодами, сводка, стиль">
-          ПКМ — связи и меню
-        </div>
-        <button className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100" onClick={() => void exportPng()}>
-          PNG
-        </button>
-        <button className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100" onClick={() => void exportPdf()} disabled={busy}>
-          PDF
-        </button>
+
+        <button className={btn} onClick={() => setShowHelp((v) => !v)} title="Как пользоваться картой">❓ Помощь</button>
+        <button className={btn} onClick={() => void exportPng()}>PNG</button>
+        <button className={btn} onClick={() => void exportPdf()} disabled={busy}>PDF</button>
         {canEdit && (
           <Button onClick={() => void save()} disabled={busy || !dirty}>
             {busy ? 'Сохранение…' : dirty ? 'Сохранить' : 'Сохранено'}
           </Button>
         )}
       </div>
-      <div ref={containerRef} className="min-h-0 grow" />
+
+      {hint && (
+        <div className="border-b border-amber-200 bg-amber-50 px-6 py-1.5 text-xs text-amber-800">💡 {hint}</div>
+      )}
+
+      <div className="relative min-h-0 grow">
+        <div ref={containerRef} className="h-full w-full" />
+        {showHelp && (
+          <div className="absolute right-4 top-4 z-30 w-80 rounded-2xl border border-neutral-200 bg-white p-4 text-sm shadow-2xl">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-medium text-ink">Как пользоваться картой</span>
+              <button onClick={() => setShowHelp(false)} className="text-neutral-400 hover:text-ink">✕</button>
+            </div>
+            <ul className="space-y-1.5 text-[13px] text-dark-gray">
+              <li><b>Tab</b> — добавить дочерний узел, <b>Enter</b> — соседний.</li>
+              <li><b>Двойной клик</b> по узлу — редактировать текст, <b>Delete</b> — удалить.</li>
+              <li>Перетаскивайте узлы мышью, чтобы менять структуру.</li>
+              <li><b>🖼 Картинка / 😊 Эмодзи / 🎨 Цвет</b> — сначала кликните узел, потом кнопку.</li>
+              <li><b>⌐ Скобка</b> — выделите 2+ узла (<b>Ctrl/⌘ + клик</b>) и нажмите: появится скобка-сводка.</li>
+              <li><b>Связь между узлами</b> — правый клик по узлу → «Связать»/меню.</li>
+              <li><b>Правая панель</b> (появляется при выделении узла) — тонкая настройка: иконки, цвет, шрифт, <b>ссылка (URL)</b> и картинка. Дублирует кнопки сверху.</li>
+              <li><b>PNG / PDF</b> — выгрузить карту файлом.</li>
+            </ul>
+            <p className="mt-2 border-t border-neutral-100 pt-2 text-[11px] text-neutral-400">
+              Карта строится как «дерево» (центр → ветви). Шаблоны задают разный смысл и раскладку.
+            </p>
+          </div>
+        )}
+      </div>
     </main>
   );
 }
