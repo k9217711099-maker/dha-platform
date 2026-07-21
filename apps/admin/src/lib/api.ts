@@ -48,6 +48,12 @@ export function opsStreamUrl(): string | null {
   return t ? `${API_BASE}/v1/ops/stream?token=${encodeURIComponent(t)}` : null;
 }
 
+/** URL SSE-потока изменений ленты эскалаций (realtime-бейдж непрочитанных, #1). null без входа. */
+export function inboxStreamUrl(): string | null {
+  const t = adminToken.get();
+  return t ? `${API_BASE}/ai/inbox-events?token=${encodeURIComponent(t)}` : null;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,

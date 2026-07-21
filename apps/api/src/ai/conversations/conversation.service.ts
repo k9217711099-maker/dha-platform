@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AiActorKind, AiChannel, AiConversationStatus, AiMessageRole, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
+import { InboxEvents } from '../inbox/inbox.events.js';
 import type { LlmMessage, LlmRole, LlmToolCall } from '../llm/llm.types.js';
 
 export interface CreateConversationInput {
@@ -46,7 +47,10 @@ const ROLE_TO_LLM: Record<AiMessageRole, LlmRole> = {
 /** Персистентность диалогов AI (история в нашей БД — API модели stateless, §4.9). */
 @Injectable()
 export class ConversationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly inboxEvents: InboxEvents,
+  ) {}
 
   create(input: CreateConversationInput) {
     return this.prisma.aiConversation.create({
@@ -89,6 +93,7 @@ export class ConversationService {
 
   /** Отметить диалог прочитанным оператором (сбрасывает «непрочитано» в ленте §4.7). */
   setOperatorRead(id: string) {
+    this.inboxEvents.publish('read'); // realtime-бейдж (#1)
     return this.prisma.aiConversation.update({
       where: { id },
       data: { operatorReadAt: new Date() },
@@ -163,6 +168,8 @@ export class ConversationService {
   }
 
   addMessage(conversationId: string, input: AddMessageInput) {
+    // Сообщение гостя может изменить «непрочитано» в ленте → будим realtime-бейдж (#1).
+    if (input.role === AiMessageRole.USER) this.inboxEvents.publish('message');
     return this.prisma.aiMessage.create({
       data: {
         conversationId,
@@ -265,7 +272,10 @@ export class ConversationService {
   setStatus(id: string, status: AiConversationStatus) {
     // Ставим вехи для QA-метрик (§5.7): эскалация и закрытие диалога.
     const data: Prisma.AiConversationUpdateInput = { status };
-    if (status === AiConversationStatus.ESCALATED) data.escalatedAt = new Date();
+    if (status === AiConversationStatus.ESCALATED) {
+      data.escalatedAt = new Date();
+      this.inboxEvents.publish('escalated'); // новая эскалация → realtime-бейдж (#1)
+    }
     if (status === AiConversationStatus.CLOSED) data.closedAt = new Date();
     return this.prisma.aiConversation.update({ where: { id }, data });
   }

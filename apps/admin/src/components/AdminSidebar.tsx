@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { adminApi, adminToken, opsStreamUrl, staffStreamUrl } from '../lib/api';
+import { adminApi, adminToken, inboxStreamUrl, opsStreamUrl, staffStreamUrl } from '../lib/api';
 import { useAdminMe } from '../lib/use-admin';
 
 const RAIL_KEY = 'dha_sidebar_railed';
@@ -202,6 +202,7 @@ export function AdminSidebar() {
     };
     if (me.permissions.includes('staff_chat')) listen(staffStreamUrl());
     if (me.permissions.includes('ops_tasks')) listen(opsStreamUrl());
+    if (me.permissions.includes('guest_inbox')) listen(inboxStreamUrl()); // realtime-бейдж ленты (#1)
     return () => { alive = false; clearInterval(t); if (debounce) clearTimeout(debounce); for (const es of sources) es.close(); };
   }, [me]);
   useEffect(() => { setRailed(typeof window !== 'undefined' && localStorage.getItem(RAIL_KEY) === '1'); }, []);
