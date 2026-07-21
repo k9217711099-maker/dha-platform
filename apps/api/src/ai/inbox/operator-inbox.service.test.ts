@@ -27,7 +27,7 @@ function setup(convo: Record<string, unknown> | null) {
     get: vi.fn().mockResolvedValue(null),
     set: vi.fn(),
   } as unknown as SettingsService;
-  const telegram = { sendMessage: vi.fn() } as unknown as TelegramPort;
+  const telegram = { sendMessage: vi.fn(), sendMedia: vi.fn() } as unknown as TelegramPort;
   const max = { sendMessage: vi.fn() } as unknown as MaxPort;
   const umnico = { sendMessage: vi.fn() } as unknown as UmnicoConfigService;
   const config = {
@@ -95,9 +95,10 @@ describe('OperatorInboxService', () => {
         content: expect.stringContaining('[img]https://api.nomero.online/uploads/x.jpg'),
       }),
     );
-    expect(telegram.sendMessage).toHaveBeenCalledWith(
+    // Картинка уходит нативно (sendPhoto) в Telegram, не ссылкой.
+    expect(telegram.sendMedia).toHaveBeenCalledWith(
       '555',
-      expect.stringContaining('https://api.nomero.online/uploads/x.jpg'),
+      expect.objectContaining({ kind: 'IMAGE', url: 'https://api.nomero.online/uploads/x.jpg', caption: 'Вот схема' }),
     );
   });
 

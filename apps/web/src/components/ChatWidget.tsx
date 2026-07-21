@@ -17,6 +17,26 @@ const GREETING: Msg = {
 /** Ключ localStorage — сохраняем id диалога, чтобы переписка переживала обновление страницы. */
 const CONV_KEY = 'dha_chat_conversation';
 
+/** Тело сообщения: маркеры `[img]<url>` (вложения от администратора) рисуем как <img>, остальное — текстом. */
+function MessageText({ text }: { text: string }) {
+  const parts = text.split(/(\[img\]\S+)/g).filter((p) => p !== '');
+  return (
+    <>
+      {parts.map((p, i) => {
+        const img = p.match(/^\[img\](\S+)$/);
+        if (img) {
+          return (
+            <a key={i} href={img[1]} target="_blank" rel="noreferrer" className="block">
+              <img src={img[1]} alt="вложение" className="mt-1 max-h-64 max-w-full rounded-lg object-contain" />
+            </a>
+          );
+        }
+        return <span key={i}>{p}</span>;
+      })}
+    </>
+  );
+}
+
 /**
  * Плавающий чат с AI-администратором (гостевой агент, POST /ai/guest/message).
  * Доступен всем, включая анонимных гостей. Ответ приходит синхронно; сложные
@@ -143,12 +163,12 @@ export function ChatWidget() {
       <div className="flex-1 space-y-2 overflow-y-auto p-3">
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className="max-w-[80%]">
+            <div className="min-w-0 max-w-[80%]">
               {m.role === 'staff' && (
                 <div className="mb-0.5 px-1 text-[11px] font-medium text-dark-gray">Администратор</div>
               )}
               <div
-                className={`whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
+                className={`overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-2xl px-3 py-2 text-sm ${
                   m.role === 'user'
                     ? 'bg-ink text-white'
                     : m.role === 'staff'
@@ -156,7 +176,7 @@ export function ChatWidget() {
                       : 'bg-beige text-ink'
                 }`}
               >
-                {m.text}
+                <MessageText text={m.text} />
               </div>
             </div>
           </div>

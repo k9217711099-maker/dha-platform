@@ -1,7 +1,7 @@
 import { Global, Injectable, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../config/env.schema.js';
-import { TelegramPort } from './telegram.port.js';
+import { TelegramPort, type OutgoingMedia } from './telegram.port.js';
 import { MockTelegramAdapter } from './mock-telegram.adapter.js';
 import { HttpTelegramAdapter } from './http-telegram.adapter.js';
 import { TelegramConfigService } from './telegram-config.service.js';
@@ -23,10 +23,18 @@ export class TelegramDispatchAdapter extends TelegramPort {
     super();
   }
 
+  private async useHttp(): Promise<boolean> {
+    return (
+      this.config.get('TELEGRAM_PROVIDER', { infer: true }) === 'http' || (await this.cfg.hasToken())
+    );
+  }
+
   async sendMessage(chatId: number | string, text: string): Promise<void> {
-    const useHttp =
-      this.config.get('TELEGRAM_PROVIDER', { infer: true }) === 'http' || (await this.cfg.hasToken());
-    return (useHttp ? this.http : this.mock).sendMessage(chatId, text);
+    return ((await this.useHttp()) ? this.http : this.mock).sendMessage(chatId, text);
+  }
+
+  async sendMedia(chatId: number | string, media: OutgoingMedia): Promise<void> {
+    return ((await this.useHttp()) ? this.http : this.mock).sendMedia(chatId, media);
   }
 }
 

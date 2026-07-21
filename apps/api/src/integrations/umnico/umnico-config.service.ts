@@ -264,6 +264,48 @@ export class UmnicoConfigService {
     }
   }
 
+  /**
+   * Отправка сообщения с вложением (фото/видео/файл). Точный формат медиа в Umnico API
+   * v1.3 в публичной доке не описан — пробуем attachments по симметрии со входящим
+   * вебхуком (message.message.attachments[{type,url}]); при ошибке — фолбэк ссылкой текстом,
+   * чтобы гость гарантированно получил файл. type: photo/video/file.
+   */
+  async sendAttachment(
+    target: { leadId: string; source?: string; userId?: string; saId?: string },
+    media: { url: string; kind: 'IMAGE' | 'VIDEO' | 'FILE'; name: string; caption?: string },
+  ): Promise<void> {
+    const token = await this.token();
+    if (!token || !target.leadId) {
+      this.logger.warn('Umnico: нет токена или leadId — вложение не отправлено.');
+      return;
+    }
+    const type = media.kind === 'IMAGE' ? 'photo' : media.kind === 'VIDEO' ? 'video' : 'file';
+    const body: Record<string, unknown> = {
+      message: {
+        text: media.caption ?? '',
+        attachments: [{ type, url: media.url, name: media.name }],
+      },
+    };
+    if (target.source) body.source = target.source;
+    const senderId = await this.managerUserId();
+    if (senderId != null) body.userId = senderId;
+    if (target.saId) body.saId = /^\d+$/.test(target.saId) ? Number(target.saId) : target.saId;
+    const res = await fetch(`${this.base}/v1.3/messaging/${encodeURIComponent(target.leadId)}/send`, {
+      method: 'POST',
+      headers: this.authHeaders(token),
+      body: JSON.stringify(body),
+    }).catch((err: unknown) => {
+      this.logger.error(`Umnico attachment сеть: ${(err as Error).message}`);
+      return null;
+    });
+    if (!res || !res.ok) {
+      const detail = res ? await res.text().catch(() => '') : 'network';
+      this.logger.error(`Umnico attachment ${res?.status ?? '—'}: ${String(detail).slice(0, 300)} — фолбэк ссылкой`);
+      // Гарантируем доставку: отправляем подпись + прямую ссылку обычным сообщением.
+      await this.sendMessage(target, media.caption ? `${media.caption}\n${media.url}` : media.url);
+    }
+  }
+
   private decrypt(enc: string | null): string {
     if (!enc) return '';
     try {

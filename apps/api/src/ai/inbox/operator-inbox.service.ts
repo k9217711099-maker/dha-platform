@@ -76,8 +76,12 @@ export class OperatorInboxService {
     const saved = await this.storage.save(file);
     const url = this.publicFileUrl(saved.url);
     const cap = caption?.trim();
-    const isImage = file.mimetype.startsWith('image/');
-    const marker = isImage ? `[img]${url}` : `[файл: ${saved.name}]\n${url}`;
+    const kind: 'IMAGE' | 'VIDEO' | 'FILE' = file.mimetype.startsWith('image/')
+      ? 'IMAGE'
+      : file.mimetype.startsWith('video/')
+        ? 'VIDEO'
+        : 'FILE';
+    const marker = kind === 'IMAGE' ? `[img]${url}` : `[файл: ${saved.name}]\n${url}`;
     const feed = cap ? `${cap}\n${marker}` : marker;
     // Вмешался человек — переводим бота в ESCALATED, чтобы он замолчал (как в reply()).
     if (convo.status === AiConversationStatus.BOT) {
@@ -85,8 +89,52 @@ export class OperatorInboxService {
     }
     await this.conversations.assignOperator(id, operatorId);
     await this.conversations.addMessage(id, { role: AiMessageRole.STAFF, content: feed });
-    await this.dispatchToChannel(convo, cap ? `${cap}\n${url}` : url);
+    await this.dispatchMediaToChannel(convo, { url, kind, name: saved.name, caption: cap });
     return { ok: true };
+  }
+
+  /**
+   * Доставка медиа в канал гостя нативно (#5): Telegram — sendPhoto/sendVideo/sendDocument;
+   * Umnico — attachments (с фолбэком ссылкой); web/app — гость забирает из истории (в ленте
+   * [img]); MAX — пока ссылкой. При сбое канала — общий фолбэк ссылкой, чтобы файл дошёл.
+   */
+  private async dispatchMediaToChannel(
+    convo: { channel: AiChannel; externalId: string | null; channelMeta: unknown },
+    media: { url: string; kind: 'IMAGE' | 'VIDEO' | 'FILE'; name: string; caption?: string },
+  ): Promise<void> {
+    const to = convo.externalId;
+    const asText = media.caption ? `${media.caption}\n${media.url}` : media.url;
+    try {
+      switch (convo.channel) {
+        case AiChannel.TELEGRAM:
+          if (to) await this.telegram.sendMedia(to, media);
+          break;
+        case AiChannel.UMNICO: {
+          if (!to) break;
+          const meta = (convo.channelMeta ?? {}) as {
+            source?: string | null;
+            userId?: string | null;
+            saId?: string | null;
+          };
+          await this.umnico.sendAttachment(
+            { leadId: to, source: meta.source ?? undefined, userId: meta.userId ?? undefined, saId: meta.saId ?? undefined },
+            media,
+          );
+          break;
+        }
+        case AiChannel.MAX:
+          if (to) await this.max.sendMessage(to, asText); // нативное медиа MAX — позже
+          break;
+        case AiChannel.WEB:
+        case AiChannel.APP:
+          break; // гость забирает из истории (GET), в ленте — [img]
+        default:
+          this.logger.warn(`Медиа-ответ в канал ${convo.channel} не доставлен: обратная отправка не подключена`);
+      }
+    } catch (e) {
+      this.logger.error(`Медиа в ${convo.channel} не ушло: ${(e as Error).message} — фолбэк ссылкой`);
+      if (to) await this.dispatchToChannel(convo, asText).catch(() => undefined);
+    }
   }
 
   /** Быстрые шаблоны ответа (§4.7, «/»). Хранятся в Setting как JSON-массив. */
