@@ -1,7 +1,7 @@
 'use client';
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { adminApi, type BookingAuditEntry, type BookingTag, type Extra, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory } from '../../../lib/api';
+import { adminApi, fileUrl, type BookingAuditEntry, type BookingTag, type Extra, type GuestConversation, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory } from '../../../lib/api';
 import { STATUS as OPS_STATUS } from '../../ops/shared';
 import { CheckinFunnelPanel } from './CheckinFunnelPanel';
 import { FinanceTab } from './FinanceTab';
@@ -174,6 +174,10 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
   const [notes, setNotes] = useState('');
   const [savedNotes, setSavedNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  // История переписки с гостем прямо из брони (#12).
+  const [showHistory, setShowHistory] = useState(false);
+  const [convos, setConvos] = useState<GuestConversation[] | null>(null);
+  const [openConvo, setOpenConvo] = useState<string | null>(null);
   const gid = b.guest?.id;
   useEffect(() => {
     if (!gid) return;
@@ -189,6 +193,16 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
   const Ch = ({ href, label, cls }: { href: string; label: string; cls: string }) => (
     <a href={href} target="_blank" rel="noreferrer" className={`rounded-md px-2.5 py-1 text-xs font-medium ${cls}`}>{label}</a>
   );
+  const toggleHistory = () => {
+    setShowHistory((v) => !v);
+    if (!showHistory && convos === null && gid) {
+      void adminApi.guestConversations(gid).then(setConvos).catch(() => setConvos([]));
+    }
+  };
+  const CHANNEL_RU: Record<string, string> = {
+    WEB: 'Сайт', APP: 'Приложение', TELEGRAM: 'Telegram', TELEGRAM_DIRECT: 'Telegram',
+    MAX: 'MAX', WHATSAPP: 'WhatsApp', UMNICO: 'Умнико', ADMIN: 'Админка',
+  };
 
   return (
     <div className="rounded-xl border border-ink/10 p-4">
@@ -229,6 +243,62 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
             {b.guest?.email ? <Ch href={`mailto:${b.guest.email}`} label="Почта" cls="bg-ink/10 text-ink" /> : null}
             <Ch href={`https://umnico.com/`} label="Umnico" cls="bg-indigo-100 text-indigo-800" />
           </div>
+
+          {/* История переписки с гостем (#12) */}
+          {gid ? (
+            <div className="mt-3 border-t border-ink/10 pt-2">
+              <button type="button" onClick={toggleHistory} className="flex w-full items-center justify-between text-xs font-medium text-primary hover:underline">
+                <span>💬 История переписки{convos ? ` · ${convos.length}` : ''}</span>
+                <span>{showHistory ? '▲ свернуть' : '▼ развернуть'}</span>
+              </button>
+              {showHistory ? (
+                convos === null ? (
+                  <p className="mt-2 text-xs text-dark-gray">Загрузка…</p>
+                ) : convos.length === 0 ? (
+                  <p className="mt-2 text-xs text-dark-gray">Переписки с гостем пока нет.</p>
+                ) : (
+                  <div className="mt-2 space-y-1.5">
+                    {convos.map((c) => {
+                      const isOpen = openConvo === c.id;
+                      const last = c.messages[c.messages.length - 1];
+                      const chan = CHANNEL_RU[c.channel] ?? c.channel;
+                      return (
+                        <div key={c.id} className="rounded-lg border border-ink/10">
+                          <button type="button" onClick={() => setOpenConvo(isOpen ? null : c.id)} className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left hover:bg-ink/[0.03]">
+                            <span className="min-w-0">
+                              <span className="text-xs text-ink">{c.title || `Диалог · ${chan}`}</span>
+                              {last ? <span className="block truncate text-[11px] text-dark-gray">{last.role === 'user' ? '👤 ' : last.role === 'staff' ? '🧑‍💼 ' : '🤖 '}{last.text.replace(/\[img\]\S+/g, '📷 фото')}</span> : null}
+                            </span>
+                            <span className="shrink-0 text-[11px] text-dark-gray">{new Date(c.updatedAt).toLocaleDateString('ru')} {isOpen ? '▲' : '▼'}</span>
+                          </button>
+                          {isOpen ? (
+                            <div className="max-h-64 space-y-1 overflow-y-auto border-t border-ink/10 px-2.5 py-1.5">
+                              {c.messages.map((m, i) => (
+                                <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
+                                  <div className={`max-w-[85%] whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-lg px-2 py-1 text-[11px] ${m.role === 'user' ? 'bg-ink/[0.06] text-ink' : m.role === 'staff' ? 'bg-ink text-white' : 'border border-ink/10 text-dark-gray'}`}>
+                                    {(() => {
+                                      const img = m.text.match(/\[img\](\S+)/);
+                                      const body = m.text.replace(/\[img\]\S+/g, '').trim();
+                                      return (
+                                        <>
+                                          {body ? <span>{body}</span> : null}
+                                          {img ? <a href={fileUrl(img[1])} target="_blank" rel="noreferrer" className={`${body ? 'ml-1 ' : ''}underline`}>📷 фото</a> : null}
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              ) : null}
+            </div>
+          ) : null}
         </>
       )}
     </div>
