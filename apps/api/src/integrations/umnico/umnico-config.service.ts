@@ -265,6 +265,46 @@ export class UmnicoConfigService {
   }
 
   /**
+   * «Написать первым»: POST /v1.3/messaging/post — инициировать диалог по номеру
+   * телефона через выбранную интеграцию (saId = id канала из GET /integrations).
+   * Создаёт лид, если его не было (иначе продолжает существующий). Работает для
+   * WhatsApp / Telegram Personal / Email; у Umnico действуют суточные лимиты на
+   * новые контакты. Возвращает ok + leadId (если Umnico его вернул) либо ошибку.
+   * ВНИМАНИЕ: холодная рассылка через личный аккаунт рискует блокировкой — по
+   * рекомендациям Umnico. Отправляем только по явному выбору канала на этапе.
+   */
+  async reachOutFirst(
+    saId: number,
+    destination: string,
+    text: string,
+    customId?: string,
+  ): Promise<{ ok: boolean; leadId?: string; error?: string }> {
+    const token = await this.token();
+    if (!token) return { ok: false, error: 'нет токена Umnico' };
+    const dest = destination.replace(/\D/g, ''); // международный формат без «+»
+    if (!dest) return { ok: false, error: 'пустой номер' };
+    if (!Number.isFinite(saId)) return { ok: false, error: 'неверный saId' };
+    const body: Record<string, unknown> = { message: { text }, destination: dest, saId };
+    if (customId) body.customId = customId;
+    const res = await fetch(`${this.base}/v1.3/messaging/post`, {
+      method: 'POST',
+      headers: this.authHeaders(token),
+      body: JSON.stringify(body),
+    }).catch((err: unknown) => {
+      this.logger.error(`Umnico reachOut сеть: ${(err as Error).message}`);
+      return null;
+    });
+    if (!res) return { ok: false, error: 'сеть' };
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      this.logger.error(`Umnico reachOut ${res.status}: ${detail.slice(0, 300)}`);
+      return { ok: false, error: `${res.status}: ${detail.slice(0, 160)}` };
+    }
+    const data = (await res.json().catch(() => ({}))) as { leadId?: number | string };
+    return { ok: true, leadId: data.leadId != null ? String(data.leadId) : undefined };
+  }
+
+  /**
    * Отправка сообщения с вложением (фото/видео/файл). Точный формат медиа в Umnico API
    * v1.3 в публичной доке не описан — пробуем attachments по симметрии со входящим
    * вебхуком (message.message.attachments[{type,url}]); при ошибке — фолбэк ссылкой текстом,

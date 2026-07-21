@@ -371,7 +371,7 @@ function StageCard({ stage, dict, groups, busy, first, last, onMove, onPatch, on
             <div>
               <p className="mb-1.5 text-[11px] uppercase tracking-wide text-dark-gray">Каналы (для приглашения и напоминаний)</p>
               <div className="flex flex-wrap gap-1.5">
-                {dict.channels.map((c) => {
+                {dict.channels.filter((c) => c.active !== false || stage.channels.includes(c.key)).map((c) => {
                   const on = stage.channels.includes(c.key);
                   const inactive = c.active === false;
                   return (
@@ -383,7 +383,7 @@ function StageCard({ stage, dict, groups, busy, first, last, onMove, onPatch, on
                   );
                 })}
               </div>
-              <p className="mt-1.5 text-[11px] text-dark-gray">Приглушённые каналы не подключены. Telegram/WhatsApp/MAX доставляют, только если гость привязал этот мессенджер к своему аккаунту — для гарантированной доставки анкеты держите SMS/Email.</p>
+              <p className="mt-1.5 text-[11px] text-dark-gray">Показаны только подключённые каналы. Каналы Umnico (WhatsApp/Telegram) пишут гостю <b>первым по номеру телефона</b>; если гостя нет в канале — в воронке появится пометка-задача, а анкету держите на SMS/Email. «Написать первым» идёт через личный аккаунт и может привести к блокировке номера (правила мессенджеров).</p>
             </div>
           </section>
 

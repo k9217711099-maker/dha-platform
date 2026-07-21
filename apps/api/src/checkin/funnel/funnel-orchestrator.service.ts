@@ -17,6 +17,7 @@ import { SCENARIOS } from '../../notifications/scenarios.js';
 import { PmsBookingService } from '../../pms/bookings/pms-booking.service.js';
 import { combineDateAndTime } from '../../keys/key-window.js';
 import { OtaMessagingPort } from '../../integrations/ota-messaging/ota-messaging.port.js';
+import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
 import { FunnelEscalationService } from './funnel-escalation.service.js';
 import { GuestCheckinLinkService } from '../portal/guest-checkin-link.service.js';
 import type { Env } from '../../config/env.schema.js';
@@ -68,6 +69,7 @@ export class FunnelOrchestratorService {
     private readonly pmsBookings: PmsBookingService,
     private readonly links: GuestCheckinLinkService,
     private readonly otaMessaging: OtaMessagingPort,
+    private readonly umnico: UmnicoConfigService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -419,7 +421,39 @@ export class FunnelOrchestratorService {
       if (delivered) return; // доставлено внутри OTA — дублировать sms/email не нужно
     }
 
+    // Umnico «написать первым»: каналы вида umnico:<saId> — инициируем диалог по телефону
+    // гостя через выбранную интеграцию (WhatsApp/Telegram Personal и т.п.). Недоступен/
+    // ошибка → помечаем задачей (сотрудник свяжется по SMS/Email). Не блокирует остальные каналы.
+    const umnicoChannels = (stageChannels ?? []).filter((c) => c.startsWith('umnico:'));
+    if (umnicoChannels.length) {
+      if (b.guest.phone) {
+        const { title, body } = await this.notifications.renderScenario(b.tenantId, scenario, payload);
+        const text = title ? `${title}\n${body}` : body;
+        for (const ch of umnicoChannels) {
+          const saId = Number(ch.slice('umnico:'.length));
+          const r = await this.umnico
+            .reachOutFirst(saId, b.guest.phone, text, `${b.id}:${kind}`)
+            .catch((e: unknown) => ({ ok: false as const, error: String(e) }));
+          if (!r.ok) await this.markUnreachable(b, ch, r.error);
+        }
+      } else {
+        await this.markUnreachable(b, umnicoChannels[0] ?? 'umnico', 'у гостя нет телефона');
+      }
+    }
+
     await this.notifications.notify(b.guestId, scenario, payload, mapChannels(stageChannels));
+  }
+
+  /** Пометка «гость недоступен в канале»: разовая задача сотруднику (фолбэк на SMS/Email). */
+  private async markUnreachable(b: CandidateBooking, channelKey: string, error?: string): Promise<void> {
+    await this.escalation.escalateOnce({
+      bookingId: b.id,
+      dedupeKey: `${b.id}:unreachable:${channelKey}`,
+      kind: 'channel_unreachable',
+      title: `Заселение: гость недоступен в канале (${channelKey})`,
+      description: `Не удалось «написать первым» через ${channelKey}${error ? ` — ${error}` : ''}. Свяжитесь по SMS/Email или другим каналом.`,
+      important: false,
+    });
   }
 
   /** Записать событие; false — уже было (unique dedupeKey). */
