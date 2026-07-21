@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { StaffAttachmentKind } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
@@ -63,25 +63,62 @@ export interface SavedAttachment {
  */
 @Injectable()
 export class AttachmentStorageService {
+  private readonly logger = new Logger('AttachmentStorage');
   private readonly dir = resolve(process.cwd(), 'uploads');
-  private readonly maxBytes = 25 * 1024 * 1024; // 25 МБ
+  private readonly maxBytes = 25 * 1024 * 1024; // общий лимит (в т.ч. видео, #10) — 25 МБ
 
   constructor() {
     mkdirSync(this.dir, { recursive: true });
   }
 
+  /**
+   * Сжатие/ресайз растровых картинок для экономии места (#10): авто-ориентация по EXIF,
+   * ресайз до 1920px по ширине, пере-кодирование с качеством ~82. gif/svg/heic и прочее —
+   * не трогаем (возвращаем null → сохраняем оригинал). Ошибка sharp тоже → оригинал.
+   */
+  private async compressImage(
+    file: Express.Multer.File,
+  ): Promise<{ buffer: Buffer; mime: string; ext: string } | null> {
+    if (!/^image\/(jpeg|png|webp)$/.test(file.mimetype)) return null;
+    try {
+      const sharp = (await import('sharp')).default;
+      let img = sharp(file.buffer, { failOn: 'none' }).rotate();
+      const meta = await img.metadata();
+      if ((meta.width ?? 0) > 1920) img = img.resize({ width: 1920, withoutEnlargement: true });
+      if (file.mimetype === 'image/png')
+        return { buffer: await img.png({ compressionLevel: 9 }).toBuffer(), mime: 'image/png', ext: 'png' };
+      if (file.mimetype === 'image/webp')
+        return { buffer: await img.webp({ quality: 82 }).toBuffer(), mime: 'image/webp', ext: 'webp' };
+      return { buffer: await img.jpeg({ quality: 82, mozjpeg: true }).toBuffer(), mime: 'image/jpeg', ext: 'jpg' };
+    } catch (e) {
+      this.logger.warn(`Сжатие картинки не удалось, сохраняю оригинал: ${(e as Error).message}`);
+      return null;
+    }
+  }
+
   async save(file?: Express.Multer.File): Promise<SavedAttachment> {
     if (!file) throw new BadRequestException('Файл не передан');
-    if (file.size > this.maxBytes) throw new BadRequestException('Максимальный размер файла — 25 МБ');
+    if (file.size > this.maxBytes) {
+      const mb = Math.round(this.maxBytes / 1024 / 1024);
+      throw new BadRequestException(
+        file.mimetype.startsWith('video/')
+          ? `Видео больше ${mb} МБ — загрузите файл покороче или сожмите.`
+          : `Максимальный размер файла — ${mb} МБ.`,
+      );
+    }
     const originalName = decodeUploadName(file.originalname);
-    const stored = `${randomUUID()}.${safeExt(originalName, file.mimetype)}`;
-    await writeFile(join(this.dir, stored), file.buffer);
+    const compressed = await this.compressImage(file);
+    const buffer = compressed?.buffer ?? file.buffer;
+    const mime = compressed?.mime ?? file.mimetype;
+    const ext = compressed?.ext ?? safeExt(originalName, file.mimetype);
+    const stored = `${randomUUID()}.${ext}`;
+    await writeFile(join(this.dir, stored), buffer);
     return {
       url: `/uploads/${stored}`,
       name: originalName,
-      size: file.size,
-      mime: file.mimetype,
-      kind: kindFromMime(file.mimetype),
+      size: buffer.length,
+      mime,
+      kind: kindFromMime(mime),
     };
   }
 }
