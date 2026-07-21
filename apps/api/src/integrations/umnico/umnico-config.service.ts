@@ -112,6 +112,23 @@ export class UmnicoConfigService {
     }
   }
 
+  /**
+   * Тип подканала (whatsapp/telegram/vk/…) по saId — id подключённого канала Umnico.
+   * Вебхук message.incoming не всегда отдаёт source.type, но saId в нём есть всегда
+   * (он нужен для ответа), а тип канала берём из GET /integrations. Результат кэшируем
+   * на 5 минут, чтобы не дёргать Umnico на каждое входящее (#14).
+   */
+  private channelsCache: { at: number; list: UmnicoChannel[] } | null = null;
+  async channelTypeBySaId(saId: string | number | null | undefined): Promise<string | undefined> {
+    if (saId == null) return undefined;
+    const now = Date.now();
+    if (!this.channelsCache || now - this.channelsCache.at > 5 * 60_000) {
+      this.channelsCache = { at: now, list: await this.listChannels() };
+    }
+    const hit = this.channelsCache.list.find((c) => String(c.id) === String(saId));
+    return hit?.type;
+  }
+
   async getPublicConfig(): Promise<UmnicoPublicConfig> {
     const has = await this.hasToken();
     const channels = has ? await this.listChannels() : [];

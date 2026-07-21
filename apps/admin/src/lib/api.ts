@@ -1832,6 +1832,10 @@ export interface InboxConversationRow {
   title?: string | null;
   guestId: string | null;
   guestName: string | null;
+  /** Телефон гостя: из профиля (если сопоставлен), иначе из канала (#8). */
+  guestPhone?: string | null;
+  /** Фото профиля гостя из канала (Umnico), если отдаётся (#14). */
+  avatar?: string | null;
   operatorId: string | null;
   operatorName: string | null;
   externalId: string | null;
@@ -1873,6 +1877,8 @@ export interface InboxThread {
     guestId: string | null;
     guestName: string | null;
     guestPhone?: string | null;
+    /** Фото профиля гостя из канала (Umnico), если отдаётся (#14). */
+    avatar?: string | null;
     operatorId: string | null;
     operatorName: string | null;
     createdAt: string;

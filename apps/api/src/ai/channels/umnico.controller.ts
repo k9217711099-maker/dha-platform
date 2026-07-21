@@ -43,6 +43,11 @@ interface UmnicoWebhook {
       login?: string;
       phone?: string;
       type?: string;
+      /** Аватар отправителя (в разных каналах поле называется по-разному) — для фото в диалоге. */
+      avatar?: string;
+      photo?: string;
+      picture?: string;
+      avatarUrl?: string;
     };
     sa?: { id?: number | string; type?: string; login?: string };
   };
@@ -111,6 +116,9 @@ export class UmnicoController {
       // Тип подканала Umnico (whatsapp/telegram/vk/avito…) — чтобы показать оператору,
       // откуда именно пишет гость (#14).
       const sourceType = src?.type != null ? String(src.type) : undefined;
+      // Фото профиля отправителя (если канал его отдаёт) — показываем оператору в диалоге.
+      const s = m.sender;
+      const avatar = s?.avatar ?? s?.avatarUrl ?? s?.photo ?? s?.picture ?? undefined;
       // Телефон гостя (если канал его отдаёт) — защитно из нескольких мест: у WhatsApp/SMS
       // это обычно login отправителя; плюс верхнеуровневые customer/contact/phone.
       const phone = pickPhone(
@@ -121,7 +129,7 @@ export class UmnicoController {
         body.contact?.phone,
         body.phone,
       );
-      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, text });
+      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, avatar, text });
     } else if (/message\.incoming/i.test(evt)) {
       // message.incoming без текста и без распознанного вложения — просто отметим (warn
       // на проде подавлен, спама не будет; поднять уровень при разборе новых типов медиа).

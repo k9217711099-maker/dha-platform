@@ -233,15 +233,18 @@ export class ConversationService {
       // Непрочитано: последнее сообщение — от гостя и новее момента, когда оператор
       // в последний раз открывал диалог (или он ещё ни разу не открывал).
       const unread = lastRole === 'user' && (!operatorReadAt || lastAt > operatorReadAt);
-      // Подканал (для Umnico: telegram/whatsapp/… — откуда пишет гость, #14).
-      const subChannel = (channelMeta as { sourceType?: string } | null)?.sourceType ?? null;
+      // Подканал (для Umnico: telegram/whatsapp/… — откуда пишет гость, #14) + фото/телефон
+      // из канала (channelMeta) — для аватара и номера в списке диалогов.
+      const meta = (channelMeta as { sourceType?: string; avatar?: string; phone?: string } | null) ?? {};
       return {
         ...rest,
         lastRole,
         lastMessage: last?.content ?? null,
         lastAt,
         unread,
-        subChannel,
+        subChannel: meta.sourceType ?? null,
+        avatar: meta.avatar ?? null,
+        metaPhone: meta.phone ?? null,
       };
     });
   }

@@ -54,6 +54,27 @@ const guestLabel = (name: string | null, id: string | null) =>
 const operatorLabel = (name: string | null, id: string | null) =>
   name || (id ? `оператор ${shortId(id)}` : '');
 
+/** Инициалы для аватара-заглушки, когда фото профиля нет. */
+function initials(name: string | null): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? '').join('') || '👤';
+}
+/** Аватар гостя: фото из канала (Umnico), иначе — инициалы на цветном фоне. */
+function Avatar({ name, url, size = 40 }: { name: string | null; url?: string | null; size?: number }) {
+  const s = { width: size, height: size };
+  if (url) {
+    return <img src={url} alt="" style={s} className="shrink-0 rounded-full object-cover" />;
+  }
+  return (
+    <span
+      style={s}
+      className="grid shrink-0 place-items-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700"
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
 function timeAgo(iso: string): string {
   const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return 'только что';
@@ -376,15 +397,15 @@ export default function InboxPage() {
   const mineAssigned = Boolean(conv?.operatorId && me && conv.operatorId === me.id);
 
   return (
-    <main className="px-8 py-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-light text-ink">
+    <main className="flex h-[100dvh] flex-col overflow-hidden px-8 py-5">
+      <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-light text-ink">
             {mode === 'all' ? 'Все диалоги гостей' : 'Диалоги с гостями'}
           </h1>
-          <p className="mt-1 text-sm text-dark-gray">
+          <p className="truncate text-xs text-dark-gray">
             {mode === 'all'
-              ? 'Все переписки гостей с AI-администратором — для наблюдения. Можно вмешаться: «Взять себе» и ответить.'
+              ? 'Все переписки гостей с AI-администратором — можно вмешаться: «Взять себе» и ответить.'
               : 'Диалоги, переданные AI-администратором человеку. Ответ уходит гостю в его канал.'}
           </p>
         </div>
@@ -415,15 +436,15 @@ export default function InboxPage() {
       </div>
 
       {note && (
-        <div className="mb-4 rounded-lg border border-primary-100 bg-primary-50 px-4 py-2 text-sm text-primary-700">
+        <div className="mb-3 shrink-0 rounded-lg border border-primary-100 bg-primary-50 px-4 py-2 text-sm text-primary-700">
           {note}
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]">
         {/* Очередь */}
-        <Card className="p-2">
-          <p className="px-2 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <Card className="flex min-h-0 flex-col overflow-hidden p-2">
+          <p className="shrink-0 px-2 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
             {mode === 'all' ? 'Диалоги' : 'Очередь'} · {list.length}
           </p>
           {list.length === 0 ? (
@@ -431,52 +452,58 @@ export default function InboxPage() {
               {mode === 'all' ? 'Диалогов пока нет' : 'Нет открытых диалогов 🎉'}
             </p>
           ) : (
-            <div className="space-y-1">
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
               {list.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => setSelected(c.id)}
-                  className={`w-full rounded-lg px-3 py-2 text-left transition ${
+                  className={`flex w-full gap-2.5 rounded-lg px-2.5 py-2 text-left transition ${
                     selected === c.id ? 'bg-primary-50 ring-1 ring-primary-100' : 'hover:bg-slate-50'
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      {c.unread && (
-                        <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="Непрочитанное сообщение" />
-                      )}
-                      <span className={`truncate text-sm text-ink ${c.unread ? 'font-semibold' : 'font-medium'}`}>
-                        {c.title || `Диалог ${shortId(c.id)}`}
-                      </span>
-                    </span>
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
-                      {channelLabel(c.channel, c.subChannel)}
-                    </span>
-                  </div>
-                  {c.lastMessage && (
-                    <p className={`mt-0.5 truncate text-[11px] ${c.unread ? 'font-medium text-ink' : 'text-slate-500'}`}>
-                      {c.lastRole === 'user' ? '👤 ' : c.lastRole === 'staff' ? '🧑‍💼 ' : '🤖 '}
-                      {c.lastMessage.replace(/\[img\]\S+/g, '📷 фото')}
-                    </p>
-                  )}
-                  <div className="mt-0.5 flex items-center justify-between text-[11px] text-slate-400">
-                    <span>{guestLabel(c.guestName, c.guestId)}</span>
-                    <span>{timeAgo(c.lastAt ?? c.updatedAt)}</span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-1">
-                    {(() => {
-                      const st = mode === 'all' && c.status ? STATUS_RU[c.status] : undefined;
-                      return st ? (
-                        <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] ${st.cls}`}>
-                          {st.label}
+                  <Avatar name={c.guestName} url={c.avatar} size={38} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {c.unread && (
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="Непрочитанное сообщение" />
+                        )}
+                        <span className={`truncate text-sm text-ink ${c.unread ? 'font-semibold' : 'font-medium'}`}>
+                          {c.title || guestLabel(c.guestName, c.guestId) || `Диалог ${shortId(c.id)}`}
                         </span>
-                      ) : null;
-                    })()}
-                    {c.operatorId && (
-                      <span className="inline-block rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
-                        взят
                       </span>
+                      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
+                        {channelLabel(c.channel, c.subChannel)}
+                      </span>
+                    </div>
+                    {c.lastMessage && (
+                      <p className={`mt-0.5 truncate text-[11px] ${c.unread ? 'font-medium text-ink' : 'text-slate-500'}`}>
+                        {c.lastRole === 'user' ? '👤 ' : c.lastRole === 'staff' ? '🧑‍💼 ' : '🤖 '}
+                        {c.lastMessage.replace(/\[img\]\S+/g, '📷 фото')}
+                      </p>
                     )}
+                    <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                      <span className="truncate">
+                        {guestLabel(c.guestName, c.guestId)}
+                        {c.guestPhone ? ` · ${c.guestPhone}` : ''}
+                      </span>
+                      <span className="shrink-0">{timeAgo(c.lastAt ?? c.updatedAt)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1 empty:hidden">
+                      {(() => {
+                        const st = mode === 'all' && c.status ? STATUS_RU[c.status] : undefined;
+                        return st ? (
+                          <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] ${st.cls}`}>
+                            {st.label}
+                          </span>
+                        ) : null;
+                      })()}
+                      {c.operatorId && (
+                        <span className="inline-block rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+                          взят
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               ))}
@@ -485,7 +512,7 @@ export default function InboxPage() {
         </Card>
 
         {/* Диалог */}
-        <Card className="flex h-[70vh] min-w-0 flex-col p-0">
+        <Card className="flex h-full min-h-0 min-w-0 flex-col p-0">
           {!conv ? (
             <div className="grid flex-1 place-items-center text-sm text-slate-400">Выберите диалог слева</div>
           ) : (
@@ -500,8 +527,10 @@ export default function InboxPage() {
                   Отпустите файл, чтобы отправить гостю
                 </div>
               )}
-              <div className="flex items-center justify-between border-b border-ink/[0.06] px-5 py-3">
-                <div className="min-w-0">
+              <div className="flex items-center justify-between gap-3 border-b border-ink/[0.06] px-5 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Avatar name={conv.guestName} url={conv.avatar} size={40} />
+                  <div className="min-w-0">
                   {renaming ? (
                     <div className="flex items-center gap-1.5">
                       <input
@@ -557,6 +586,7 @@ export default function InboxPage() {
                       ? ` · ${mineAssigned ? 'у вас' : operatorLabel(conv.operatorName, conv.operatorId)}`
                       : ' · не взят'}
                   </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {!mineAssigned && (

@@ -60,4 +60,22 @@ export class AiDirectoryService {
     });
     return new Map(rows.map((r) => [r.id, guestLabel(r)]));
   }
+
+  /**
+   * id гостя → карточка (имя + телефон профиля) для «Диалогов с гостями»: когда диалог
+   * сопоставлен с гостем, телефон берём из профиля (надёжнее, чем из мессенджера, который
+   * его часто не отдаёт — напр. Telegram). Аватара в профиле гостя нет — фото тянется из
+   * канала (channelMeta.avatar), поэтому здесь только имя+телефон.
+   */
+  async guestProfiles(
+    ids: Array<string | null | undefined>,
+  ): Promise<Map<string, { name: string; phone: string | null }>> {
+    const list = uniqIds(ids);
+    if (!list.length) return new Map();
+    const rows = await this.prisma.guest.findMany({
+      where: { id: { in: list } },
+      select: { id: true, firstName: true, lastName: true, phone: true, email: true },
+    });
+    return new Map(rows.map((r) => [r.id, { name: guestLabel(r), phone: r.phone }]));
+  }
 }

@@ -16,6 +16,8 @@ export interface UmnicoIncoming {
   phone?: string;
   /** Тип подканала Umnico (whatsapp/telegram/vk/avito…) — откуда пишет гость (#14). */
   sourceType?: string;
+  /** Фото профиля гостя из канала (если отдаётся) — показываем оператору в диалоге. */
+  avatar?: string;
   text: string;
 }
 
@@ -99,15 +101,26 @@ export class UmnicoAgentService {
         text,
       });
       if (!existing) await this.conversations.setExternalId(res.conversationId, msg.leadId);
+      // Подканал (#14): вебхук не всегда отдаёт source.type, но saId есть всегда —
+      // добираем тип канала (whatsapp/telegram/…) из списка подключённых интеграций.
+      const sourceType = msg.sourceType ?? (await this.umnico.channelTypeBySaId(msg.saId));
+      // Прежние значения: телефон/фото/подканал канал часто отдаёт лишь в первом сообщении,
+      // поэтому setChannelMeta (полная замена) не должен их затирать — сохраняем ранее известные.
+      const prev = (existing?.channelMeta ?? {}) as {
+        phone?: string | null;
+        sourceType?: string | null;
+        avatar?: string | null;
+      };
       // Сохраняем адрес ответа (source/userId/saId) — без него оператор не сможет
       // ответить в Umnico из инбокса (в leadId этих полей нет, а они обязательны).
-      // Телефон гостя кладём сюда же — оператор видит его в инбоксе (#8).
+      // Телефон и фото гостя кладём сюда же — оператор видит их в инбоксе (#8/#14).
       await this.conversations.setChannelMeta(res.conversationId, {
         source: msg.source ?? null,
         userId: msg.userId ?? null,
         saId: msg.saId ?? null,
-        phone: msg.phone ?? null,
-        sourceType: msg.sourceType ?? null,
+        phone: msg.phone ?? prev.phone ?? null,
+        sourceType: sourceType ?? prev.sourceType ?? null,
+        avatar: msg.avatar ?? prev.avatar ?? null,
       });
       // Подтягиваем профиль гостя по номеру телефона (#8): если диалог ещё не привязан
       // к гостю, а телефон совпал с профилем — привязываем (в ленте появятся ФИО/профиль).

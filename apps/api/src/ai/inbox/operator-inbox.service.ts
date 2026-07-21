@@ -182,14 +182,19 @@ export class OperatorInboxService {
   ) {
     const rows = await this.conversations.listGuestConversations(tenantId, opts);
     const [guests, operators] = await Promise.all([
-      this.directory.guests(rows.map((r) => r.guestId)),
+      this.directory.guestProfiles(rows.map((r) => r.guestId)),
       this.directory.operators(rows.map((r) => r.operatorId)),
     ]);
-    return rows.map((r) => ({
-      ...r,
-      guestName: (r.guestId && guests.get(r.guestId)) || null,
-      operatorName: (r.operatorId && operators.get(r.operatorId)) || null,
-    }));
+    return rows.map(({ metaPhone, ...r }) => {
+      const g = r.guestId ? guests.get(r.guestId) : undefined;
+      return {
+        ...r,
+        guestName: g?.name || null,
+        // Телефон: из профиля гостя (если сопоставлен), иначе — из канала (#8).
+        guestPhone: g?.phone ?? metaPhone ?? null,
+        operatorName: (r.operatorId && operators.get(r.operatorId)) || null,
+      };
+    });
   }
 
   /** Число непрочитанных эскалированных диалогов — для бейджа в сайдборе (#1). */
@@ -208,12 +213,17 @@ export class OperatorInboxService {
     void this.conversations.setOperatorRead(id).catch(() => undefined);
     const [messages, guests, operators] = await Promise.all([
       this.conversations.threadView(id, { includeSystem: true }), // операторская лента видит SYSTEM-заметки (лог делегирования)
-      this.directory.guests([convo.guestId]),
+      this.directory.guestProfiles([convo.guestId]),
       this.directory.operators([convo.operatorId]),
     ]);
-    // Телефон гостя из мессенджера (напр. Umnico) храним в channelMeta — показываем
+    // Телефон/фото гостя из мессенджера (напр. Umnico) храним в channelMeta — показываем
     // оператору даже если профиль ещё не сопоставлен (#8). sourceType — подканал (#14).
-    const meta = (convo.channelMeta ?? {}) as { phone?: string | null; sourceType?: string | null };
+    const meta = (convo.channelMeta ?? {}) as {
+      phone?: string | null;
+      sourceType?: string | null;
+      avatar?: string | null;
+    };
+    const g = convo.guestId ? guests.get(convo.guestId) : undefined;
     return {
       conversation: {
         id: convo.id,
@@ -222,8 +232,10 @@ export class OperatorInboxService {
         title: convo.title,
         subChannel: meta.sourceType ?? null,
         guestId: convo.guestId,
-        guestName: (convo.guestId && guests.get(convo.guestId)) || null,
-        guestPhone: meta.phone ?? null,
+        guestName: g?.name || null,
+        // Телефон: из профиля гостя (надёжнее), иначе — из канала (#8).
+        guestPhone: g?.phone ?? meta.phone ?? null,
+        avatar: meta.avatar ?? null,
         operatorId: convo.operatorId,
         operatorName: (convo.operatorId && operators.get(convo.operatorId)) || null,
         createdAt: convo.createdAt,
