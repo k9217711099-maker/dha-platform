@@ -132,7 +132,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: '/staff-chat', perm: 'staff_chat', label: 'Мессенджер', icon: 'chat' },
       { href: '/ai/copilot', perm: 'ai_copilot', label: 'AI-копилот', icon: 'sparkle' },
-      { href: '/ai/inbox', perm: 'guest_inbox', label: 'Лента эскалаций', icon: 'inbox' },
+      { href: '/ai/inbox', perm: 'guest_inbox', label: 'Диалоги с гостями', icon: 'inbox' },
       { href: '/ai/qa', perm: 'ai_qa', label: 'Качество чатов', icon: 'gauge' },
       { href: '/ai/settings', perm: 'ai_agent', label: 'Настройки и каналы', icon: 'sliders' },
     ],

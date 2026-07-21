@@ -306,7 +306,7 @@ export class StaffChatService {
     const users = otherIds.size
       ? await this.prisma.adminUser.findMany({
           where: { id: { in: [...otherIds] } },
-          select: { id: true, name: true, email: true, lastSeenAt: true },
+          select: { id: true, name: true, email: true, avatarUrl: true, lastSeenAt: true },
         })
       : [];
     const userMap = new Map(users.map((u) => [u.id, u]));
@@ -328,12 +328,14 @@ export class StaffChatService {
       let title = c.title;
       let online = false;
       let otherUserId: string | null = null;
+      let avatarUrl: string | null = null; // аватар собеседника DM (#6)
       if (c.kind === StaffChatKind.DM) {
         const other = c.members.find((m) => m.userId !== userId);
         otherUserId = other?.userId ?? null;
         const u = other ? userMap.get(other.userId) : undefined;
         title = u ? u.name?.trim() || u.email : 'Диалог';
         online = this.online(u?.lastSeenAt);
+        avatarUrl = u?.avatarUrl ?? null;
       }
       const muted =
         pref?.notifyMode === StaffNotifyMode.NONE || (!!pref?.mutedUntil && pref.mutedUntil > now);
@@ -344,6 +346,7 @@ export class StaffChatService {
         title,
         online,
         otherUserId,
+        avatarUrl,
         memberCount: c.members.length,
         unread,
         notifyMode: pref?.notifyMode ?? StaffNotifyMode.ALL,

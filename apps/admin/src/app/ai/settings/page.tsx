@@ -67,7 +67,7 @@ function IntegrationsTab() {
           <p className="text-lg font-medium text-ink">AI-агент {aiOn === false ? <span className="text-amber-700">выключен</span> : <span className="text-emerald-700">включён</span>}</p>
           <p className="mt-1 text-sm text-dark-gray">
             {aiOn === false
-              ? 'AI не отвечает автоматически. Все входящие из всех каналов идут оператору в «ленту эскалаций» — отвечаете вручную.'
+              ? 'AI не отвечает автоматически. Все входящие из всех каналов идут оператору в «Диалоги с гостями» — отвечаете вручную.'
               : 'AI отвечает гостям автоматически во всех каналах. Выключите, чтобы переписки шли только оператору.'}
           </p>
         </div>

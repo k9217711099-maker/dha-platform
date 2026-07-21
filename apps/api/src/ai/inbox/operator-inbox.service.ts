@@ -212,14 +212,15 @@ export class OperatorInboxService {
       this.directory.operators([convo.operatorId]),
     ]);
     // Телефон гостя из мессенджера (напр. Umnico) храним в channelMeta — показываем
-    // оператору даже если профиль ещё не сопоставлен (#8).
-    const meta = (convo.channelMeta ?? {}) as { phone?: string | null };
+    // оператору даже если профиль ещё не сопоставлен (#8). sourceType — подканал (#14).
+    const meta = (convo.channelMeta ?? {}) as { phone?: string | null; sourceType?: string | null };
     return {
       conversation: {
         id: convo.id,
         channel: convo.channel,
         status: convo.status,
         title: convo.title,
+        subChannel: meta.sourceType ?? null,
         guestId: convo.guestId,
         guestName: (convo.guestId && guests.get(convo.guestId)) || null,
         guestPhone: meta.phone ?? null,

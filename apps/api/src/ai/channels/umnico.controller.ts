@@ -108,6 +108,9 @@ export class UmnicoController {
           : m.sender?.customerId != null
             ? String(m.sender.customerId)
             : undefined;
+      // Тип подканала Umnico (whatsapp/telegram/vk/avito…) — чтобы показать оператору,
+      // откуда именно пишет гость (#14).
+      const sourceType = src?.type != null ? String(src.type) : undefined;
       // Телефон гостя (если канал его отдаёт) — защитно из нескольких мест: у WhatsApp/SMS
       // это обычно login отправителя; плюс верхнеуровневые customer/contact/phone.
       const phone = pickPhone(
@@ -118,7 +121,7 @@ export class UmnicoController {
         body.contact?.phone,
         body.phone,
       );
-      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, text });
+      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, text });
     } else if (/message\.incoming/i.test(evt)) {
       // message.incoming без текста и без распознанного вложения — просто отметим (warn
       // на проде подавлен, спама не будет; поднять уровень при разборе новых типов медиа).

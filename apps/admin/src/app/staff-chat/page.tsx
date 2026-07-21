@@ -764,8 +764,12 @@ export default function StaffChatPage() {
         selected === c.id ? 'bg-primary-50 ring-1 ring-primary-100' : 'hover:bg-slate-50'
       }`}
     >
-      <span className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
-        {initials(c.title ?? (c.kind === 'GROUP' ? 'Гр' : '?'))}
+      <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
+        {c.avatarUrl ? (
+          <img src={fileUrl(c.avatarUrl)} alt="" className="h-full w-full object-cover" />
+        ) : (
+          initials(c.title ?? (c.kind === 'GROUP' ? 'Гр' : '?'))
+        )}
         {c.kind === 'DM' && chatOnline(c) && (
           <span className="absolute -bottom-0 -right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-400" />
         )}

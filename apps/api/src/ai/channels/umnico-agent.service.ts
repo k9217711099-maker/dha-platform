@@ -14,6 +14,8 @@ export interface UmnicoIncoming {
   saId?: string;
   /** Телефон гостя (если канал его отдаёт) — для привязки диалога к профилю (#8). */
   phone?: string;
+  /** Тип подканала Umnico (whatsapp/telegram/vk/avito…) — откуда пишет гость (#14). */
+  sourceType?: string;
   text: string;
 }
 
@@ -58,6 +60,7 @@ export class UmnicoAgentService {
         userId: msg.userId ?? null,
         saId: msg.saId ?? null,
         phone: msg.phone ?? null,
+        sourceType: msg.sourceType ?? null,
       });
       // Подтягиваем профиль гостя по номеру телефона (#8): если диалог ещё не привязан
       // к гостю, а телефон совпал с профилем — привязываем (в ленте появятся ФИО/профиль).

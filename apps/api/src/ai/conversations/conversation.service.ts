@@ -214,6 +214,7 @@ export class ConversationService {
         operatorId: true,
         operatorReadAt: true,
         externalId: true,
+        channelMeta: true,
         createdAt: true,
         updatedAt: true,
         messages: {
@@ -225,19 +226,22 @@ export class ConversationService {
       },
     });
     const roleMap = { USER: 'user', ASSISTANT: 'ai', STAFF: 'staff' } as const;
-    return rows.map(({ messages, operatorReadAt, ...rest }) => {
+    return rows.map(({ messages, operatorReadAt, channelMeta, ...rest }) => {
       const last = messages[0];
       const lastRole = last ? roleMap[last.role as 'USER' | 'ASSISTANT' | 'STAFF'] : null;
       const lastAt = last?.createdAt ?? rest.updatedAt;
       // Непрочитано: последнее сообщение — от гостя и новее момента, когда оператор
       // в последний раз открывал диалог (или он ещё ни разу не открывал).
       const unread = lastRole === 'user' && (!operatorReadAt || lastAt > operatorReadAt);
+      // Подканал (для Umnico: telegram/whatsapp/… — откуда пишет гость, #14).
+      const subChannel = (channelMeta as { sourceType?: string } | null)?.sourceType ?? null;
       return {
         ...rest,
         lastRole,
         lastMessage: last?.content ?? null,
         lastAt,
         unread,
+        subChannel,
       };
     });
   }

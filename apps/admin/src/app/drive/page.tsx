@@ -104,7 +104,8 @@ function DrivePageInner() {
   const canEdit = me?.permissions.includes('drive_edit') ?? false;
   const canManage = me?.permissions.includes('drive_manage') ?? false;
 
-  const [parentId, setParentId] = useState<string | null>(null);
+  // Текущая папка берётся из URL (?f=<id>) — чтобы при обновлении страницы остаться в ней (#11).
+  const [parentId, setParentId] = useState<string | null>(() => params.get('f'));
   const [nodes, setNodes] = useState<DriveNodeRow[]>([]);
   const [crumbs, setCrumbs] = useState<{ id: string; name: string }[]>([]);
   const [trashMode, setTrashMode] = useState(false);
@@ -133,6 +134,15 @@ function DrivePageInner() {
     else void load(parentId).catch((e) => setError((e as Error).message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, parentId, trashMode]);
+
+  // Держим текущую папку в URL (?f=), чтобы обновление страницы не сбрасывало на корень (#11).
+  useEffect(() => {
+    if (!ready) return;
+    const cur = params.get('f') ?? '';
+    if ((parentId ?? '') === cur) return;
+    router.replace(parentId ? `/drive?f=${parentId}` : '/drive');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parentId, ready]);
 
   // Внутренняя ссылка /drive?d=<shortId>
   useEffect(() => {

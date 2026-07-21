@@ -1788,6 +1788,8 @@ export interface QaReviewRow {
 export interface InboxConversationRow {
   id: string;
   channel: string;
+  /** Подканал (для Umnico: telegram/whatsapp/… — откуда пишет гость, #14). */
+  subChannel?: string | null;
   title?: string | null;
   guestId: string | null;
   guestName: string | null;
@@ -1827,6 +1829,7 @@ export interface InboxThread {
     id: string;
     channel: string;
     status: string;
+    subChannel?: string | null;
     title?: string | null;
     guestId: string | null;
     guestName: string | null;
@@ -1861,6 +1864,8 @@ export interface StaffChatListItem {
   title: string | null;
   online: boolean;
   otherUserId: string | null;
+  /** Аватар собеседника (DM) — картинка профиля в списке чатов (#6). */
+  avatarUrl: string | null;
   memberCount: number;
   unread: number;
   notifyMode: 'ALL' | 'MENTIONS' | 'NONE';

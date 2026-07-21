@@ -22,6 +22,27 @@ const CHANNEL_RU: Record<string, string> = {
   UMNICO: 'Умнико',
   ADMIN: 'Админка',
 };
+/** Подканалы Umnico → русские подписи (#14: откуда пишет гость). */
+const SUBCHANNEL_RU: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  whatsappV2: 'WhatsApp',
+  telebot: 'Telegram',
+  telegram: 'Telegram',
+  telegramV2: 'Telegram',
+  instagramV3: 'Instagram',
+  fb_messenger: 'Messenger',
+  viber: 'Viber',
+  vk: 'ВКонтакте',
+  avito: 'Avito',
+  ok: 'Одноклассники',
+};
+/** Подпись канала диалога: базовый канал + подканал Umnico («Умнико · Telegram»). */
+const channelLabel = (channel: string, subChannel?: string | null): string => {
+  const base = CHANNEL_RU[channel] ?? channel;
+  if (!subChannel) return base;
+  const sub = SUBCHANNEL_RU[subChannel] ?? subChannel;
+  return `${base} · ${sub}`;
+};
 const STATUS_RU: Record<string, { label: string; cls: string }> = {
   BOT: { label: 'AI ведёт', cls: 'bg-sky-50 text-sky-700' },
   ESCALATED: { label: 'эскалация', cls: 'bg-amber-50 text-amber-700' },
@@ -359,12 +380,12 @@ export default function InboxPage() {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-light text-ink">
-            {mode === 'all' ? 'Все диалоги гостей' : 'Лента эскалаций'}
+            {mode === 'all' ? 'Все диалоги гостей' : 'Диалоги с гостями'}
           </h1>
           <p className="mt-1 text-sm text-dark-gray">
             {mode === 'all'
               ? 'Все переписки гостей с AI-администратором — для наблюдения. Можно вмешаться: «Взять себе» и ответить.'
-              : 'Диалоги, переданные AI-администратором человеку. Ответ уходит гостю в его канал (§4.7).'}
+              : 'Диалоги, переданные AI-администратором человеку. Ответ уходит гостю в его канал.'}
           </p>
         </div>
         <div className="flex shrink-0 rounded-lg border border-ink/10 p-0.5 text-sm">
@@ -377,7 +398,7 @@ export default function InboxPage() {
               mode === 'escalated' ? 'bg-primary text-white' : 'text-slate-500 hover:text-ink'
             }`}
           >
-            Эскалированные
+            Требуют ответа
           </button>
           <button
             onClick={() => {
@@ -407,7 +428,7 @@ export default function InboxPage() {
           </p>
           {list.length === 0 ? (
             <p className="px-2 py-6 text-center text-sm text-slate-400">
-              {mode === 'all' ? 'Диалогов пока нет' : 'Нет открытых эскалаций 🎉'}
+              {mode === 'all' ? 'Диалогов пока нет' : 'Нет открытых диалогов 🎉'}
             </p>
           ) : (
             <div className="space-y-1">
@@ -429,7 +450,7 @@ export default function InboxPage() {
                       </span>
                     </span>
                     <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
-                      {CHANNEL_RU[c.channel] ?? c.channel}
+                      {channelLabel(c.channel, c.subChannel)}
                     </span>
                   </div>
                   {c.lastMessage && (
@@ -514,7 +535,7 @@ export default function InboxPage() {
                       <p className="truncate text-sm font-medium text-ink">
                         {conv.title || `Диалог ${shortId(conv.id)}`}
                         <span className="ml-1.5 font-normal text-slate-400">
-                          · {CHANNEL_RU[conv.channel] ?? conv.channel}
+                          · {channelLabel(conv.channel, conv.subChannel)}
                         </span>
                       </p>
                       <button
