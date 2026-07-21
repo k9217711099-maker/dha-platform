@@ -1,7 +1,7 @@
 'use client';
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { adminApi, fileUrl, type BookingAuditEntry, type BookingKeyView, type BookingTag, type Extra, type GuestConversation, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory, type UmnicoReachChannel } from '../../../lib/api';
+import { adminApi, fileUrl, type BookingAuditEntry, type BookingKeyDoor, type BookingKeyView, type BookingTag, type Extra, type GuestConversation, type LockRecord, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory, type UmnicoReachChannel } from '../../../lib/api';
 import { STATUS as OPS_STATUS } from '../../ops/shared';
 import { CheckinFunnelPanel } from './CheckinFunnelPanel';
 import { PassportPanel } from './PassportPanel';
@@ -178,18 +178,147 @@ function LockTab({ b, can }: { b: PmsBooking; can: (p: string) => boolean }) {
         ) : (
           <div className="space-y-2">
             {view.doors.map((d, i) => (
-              <div key={i} className="flex items-center justify-between rounded-lg border border-ink/10 px-3 py-2 text-sm">
-                <div>
-                  <p className="text-ink">{d.doorName}</p>
-                  <p className="text-xs text-dark-gray">{statusRu(d.status)}{d.canRemoteOpen ? ' · удалённое открытие' : ''}</p>
-                </div>
-                {d.pin ? <span className="rounded-md bg-ink/5 px-3 py-1 font-mono text-base tracking-widest text-ink">{d.pin}</span> : <span className="text-xs text-dark-gray">PIN скрыт</span>}
-              </div>
+              <DoorRow key={i} door={d} canManage={canManage} statusRu={statusRu} validUntil={view.validUntil} />
             ))}
           </div>
         )}
       </div>
       <p className="text-[11px] text-dark-gray">Коды показываются, пока ключ активен и действует сейчас. После выезда доступ удаляется автоматически.</p>
+    </div>
+  );
+}
+
+/**
+ * Одна дверь брони с «пультом» (#2): удалённое открытие, генерация временного кода,
+ * настраиваемого кода (свой PIN), просмотр журнала входов замка. Каждая дверь ведёт
+ * своё состояние — панели независимы.
+ */
+function DoorRow({ door, canManage, statusRu, validUntil }: {
+  door: BookingKeyDoor;
+  canManage: boolean;
+  statusRu: (s: string) => string;
+  validUntil: string | null;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [panel, setPanel] = useState<'temp' | 'custom' | 'log' | null>(null);
+  const [dur, setDur] = useState<'2' | '6' | '24' | 'out'>('6');
+  const [customPin, setCustomPin] = useState('');
+  const [genPin, setGenPin] = useState<string | null>(null);
+  const [records, setRecords] = useState<LockRecord[] | null>(null);
+
+  const windowMs = () => {
+    const startMs = Date.now();
+    const byDur = startMs + Number(dur) * 3_600_000;
+    const endMs = dur === 'out' && validUntil ? new Date(validUntil).getTime() : byDur;
+    return { startMs, endMs: endMs > startMs ? endMs : startMs + 3_600_000 };
+  };
+  const togglePanel = (p: 'temp' | 'custom' | 'log') => { setMsg(null); setGenPin(null); setPanel((cur) => (cur === p ? null : p)); };
+
+  const remoteOpen = async () => {
+    setBusy(true); setMsg(null);
+    try { await adminApi.ttlockUnlock(door.ttlockLockId); setMsg('Команда на открытие отправлена ✓'); }
+    catch (e) { setMsg(e instanceof Error ? e.message : 'Не удалось открыть'); }
+    finally { setBusy(false); }
+  };
+  const makeTemp = async () => {
+    setBusy(true); setMsg(null); setGenPin(null);
+    try {
+      const { startMs, endMs } = windowMs();
+      const r = await adminApi.ttlockPasscode({ ttlockLockId: door.ttlockLockId, mode: 'get', startMs, endMs, name: `Врем. · ${door.doorName}` });
+      setGenPin(r.pin); setMsg('Временный код создан.');
+    } catch (e) { setMsg(e instanceof Error ? e.message : 'Не удалось создать код'); }
+    finally { setBusy(false); }
+  };
+  const makeCustom = async () => {
+    if (!/^\d{4,9}$/.test(customPin)) { setMsg('PIN — от 4 до 9 цифр.'); return; }
+    setBusy(true); setMsg(null); setGenPin(null);
+    try {
+      const { startMs, endMs } = windowMs();
+      const r = await adminApi.ttlockPasscode({ ttlockLockId: door.ttlockLockId, mode: 'add', pin: customPin, startMs, endMs, name: `Свой · ${door.doorName}` });
+      setGenPin(r.pin); setMsg('Настраиваемый код записан на замок.');
+    } catch (e) { setMsg(e instanceof Error ? e.message : 'Не удалось записать код (для своего PIN нужен шлюз/Bluetooth рядом)'); }
+    finally { setBusy(false); }
+  };
+  const loadLog = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const to = Date.now(); const from = to - 7 * 86_400_000;
+      setRecords(await adminApi.ttlockRecords(door.ttlockLockId, from, to));
+    } catch (e) { setMsg(e instanceof Error ? e.message : 'Не удалось загрузить журнал'); }
+    finally { setBusy(false); }
+  };
+  const openLog = () => { togglePanel('log'); if (!records) void loadLog(); };
+  const fmtAt = (ms: number) => new Date(ms).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+  const durLabel = (
+    <select value={dur} onChange={(e) => setDur(e.target.value as typeof dur)} className="rounded-md border border-ink/20 bg-white px-2 py-1 text-xs">
+      <option value="2">2 часа</option>
+      <option value="6">6 часов</option>
+      <option value="24">24 часа</option>
+      {validUntil ? <option value="out">до выезда</option> : null}
+    </select>
+  );
+
+  return (
+    <div className="rounded-lg border border-ink/10 px-3 py-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-ink">{door.doorName}</p>
+          <p className="text-xs text-dark-gray">{statusRu(door.status)}{door.canRemoteOpen ? ' · есть шлюз' : ' · без шлюза'}</p>
+        </div>
+        {door.pin ? <span className="rounded-md bg-ink/5 px-3 py-1 font-mono text-base tracking-widest text-ink">{door.pin}</span> : <span className="text-xs text-dark-gray">PIN скрыт</span>}
+      </div>
+
+      {canManage ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button type="button" onClick={() => void remoteOpen()} disabled={busy || !door.canRemoteOpen} title={door.canRemoteOpen ? 'Открыть дверь удалённо через шлюз' : 'Нужен шлюз (gateway)'} className="rounded-md bg-ink px-2.5 py-1 text-xs text-beige disabled:opacity-40">🔓 Открыть удалённо</button>
+          <button type="button" onClick={() => togglePanel('temp')} disabled={busy} className={`rounded-md border px-2.5 py-1 text-xs ${panel === 'temp' ? 'border-ink bg-ink/5' : 'border-ink/20'}`}>⏱ Временный код</button>
+          <button type="button" onClick={() => togglePanel('custom')} disabled={busy} className={`rounded-md border px-2.5 py-1 text-xs ${panel === 'custom' ? 'border-ink bg-ink/5' : 'border-ink/20'}`}>🔢 Свой код</button>
+          <button type="button" onClick={openLog} disabled={busy} className={`rounded-md border px-2.5 py-1 text-xs ${panel === 'log' ? 'border-ink bg-ink/5' : 'border-ink/20'}`}>📜 Журнал входов</button>
+        </div>
+      ) : null}
+
+      {msg ? <p className="mt-2 text-xs text-primary">{msg}</p> : null}
+      {genPin ? <p className="mt-1 text-sm">Код: <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-mono text-base tracking-widest text-emerald-700">{genPin}</span></p> : null}
+
+      {panel === 'temp' ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-ink/[0.03] p-2">
+          <span className="text-xs text-dark-gray">Срок:</span>{durLabel}
+          <button type="button" onClick={() => void makeTemp()} disabled={busy} className="rounded-md bg-ink px-3 py-1 text-xs text-beige disabled:opacity-40">Создать код</button>
+          <span className="text-[11px] text-dark-gray">Код по алгоритму TTLock — работает без шлюза.</span>
+        </div>
+      ) : null}
+
+      {panel === 'custom' ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-ink/[0.03] p-2">
+          <input value={customPin} onChange={(e) => setCustomPin(e.target.value.replace(/\D/g, '').slice(0, 9))} inputMode="numeric" placeholder="PIN 4–9 цифр" className="w-28 rounded-md border border-ink/20 px-2 py-1 text-sm" />
+          <span className="text-xs text-dark-gray">Срок:</span>{durLabel}
+          <button type="button" onClick={() => void makeCustom()} disabled={busy} className="rounded-md bg-ink px-3 py-1 text-xs text-beige disabled:opacity-40">Записать код</button>
+          <span className="text-[11px] text-dark-gray">Свой PIN пишется на замок — нужен шлюз или Bluetooth рядом.</span>
+        </div>
+      ) : null}
+
+      {panel === 'log' ? (
+        <div className="mt-2 rounded-md bg-ink/[0.03] p-2">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-xs text-dark-gray">Журнал за 7 дней</span>
+            <button type="button" onClick={() => void loadLog()} disabled={busy} className="text-xs text-primary hover:underline disabled:opacity-40">Обновить</button>
+          </div>
+          {records === null ? <p className="text-xs text-dark-gray">Загрузка…</p>
+            : records.length === 0 ? <p className="text-xs text-dark-gray">Событий нет.</p>
+            : (
+              <ul className="max-h-48 space-y-1 overflow-y-auto text-xs">
+                {records.map((r, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 border-b border-ink/5 pb-1">
+                    <span className="min-w-0 truncate text-ink">{r.success ? '✅' : '⛔'} {r.who || '—'}</span>
+                    <span className="shrink-0 text-dark-gray">{r.type} · {fmtAt(r.at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+        </div>
+      ) : null}
     </div>
   );
 }
