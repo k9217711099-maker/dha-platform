@@ -464,7 +464,7 @@ export default function InboxPage() {
         </Card>
 
         {/* Диалог */}
-        <Card className="flex h-[70vh] flex-col p-0">
+        <Card className="flex h-[70vh] min-w-0 flex-col p-0">
           {!conv ? (
             <div className="grid flex-1 place-items-center text-sm text-slate-400">Выберите диалог слева</div>
           ) : (
@@ -613,7 +613,7 @@ export default function InboxPage() {
                   ) : (
                     <div
                       key={i}
-                      className={`group flex items-center gap-1 ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}
+                      className={`group flex min-w-0 items-center gap-1 ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}
                     >
                       {m.role !== 'user' && (
                         <button
@@ -624,12 +624,12 @@ export default function InboxPage() {
                           ↩
                         </button>
                       )}
-                      <div className="max-w-[75%]">
+                      <div className="min-w-0 max-w-[75%]">
                         {m.role === 'ai' && (
                           <div className="mb-0.5 text-right text-[10px] text-slate-400">AI</div>
                         )}
                         <div
-                          className={`overflow-hidden whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
+                          className={`overflow-hidden whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-2xl px-3 py-2 text-sm ${
                             m.role === 'user'
                               ? 'bg-slate-100 text-ink'
                               : m.role === 'staff'
