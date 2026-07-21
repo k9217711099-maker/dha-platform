@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { DriveNodeKind, Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../common/prisma/prisma.service.js';
 import { TenantService } from '../pms/tenant/tenant.service.js';
 import { SecretsService } from '../secrets/secrets.service.js';
+import { newShortId } from '../kb/content.js';
 import { ALL_PERMISSION_KEYS, DEFAULT_ROLES, PERMISSIONS } from './permissions.js';
 
 const USER_SELECT = { id: true, email: true, name: true, roleKey: true, active: true } as const;
@@ -137,7 +138,58 @@ export class RolesService implements OnModuleInit {
     if (dto.groupIds?.length) {
       await this.prisma.userGroupMember.createMany({ data: dto.groupIds.map((groupId) => ({ groupId, adminUserId: user.id })), skipDuplicates: true });
     }
+    // Личная папка сотрудника на Диске (#8): создаётся при приёме, владелец — он сам.
+    await this.prisma.driveNode
+      .create({
+        data: {
+          tenantId,
+          parentId: null,
+          kind: DriveNodeKind.FOLDER,
+          name: `Личная папка — ${dto.name?.trim() || dto.email}`,
+          shortId: newShortId(),
+          ownerId: user.id,
+        },
+      })
+      .catch(() => undefined); // не роняем создание сотрудника
     return { ...user, groupIds: dto.groupIds ?? [] };
+  }
+
+  /**
+   * Офбординг Диска (#8): личные папки уволенного передаём руководителю его отдела
+   * (UserGroup.headUserId; фолбэк — тот, кто увольняет), помечаем «[Архив]», а публичные
+   * ссылки на его файлы отключаем. Ошибки не роняют увольнение (вызывается с .catch).
+   */
+  private async offboardDrive(tenantId: string, userId: string, actorId?: string): Promise<void> {
+    const memberships = await this.prisma.userGroupMember.findMany({
+      where: { adminUserId: userId },
+      select: { groupId: true },
+    });
+    const groupIds = memberships.map((m) => m.groupId);
+    const groups = groupIds.length
+      ? await this.prisma.userGroup.findMany({ where: { id: { in: groupIds } }, select: { headUserId: true } })
+      : [];
+    const headId = groups.map((g) => g.headUserId).find((h) => !!h && h !== userId) ?? actorId ?? null;
+    // Личные корневые папки уволенного → руководителю + пометка «[Архив]».
+    const folders = await this.prisma.driveNode.findMany({
+      where: { tenantId, ownerId: userId, parentId: null, kind: DriveNodeKind.FOLDER, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    for (const f of folders) {
+      await this.prisma.driveNode.update({
+        where: { id: f.id },
+        data: { ownerId: headId, name: f.name.startsWith('[Архив]') ? f.name : `[Архив] ${f.name}` },
+      });
+    }
+    // Отключаем публичные ссылки на файлы уволенного.
+    const files = await this.prisma.driveNode.findMany({
+      where: { tenantId, ownerId: userId, kind: DriveNodeKind.FILE },
+      select: { id: true },
+    });
+    if (files.length) {
+      await this.prisma.publicLink.deleteMany({
+        where: { tenantId, resourceType: 'drive_file', resourceId: { in: files.map((n) => n.id) } },
+      });
+    }
   }
 
   async updateUser(id: string, dto: { roleKey?: string; positionId?: string; groupIds?: string[]; allowedAddressIds?: string[]; active?: boolean; password?: string; name?: string; phone?: string; birthday?: string | null; hireDate?: string | null; hobby?: string; about?: string; customFields?: Record<string, string> }, actorId?: string) {
@@ -167,6 +219,7 @@ export class RolesService implements OnModuleInit {
     // Офбординг (KB-DRIVE-TZ.md §8): отключение сотрудника → авто-задачи на ротацию секретов
     if (before?.active === true && dto.active === false) {
       await this.secrets.onEmployeeOffboarded(before.tenantId, id, actorId).catch(() => undefined);
+      await this.offboardDrive(before.tenantId, id, actorId).catch(() => undefined);
     }
     const groupIds = dto.groupIds ?? (await this.prisma.userGroupMember.findMany({ where: { adminUserId: id }, select: { groupId: true } })).map((m) => m.groupId);
     return { ...updated, groupIds };
