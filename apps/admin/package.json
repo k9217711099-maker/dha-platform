@@ -13,6 +13,8 @@
   "dependencies": {
     "@dha/domain": "workspace:*",
     "@dha/ui": "workspace:*",
+    "@mind-elixir/node-menu": "^5.0.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^1.24.0",
     "mind-elixir": "^5.13.0",
     "next": "^15.1.3",
