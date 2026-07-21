@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AiChannel } from '@prisma/client';
+import { AiActorKind, AiChannel, AiConversationStatus, AiMessageRole } from '@prisma/client';
 import { GuestAgentService } from '../agents/guest-agent.service.js';
 import { ConversationService } from '../conversations/conversation.service.js';
 import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
@@ -36,6 +36,53 @@ export class UmnicoAgentService {
     private readonly tenant: TenantService,
     private readonly toggle: ChannelToggleService,
   ) {}
+
+  /**
+   * «Написать гостю первым» из карточки брони (#12): инициируем диалог по телефону через
+   * выбранный подключённый канал Umnico (saId) и логируем исходящее в диалог гостя, чтобы
+   * оно было видно в истории переписки. Диалог переводим в ESCALATED — оператор ведёт вручную.
+   */
+  async reachOut(input: {
+    guestId?: string;
+    phone: string;
+    saId: number;
+    text: string;
+  }): Promise<{ ok: boolean; conversationId?: string; error?: string }> {
+    const tenantId = await this.tenant.getDefaultTenantId();
+    const r = await this.umnico.reachOutFirst(input.saId, input.phone, input.text);
+    if (!r.ok) return { ok: false, error: r.error };
+    let conversationId: string | undefined;
+    try {
+      if (r.leadId) {
+        const existing = await this.conversations.findByExternal(tenantId, AiChannel.UMNICO, r.leadId);
+        if (existing) conversationId = existing.id;
+        else {
+          const created = await this.conversations.create({
+            tenantId,
+            channel: AiChannel.UMNICO,
+            actorKind: AiActorKind.GUEST,
+            guestId: input.guestId,
+          });
+          conversationId = created.id;
+          await this.conversations.setExternalId(conversationId, r.leadId);
+        }
+        await this.conversations.setChannelMeta(conversationId, {
+          saId: String(input.saId),
+          phone: input.phone,
+        });
+        if (input.guestId) await this.conversations.setGuestId(conversationId, input.guestId);
+        await this.conversations.addMessage(conversationId, {
+          role: AiMessageRole.STAFF,
+          content: input.text,
+        });
+        await this.conversations.setStatus(conversationId, AiConversationStatus.ESCALATED);
+      }
+    } catch (e) {
+      // Сообщение гостю уже ушло — не роняем ответ из-за проблем логирования.
+      this.logger.error(`reachOut: сообщение ушло, но лог в диалог не удался: ${(e as Error).message}`);
+    }
+    return { ok: true, conversationId };
+  }
 
   async handleIncoming(msg: UmnicoIncoming): Promise<void> {
     const text = msg.text?.trim();

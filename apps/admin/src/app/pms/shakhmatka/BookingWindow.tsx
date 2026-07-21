@@ -1,7 +1,7 @@
 'use client';
 
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { adminApi, fileUrl, type BookingAuditEntry, type BookingTag, type Extra, type GuestConversation, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory } from '../../../lib/api';
+import { adminApi, fileUrl, type BookingAuditEntry, type BookingTag, type Extra, type GuestConversation, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory, type UmnicoReachChannel } from '../../../lib/api';
 import { STATUS as OPS_STATUS } from '../../ops/shared';
 import { CheckinFunnelPanel } from './CheckinFunnelPanel';
 import { FinanceTab } from './FinanceTab';
@@ -178,6 +178,13 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
   const [showHistory, setShowHistory] = useState(false);
   const [convos, setConvos] = useState<GuestConversation[] | null>(null);
   const [openConvo, setOpenConvo] = useState<string | null>(null);
+  // «Написать гостю» через подключённый канал Umnico (#12).
+  const [showCompose, setShowCompose] = useState(false);
+  const [reachChannels, setReachChannels] = useState<UmnicoReachChannel[] | null>(null);
+  const [reachSaId, setReachSaId] = useState<number | null>(null);
+  const [reachText, setReachText] = useState('');
+  const [reachBusy, setReachBusy] = useState(false);
+  const [reachNote, setReachNote] = useState<string | null>(null);
   const gid = b.guest?.id;
   useEffect(() => {
     if (!gid) return;
@@ -193,10 +200,46 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
   const Ch = ({ href, label, cls }: { href: string; label: string; cls: string }) => (
     <a href={href} target="_blank" rel="noreferrer" className={`rounded-md px-2.5 py-1 text-xs font-medium ${cls}`}>{label}</a>
   );
+  const reloadHistory = () => {
+    if (gid) void adminApi.guestConversations(gid).then(setConvos).catch(() => setConvos([]));
+  };
   const toggleHistory = () => {
     setShowHistory((v) => !v);
-    if (!showHistory && convos === null && gid) {
-      void adminApi.guestConversations(gid).then(setConvos).catch(() => setConvos([]));
+    if (!showHistory && convos === null) reloadHistory();
+  };
+  const openCompose = () => {
+    setShowCompose((v) => !v);
+    setReachNote(null);
+    if (reachChannels === null) {
+      void adminApi
+        .umnicoReachChannels()
+        .then((cs) => {
+          const active = cs.filter((c) => !c.status || /open|active|connect|1/i.test(c.status));
+          setReachChannels(active.length ? active : cs);
+          setReachSaId((prev) => prev ?? (active[0]?.id ?? cs[0]?.id ?? null));
+        })
+        .catch(() => setReachChannels([]));
+    }
+  };
+  const sendReach = async () => {
+    const text = reachText.trim();
+    if (!text || !reachSaId || !b.guest?.phone || reachBusy) return;
+    setReachBusy(true);
+    setReachNote(null);
+    try {
+      const r = await adminApi.umnicoReachOut({ guestId: gid, phone: b.guest.phone, saId: reachSaId, text });
+      if (r.ok) {
+        setReachText('');
+        setReachNote('Сообщение отправлено гостю.');
+        setShowHistory(true);
+        reloadHistory();
+      } else {
+        setReachNote(`Не удалось отправить: ${r.error ?? 'ошибка'}`);
+      }
+    } catch (e) {
+      setReachNote(e instanceof Error ? e.message : 'Ошибка отправки');
+    } finally {
+      setReachBusy(false);
     }
   };
   const CHANNEL_RU: Record<string, string> = {
@@ -241,8 +284,36 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
             {digits ? <Ch href={`https://wa.me/${digits}`} label="WhatsApp" cls="bg-emerald-100 text-emerald-800" /> : null}
             {digits ? <Ch href={`https://t.me/+${digits}`} label="Telegram" cls="bg-sky-100 text-sky-800" /> : null}
             {b.guest?.email ? <Ch href={`mailto:${b.guest.email}`} label="Почта" cls="bg-ink/10 text-ink" /> : null}
-            <Ch href={`https://umnico.com/`} label="Umnico" cls="bg-indigo-100 text-indigo-800" />
+            {b.guest?.phone ? (
+              <button type="button" onClick={openCompose} className={`rounded-md px-2.5 py-1 text-xs font-medium ${showCompose ? 'bg-primary text-white' : 'bg-primary-100 text-primary-700'}`}>✍ Написать гостю</button>
+            ) : null}
           </div>
+
+          {/* «Написать гостю» через подключённый канал Umnico (#12) */}
+          {showCompose && b.guest?.phone ? (
+            <div className="mt-2 rounded-lg border border-primary-100 bg-primary-50/40 p-2.5">
+              {reachChannels === null ? (
+                <p className="text-xs text-dark-gray">Загрузка каналов…</p>
+              ) : reachChannels.length === 0 ? (
+                <p className="text-xs text-dark-gray">Нет подключённых каналов Umnico. Подключите в «AI → Настройки и каналы».</p>
+              ) : (
+                <>
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className="text-[11px] text-dark-gray">Канал:</span>
+                    <select value={reachSaId ?? ''} onChange={(e) => setReachSaId(Number(e.target.value))} className="flex-1 rounded-md border border-ink/20 bg-white px-2 py-1 text-xs">
+                      {reachChannels.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>
+                  </div>
+                  <textarea value={reachText} onChange={(e) => setReachText(e.target.value)} rows={2} placeholder={`Сообщение гостю на ${formatPhoneDisplay(b.guest.phone)}…`} className="w-full rounded-md border border-ink/20 px-2 py-1.5 text-sm" />
+                  <p className="mt-1 text-[10px] leading-tight text-dark-gray">Гостю уходит первым по номеру телефона через выбранный канал. Личные аккаунты мессенджеров могут блокировать за рассылки — используйте официальные каналы.</p>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <button type="button" onClick={() => void sendReach()} disabled={reachBusy || !reachText.trim() || !reachSaId} className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-white disabled:opacity-40">{reachBusy ? 'Отправка…' : 'Отправить'}</button>
+                    {reachNote ? <span className={`text-[11px] ${reachNote.startsWith('Не удалось') || reachNote.includes('Ошибка') ? 'text-red-600' : 'text-emerald-600'}`}>{reachNote}</span> : null}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
 
           {/* История переписки с гостем (#12) */}
           {gid ? (

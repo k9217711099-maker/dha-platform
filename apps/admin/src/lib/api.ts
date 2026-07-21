@@ -149,6 +149,15 @@ export interface CheckinQueueItem {
   passportCheckNote?: string | null;
 }
 /** Канал коммуникации гостевого AI-агента (вкладка «Интеграции»). */
+/** Подключённый канал Umnico (для «написать гостю» из брони, #12). id = saId. */
+export interface UmnicoReachChannel {
+  id: number;
+  type: string;
+  login: string;
+  status: string;
+  label: string;
+}
+
 export interface AiChannel {
   id: 'web' | 'app' | 'telegram' | 'tg_direct' | 'max' | 'whatsapp' | 'umnico' | 'email' | 'avito';
   name: string;
@@ -2084,6 +2093,12 @@ export const adminApi = {
       `/admin/checkin/${bookingId}/invite`,
       { method: 'POST', body: channels ? { channels } : {} },
     ),
+  // Ручной override брони в критической ситуации (§11): выдать ключ / незаезд / отмена.
+  pmsCheckinOverride: (bookingId: string, action: 'issue_key' | 'no_show' | 'cancel', reason?: string) =>
+    request<{ ok: boolean; message: string }>(`/admin/checkin/${bookingId}/override`, {
+      method: 'POST',
+      body: reason ? { action, reason } : { action },
+    }),
   // Очередь заезда + отчёт воронки (CHECK-IN-TZ §11, право checkin_desk)
   checkinQueue: (date?: string, propertyId?: string) => {
     const qs = new URLSearchParams();
@@ -2452,6 +2467,10 @@ export const adminApi = {
   aiAgentEnabled: () => request<{ enabled: boolean }>('/ai/channels/ai-agent'),
   aiSetAgentEnabled: (enabled: boolean) => request<{ enabled: boolean }>('/ai/channels/ai-agent', { method: 'PUT', body: { enabled } }),
   aiChannels: () => request<AiChannel[]>('/ai/channels'),
+  // #12: подключённые каналы Umnico + «написать гостю первым» из брони.
+  umnicoReachChannels: () => request<UmnicoReachChannel[]>('/ai/channels/umnico/reach-channels'),
+  umnicoReachOut: (body: { guestId?: string; phone: string; saId: number; text: string }) =>
+    request<{ ok: boolean; conversationId?: string; error?: string }>('/ai/channels/umnico/reach-out', { method: 'POST', body }),
   aiSetChannelEnabled: (id: string, enabled: boolean) =>
     request<AiChannel[]>(`/ai/channels/${id}/enabled`, { method: 'PUT', body: { enabled } }),
   aiSetChannelAi: (id: string, enabled: boolean) =>

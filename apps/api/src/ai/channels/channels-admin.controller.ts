@@ -12,6 +12,7 @@ import {
 } from '../../integrations/telegram-userbot/telegram-userbot.service.js';
 import { EmailConfigService } from '../../notifications/email/email-config.service.js';
 import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
+import { UmnicoAgentService } from './umnico-agent.service.js';
 import { AuditService } from '../../warehouse/audit/audit.service.js';
 import {
   SaveMaxConfigDto,
@@ -23,6 +24,7 @@ import {
   SaveUmnicoConfigDto,
   TestUmnicoConfigDto,
   RegisterUmnicoWebhookDto,
+  UmnicoReachOutDto,
   TgDirectCodeDto,
   TgDirectPasswordDto,
   TgDirectStartDto,
@@ -84,6 +86,7 @@ export class ChannelsAdminController {
     private readonly userbot: TelegramUserbotService,
     private readonly emailCfg: EmailConfigService,
     private readonly umnico: UmnicoConfigService,
+    private readonly umnicoAgent: UmnicoAgentService,
     private readonly toggle: ChannelToggleService,
     private readonly audit: AuditService,
   ) {}
@@ -492,6 +495,25 @@ export class ChannelsAdminController {
   @ApiOperation({ summary: 'Список подключённых в Umnico каналов (для выбора в воронке/брони)' })
   umnicoChannels() {
     return this.umnico.listChannels();
+  }
+
+  @Get('umnico/reach-channels')
+  @RequirePermission('guests')
+  @ApiOperation({ summary: 'Подключённые каналы Umnico для «написать гостю» из брони (#12)' })
+  reachChannels() {
+    return this.umnico.listChannels();
+  }
+
+  @Post('umnico/reach-out')
+  @RequirePermission('guests')
+  @ApiOperation({ summary: 'Написать гостю первым по телефону через канал Umnico (#12)' })
+  reachOut(@Body() dto: UmnicoReachOutDto) {
+    return this.umnicoAgent.reachOut({
+      guestId: dto.guestId,
+      phone: dto.phone,
+      saId: dto.saId,
+      text: dto.text,
+    });
   }
 
   @Put('umnico')

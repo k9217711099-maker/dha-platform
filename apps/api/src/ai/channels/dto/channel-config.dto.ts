@@ -166,3 +166,25 @@ export class TgDirectPasswordDto {
   @MaxLength(256)
   password!: string;
 }
+
+/** «Написать гостю первым» из брони через канал Umnico (#12). */
+export class UmnicoReachOutDto {
+  @ApiPropertyOptional({ description: 'ID гостя (для привязки диалога к профилю)' })
+  @IsOptional()
+  @IsString()
+  guestId?: string;
+
+  @ApiProperty({ description: 'Телефон гостя (в любом формате)' })
+  @IsString()
+  @MaxLength(32)
+  phone!: string;
+
+  @ApiProperty({ description: 'saId — id подключённого канала Umnico (GET /umnico/reach-channels)' })
+  @IsInt()
+  saId!: number;
+
+  @ApiProperty({ description: 'Текст сообщения' })
+  @IsString()
+  @MaxLength(4000)
+  text!: string;
+}
