@@ -55,30 +55,40 @@ export class UmnicoAgentService {
     if (!r.ok) return { ok: false, error: r.error };
     let conversationId: string | undefined;
     try {
-      if (r.leadId) {
-        const existing = await this.conversations.findByExternal(tenantId, AiChannel.UMNICO, r.leadId);
-        if (existing) conversationId = existing.id;
-        else {
-          const created = await this.conversations.create({
-            tenantId,
-            channel: AiChannel.UMNICO,
-            actorKind: AiActorKind.GUEST,
-            guestId: input.guestId,
-          });
-          conversationId = created.id;
-          await this.conversations.setExternalId(conversationId, r.leadId);
-        }
-        await this.conversations.setChannelMeta(conversationId, {
-          saId: String(input.saId),
-          phone: input.phone,
-        });
-        if (input.guestId) await this.conversations.setGuestId(conversationId, input.guestId);
-        await this.conversations.addMessage(conversationId, {
-          role: AiMessageRole.STAFF,
-          content: input.text,
-        });
-        await this.conversations.setStatus(conversationId, AiConversationStatus.ESCALATED);
+      // Логируем исходящее в диалог ВСЕГДА, а не только когда Umnico вернул leadId —
+      // иначе история переписки в карточке брони оставалась пустой (#12). Порядок поиска:
+      // по leadId (если есть) → последний UMNICO-диалог гостя → создаём новый.
+      let convo = r.leadId
+        ? await this.conversations.findByExternal(tenantId, AiChannel.UMNICO, r.leadId)
+        : null;
+      if (!convo && input.guestId) {
+        convo = await this.conversations.findGuestChannel(tenantId, input.guestId, AiChannel.UMNICO);
       }
+      if (!convo) {
+        convo = await this.conversations.create({
+          tenantId,
+          channel: AiChannel.UMNICO,
+          actorKind: AiActorKind.GUEST,
+          guestId: input.guestId,
+        });
+      }
+      conversationId = convo.id;
+      // externalId (leadId) выставляем, если он есть, а у диалога ещё не задан — чтобы
+      // входящие ответы гостя приклеились к этому же диалогу.
+      if (r.leadId && !convo.externalId) await this.conversations.setExternalId(conversationId, r.leadId);
+      const prevMeta = (convo.channelMeta ?? {}) as { avatar?: string | null; sourceType?: string | null };
+      await this.conversations.setChannelMeta(conversationId, {
+        saId: String(input.saId),
+        phone: input.phone,
+        sourceType: prevMeta.sourceType ?? null,
+        avatar: prevMeta.avatar ?? null,
+      });
+      if (input.guestId) await this.conversations.setGuestId(conversationId, input.guestId);
+      await this.conversations.addMessage(conversationId, {
+        role: AiMessageRole.STAFF,
+        content: input.text,
+      });
+      await this.conversations.setStatus(conversationId, AiConversationStatus.ESCALATED);
     } catch (e) {
       // Сообщение гостю уже ушло — не роняем ответ из-за проблем логирования.
       this.logger.error(`reachOut: сообщение ушло, но лог в диалог не удался: ${(e as Error).message}`);

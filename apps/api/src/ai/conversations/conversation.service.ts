@@ -73,6 +73,14 @@ export class ConversationService {
     return this.prisma.aiConversation.findFirst({ where: { tenantId, channel, externalId } });
   }
 
+  /** Последний диалог гостя в данном канале — для дозаписи исходящего без leadId (#12). */
+  findGuestChannel(tenantId: string, guestId: string, channel: AiChannel) {
+    return this.prisma.aiConversation.findFirst({
+      where: { tenantId, guestId, channel },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
   setExternalId(id: string, externalId: string) {
     return this.prisma.aiConversation.update({ where: { id }, data: { externalId } });
   }

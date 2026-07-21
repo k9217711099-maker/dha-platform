@@ -9,7 +9,7 @@ import { FinanceTab } from './FinanceTab';
 import { balanceBadge, guestName, money, paidAmount, statusMeta } from './booking-view';
 import { useEsc } from '../../../lib/use-esc';
 import { useAdminMe } from '../../../lib/use-admin';
-import { formatPhoneDisplay, normalizePhone, phoneDigits } from '../../../lib/phone';
+import { formatPhoneDisplay, normalizePhone } from '../../../lib/phone';
 import { tierMeta } from '../../../lib/loyalty';
 import { TAG_PALETTE, tagHex } from '../../../lib/tags';
 import { PhoneInput } from '../../../components/PhoneInput';
@@ -407,10 +407,6 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
     if (!gid) return; setBusy(true);
     try { await adminApi.updateGuest(gid, { firstName, lastName, phone: normalizePhone(phone), email, guestNotes: notes }); setSavedNotes(notes); setEdit(false); onSaved(); } catch { /* ignore */ } finally { setBusy(false); }
   };
-  const digits = phoneDigits(b.guest?.phone);
-  const Ch = ({ href, label, cls }: { href: string; label: string; cls: string }) => (
-    <a href={href} target="_blank" rel="noreferrer" className={`rounded-md px-2.5 py-1 text-xs font-medium ${cls}`}>{label}</a>
-  );
   const reloadHistory = () => {
     if (gid) void adminApi.guestConversations(gid).then(setConvos).catch(() => setConvos([]));
   };
@@ -418,20 +414,21 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
     setShowHistory((v) => !v);
     if (!showHistory && convos === null) reloadHistory();
   };
-  const openCompose = () => {
-    setShowCompose((v) => !v);
-    setReachNote(null);
-    if (reachChannels === null) {
-      void adminApi
-        .umnicoReachChannels()
-        .then((cs) => {
-          const active = cs.filter((c) => !c.status || /open|active|connect|1/i.test(c.status));
-          setReachChannels(active.length ? active : cs);
-          setReachSaId((prev) => prev ?? (active[0]?.id ?? cs[0]?.id ?? null));
-        })
-        .catch(() => setReachChannels([]));
-    }
-  };
+  // Подключённые каналы Umnico грузим при открытии карточки — показываем активные каналы
+  // связи и выбираем канал для «Написать гостю» (#12; вместо статичных wa.me/t.me-ссылок).
+  useEffect(() => {
+    if (!b.guest?.phone) return;
+    void adminApi
+      .umnicoReachChannels()
+      .then((cs) => {
+        const active = cs.filter((c) => !c.status || /open|active|connect|1/i.test(c.status));
+        setReachChannels(active.length ? active : cs);
+        setReachSaId((prev) => prev ?? (active[0]?.id ?? cs[0]?.id ?? null));
+      })
+      .catch(() => setReachChannels([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [b.guest?.phone]);
+  const openCompose = () => { setShowCompose((v) => !v); setReachNote(null); };
   const sendReach = async () => {
     const text = reachText.trim();
     if (!text || !reachSaId || !b.guest?.phone || reachBusy) return;
@@ -489,12 +486,19 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
           {b.guest?.phone ? <Row label="Телефон"><a href={`tel:${b.guest.phone}`} className="text-ink">{formatPhoneDisplay(b.guest.phone)}</a></Row> : null}
           {b.guest?.email ? <Row label="Почта"><a href={`mailto:${b.guest.email}`} className="text-ink">{b.guest.email}</a></Row> : null}
           <Row label="Гостей">{(b.adults ?? b.guests)} взр{b.children ? ` · ${b.children} дет` : ''}</Row>
-          {/* Каналы связи, включая интеграцию с Umnico */}
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {b.guest?.phone ? <Ch href={`tel:${b.guest.phone}`} label="Позвонить" cls="bg-ink/10 text-ink" /> : null}
-            {digits ? <Ch href={`https://wa.me/${digits}`} label="WhatsApp" cls="bg-emerald-100 text-emerald-800" /> : null}
-            {digits ? <Ch href={`https://t.me/+${digits}`} label="Telegram" cls="bg-sky-100 text-sky-800" /> : null}
-            {b.guest?.email ? <Ch href={`mailto:${b.guest.email}`} label="Почта" cls="bg-ink/10 text-ink" /> : null}
+          {/* Подключённые каналы связи (#12): реальные активные каналы Umnico вместо
+              статичных wa.me/t.me-ссылок + «Написать гостю» через выбранный канал. */}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-dark-gray">Каналы:</span>
+            {reachChannels === null ? (
+              <span className="text-[11px] text-dark-gray">загрузка…</span>
+            ) : reachChannels.length === 0 ? (
+              <span className="text-[11px] text-dark-gray">нет подключённых</span>
+            ) : (
+              reachChannels.map((c) => (
+                <span key={c.id} className="rounded-md bg-ink/[0.06] px-2 py-0.5 text-[11px] text-ink">{c.label}</span>
+              ))
+            )}
             {b.guest?.phone ? (
               <button type="button" onClick={openCompose} className={`rounded-md px-2.5 py-1 text-xs font-medium ${showCompose ? 'bg-primary text-white' : 'bg-primary-100 text-primary-700'}`}>✍ Написать гостю</button>
             ) : null}
