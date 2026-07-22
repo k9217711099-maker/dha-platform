@@ -1,11 +1,10 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, KbImportStatus, KbPageStatus } from '@prisma/client';
-import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { promisify } from 'node:util';
+import { dirname, join, normalize, resolve } from 'node:path';
+import { inflateRawSync } from 'node:zlib';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { AuditService } from '../../warehouse/audit/audit.service.js';
 import { contentToSearchText, kbSlugify, newShortId, type KbContent } from '../content.js';
@@ -18,9 +17,49 @@ import {
   type MapContext,
 } from './bitrix24.js';
 
-const execFileAsync = promisify(execFile);
 /** Сессия dry-run живёт 30 минут — дальше архив нужно загрузить заново. */
 const SESSION_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Распаковать ZIP без системной утилиты `unzip` (её нет на проде) — парсим central
+ * directory и распаковываем каждый файл встроенным zlib. Поддержаны методы 0 (store)
+ * и 8 (deflate) — этого достаточно для экспортов Bitrix24. Защита от zip-slip.
+ */
+function unzipTo(zipPath: string, destDir: string): void {
+  const buf = readFileSync(zipPath);
+  // EOCD: сигнатура 0x06054b50 ищется с конца (учитываем комментарий до 64 КБ).
+  let eocd = -1;
+  const minEocd = Math.max(0, buf.length - 22 - 0xffff);
+  for (let i = buf.length - 22; i >= minEocd; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('некорректный ZIP (нет EOCD)');
+  const total = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16); // смещение central directory
+  for (let n = 0; n < total; n++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) throw new Error('некорректный ZIP (central dir)');
+    const method = buf.readUInt16LE(off + 10);
+    const compSize = buf.readUInt32LE(off + 20);
+    const nameLen = buf.readUInt16LE(off + 28);
+    const extraLen = buf.readUInt16LE(off + 30);
+    const commentLen = buf.readUInt16LE(off + 32);
+    const localOff = buf.readUInt32LE(off + 42);
+    const name = buf.toString('utf8', off + 46, off + 46 + nameLen);
+    off += 46 + nameLen + extraLen + commentLen;
+    const safe = normalize(name).replace(/^(\.\.(\/|\\|$))+/, '');
+    if (!safe || safe.startsWith('..')) continue;
+    const outPath = join(destDir, safe);
+    if (name.endsWith('/')) { mkdirSync(outPath, { recursive: true }); continue; }
+    if (buf.readUInt32LE(localOff) !== 0x04034b50) throw new Error('некорректный ZIP (local header)');
+    const lNameLen = buf.readUInt16LE(localOff + 26);
+    const lExtraLen = buf.readUInt16LE(localOff + 28);
+    const dataStart = localOff + 30 + lNameLen + lExtraLen;
+    const comp = buf.subarray(dataStart, dataStart + compSize);
+    const data = method === 0 ? comp : inflateRawSync(comp);
+    mkdirSync(dirname(outPath), { recursive: true });
+    writeFileSync(outPath, data);
+  }
+}
 
 interface ImportSession {
   dir: string;
@@ -80,7 +119,7 @@ export class KbImportService {
     const dir = join(tmpdir(), `dha-kb-import-${randomUUID()}`);
     mkdirSync(dir, { recursive: true });
     try {
-      await execFileAsync('unzip', ['-o', '-qq', zipPath, '-d', dir], { maxBuffer: 64 * 1024 * 1024 });
+      unzipTo(zipPath, dir);
     } catch (e) {
       rmSync(dir, { recursive: true, force: true });
       throw new BadRequestException(`Не удалось распаковать архив: ${(e as Error).message}`);
