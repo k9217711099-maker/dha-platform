@@ -18,7 +18,10 @@ interface UmnicoWebhook {
   isNewCustomer?: boolean;
   /** Телефон гостя может прийти на верхнем уровне (в разных каналах Umnico по-разному). */
   phone?: string;
-  customer?: { phone?: string; name?: string };
+  customerId?: number | string;
+  /** Событие customer.created/updated: телефон/аватар/имя гостя (у Telegram приходят ЗДЕСЬ,
+   *  а не в самом сообщении — в message.sender только username). Связь с диалогом — по id. */
+  customer?: { id?: number | string; phone?: string; name?: string; avatar?: string };
   contact?: { phone?: string };
   message?: {
     text?: string;
@@ -85,6 +88,15 @@ export class UmnicoController {
   webhook(@Body() body: UmnicoWebhook): { ok: true } {
     void this.umnico.captureDebug(body); // диагностика структуры (#14/#1/фото)
     const evt = body?.type ?? body?.event ?? '—';
+    // Событие customer.created/updated: телефон и фото гостя приходят отдельно от сообщения
+    // (у Telegram в сообщении только username). Кэшируем по id и связываем с диалогом (#1/#2).
+    if (body?.customer?.id != null) {
+      void this.umnico.saveCustomer(String(body.customer.id), {
+        phone: body.customer.phone ?? null,
+        avatar: body.customer.avatar ?? null,
+        name: body.customer.name ?? null,
+      });
+    }
     const m = body?.message ?? {};
     // Текст события message.incoming лежит в message.message.text (проверено на боевом
     // payload Umnico); запасные варианты — на случай других типов каналов.
@@ -118,10 +130,12 @@ export class UmnicoController {
           : m.sender?.customerId != null
             ? String(m.sender.customerId)
             : undefined;
-      // Тип подканала Umnico (whatsapp/telegram/vk/avito…) — чтобы показать оператору,
-      // откуда именно пишет гость (#14).
-      const sourceType = src?.type != null ? String(src.type) : undefined;
-      // Фото профиля отправителя (если канал его отдаёт) — показываем оператору в диалоге.
+      // Тип подканала (whatsapp/telegram/vk/avito…) — откуда пишет гость (#14). ВАЖНО: берём
+      // из sender.type / sa.type (реальный канал), а НЕ из source.type — там всегда «message».
+      const sourceType = m.sender?.type ?? m.sa?.type ?? undefined;
+      // customerId связывает сообщение с событием customer.* (телефон/фото гостя, #1/#2).
+      const customerId = m.sender?.customerId != null ? String(m.sender.customerId) : undefined;
+      // Фото профиля отправителя (если пришло прямо в сообщении) — иначе возьмём из кэша customer.
       const s = m.sender;
       const avatar = s?.avatar ?? s?.avatarUrl ?? s?.photo ?? s?.picture ?? undefined;
       // Телефон ГОСТЯ (если канал его отдаёт) — только из полей отправителя/клиента.
@@ -134,7 +148,7 @@ export class UmnicoController {
         body.customer?.phone,
         body.contact?.phone,
       );
-      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, avatar, text });
+      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, avatar, customerId, text });
     } else if (/message\.incoming/i.test(evt)) {
       // message.incoming без текста и без распознанного вложения — просто отметим (warn
       // на проде подавлен, спама не будет; поднять уровень при разборе новых типов медиа).

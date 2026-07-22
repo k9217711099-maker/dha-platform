@@ -142,6 +142,47 @@ export class UmnicoConfigService {
     try { return raw ? (JSON.parse(raw) as unknown[]) : []; } catch { return []; }
   }
 
+  /**
+   * Кэш клиентов Umnico (событие customer.created/updated → телефон/аватар/имя гостя по id).
+   * Нужен, потому что у Telegram телефон и фото приходят ОТДЕЛЬНЫМ событием, а не в сообщении
+   * (в message.sender только username) — связываем с диалогом по customerId (#1/#2).
+   */
+  private customerKey(id: string): string { return String(id); }
+  async saveCustomer(
+    id: string,
+    data: { phone?: string | null; avatar?: string | null; name?: string | null },
+  ): Promise<void> {
+    try {
+      const raw = await this.settings.get('ai.umnico.customers');
+      let map: Record<string, { phone?: string | null; avatar?: string | null; name?: string | null; at: number }> = {};
+      try { map = raw ? JSON.parse(raw) : {}; } catch { map = {}; }
+      const k = this.customerKey(id);
+      map[k] = {
+        phone: data.phone ?? map[k]?.phone ?? null,
+        avatar: data.avatar ?? map[k]?.avatar ?? null,
+        name: data.name ?? map[k]?.name ?? null,
+        at: Date.now(),
+      };
+      // Держим последние 300 клиентов, чтобы Setting не рос бесконечно.
+      const entries = Object.entries(map).sort((a, b) => b[1].at - a[1].at).slice(0, 300);
+      await this.settings.set('ai.umnico.customers', JSON.stringify(Object.fromEntries(entries)));
+    } catch {
+      /* не критично */
+    }
+  }
+  async getCustomer(
+    id: string | null | undefined,
+  ): Promise<{ phone?: string | null; avatar?: string | null; name?: string | null } | null> {
+    if (!id) return null;
+    const raw = await this.settings.get('ai.umnico.customers');
+    try {
+      const map = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      return (map[this.customerKey(id)] as { phone?: string; avatar?: string; name?: string }) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private channelsCache: { at: number; list: UmnicoChannel[] } | null = null;
   async channelTypeBySaId(saId: string | number | null | undefined): Promise<string | undefined> {
     if (saId == null) return undefined;

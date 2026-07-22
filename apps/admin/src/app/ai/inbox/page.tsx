@@ -26,10 +26,12 @@ const CHANNEL_RU: Record<string, string> = {
 /** Подканалы Umnico → русские подписи (#14: откуда пишет гость). */
 const SUBCHANNEL_RU: Record<string, string> = {
   whatsapp: 'WhatsApp',
+  whatsapp2: 'WhatsApp',
   whatsappV2: 'WhatsApp',
   telebot: 'Telegram',
   telegram: 'Telegram',
   telegramV2: 'Telegram',
+  instagram: 'Instagram',
   instagramV3: 'Instagram',
   fb_messenger: 'Messenger',
   viber: 'Viber',

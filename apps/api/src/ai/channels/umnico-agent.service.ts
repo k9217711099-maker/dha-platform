@@ -18,6 +18,8 @@ export interface UmnicoIncoming {
   sourceType?: string;
   /** Фото профиля гостя из канала (если отдаётся) — показываем оператору в диалоге. */
   avatar?: string;
+  /** id клиента Umnico — по нему берём телефон/фото из кэша customer.* (#1/#2). */
+  customerId?: string;
   text: string;
 }
 
@@ -111,9 +113,13 @@ export class UmnicoAgentService {
         text,
       });
       if (!existing) await this.conversations.setExternalId(res.conversationId, msg.leadId);
-      // Подканал (#14): вебхук не всегда отдаёт source.type, но saId есть всегда —
-      // добираем тип канала (whatsapp/telegram/…) из списка подключённых интеграций.
+      // Подканал (#14): тип канала берём из sourceType (sender.type), фолбэк — по saId.
       const sourceType = msg.sourceType ?? (await this.umnico.channelTypeBySaId(msg.saId));
+      // Телефон/фото гостя (#1/#2): у Telegram приходят отдельным событием customer.* —
+      // добираем из кэша по customerId, если в самом сообщении их нет.
+      const customer = await this.umnico.getCustomer(msg.customerId);
+      const phone = msg.phone ?? customer?.phone ?? undefined;
+      const avatar = msg.avatar ?? customer?.avatar ?? undefined;
       // Прежние значения: телефон/фото/подканал канал часто отдаёт лишь в первом сообщении,
       // поэтому setChannelMeta (полная замена) не должен их затирать — сохраняем ранее известные.
       const prev = (existing?.channelMeta ?? {}) as {
@@ -128,14 +134,14 @@ export class UmnicoAgentService {
         source: msg.source ?? null,
         userId: msg.userId ?? null,
         saId: msg.saId ?? null,
-        phone: msg.phone ?? prev.phone ?? null,
+        phone: phone ?? prev.phone ?? null,
         sourceType: sourceType ?? prev.sourceType ?? null,
-        avatar: msg.avatar ?? prev.avatar ?? null,
+        avatar: avatar ?? prev.avatar ?? null,
       });
       // Подтягиваем профиль гостя по номеру телефона (#8): если диалог ещё не привязан
       // к гостю, а телефон совпал с профилем — привязываем (в ленте появятся ФИО/профиль).
-      if (msg.phone && !existing?.guestId) {
-        const guestId = await this.conversations.findGuestIdByPhone(tenantId, msg.phone);
+      if (phone && !existing?.guestId) {
+        const guestId = await this.conversations.findGuestIdByPhone(tenantId, phone);
         if (guestId) await this.conversations.setGuestId(res.conversationId, guestId);
       }
       // Авто-ответ в мессенджер шлём ТОЛЬКО когда отвечает бот. При эскалации/выключенном
