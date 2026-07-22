@@ -52,7 +52,9 @@ jobs:
             # старый бандл → деплой зелёный, а прод замёрз на старом коде (роуты 404). Инкрементальный
             # кэш («вариант 1») тут ненадёжен, поэтому пересобираем начисто. Дёшево: по логам
             # реальные тайминги admin ~38с, web ~22с, api секунды → весь деплой ~2–3 мин.
-            rm -rf .turbo apps/web/.next apps/web/.turbo apps/admin/.next apps/admin/.turbo node_modules/.cache || true
+            # Чистим и apps/api/dist + tsconfig.tsbuildinfo: иначе tsc-incremental пропускает
+            # изменённые файлы, dist остаётся старым при зелёном деплое → API замерзает на старом коде.
+            rm -rf .turbo apps/web/.next apps/web/.turbo apps/admin/.next apps/admin/.turbo apps/api/dist apps/api/tsconfig.tsbuildinfo apps/api/.turbo node_modules/.cache || true
             bash infra/deploy/deploy.sh ${{ github.ref_name }}
             # Жёсткий перезапуск ВСЕХ трёх (вкл. dha-api): pm2 reload (graceful) в fork-режиме
             # мог держать в памяти старый код/пререндер → отдавались старые чанки и старые
