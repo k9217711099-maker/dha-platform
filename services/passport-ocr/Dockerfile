@@ -17,5 +17,10 @@ RUN pip install --no-cache-dir --retries 5 --timeout 120 -r requirements.txt
 
 COPY app.py .
 
+# Один поток OCR (OpenMP) — чтобы одно распознавание не захватывало оба ядра VPS.
+ENV OMP_THREAD_LIMIT=1
+
 EXPOSE 8077
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8077", "--workers", "2"]
+# 1 воркер: на 2-ядерном VPS без swap это сериализует распознавания и не даёт
+# нескольким OCR разом задушить сервер (лимиты CPU/RAM ещё и в docker run).
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8077", "--workers", "1"]

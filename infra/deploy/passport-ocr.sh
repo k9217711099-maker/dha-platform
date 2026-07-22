@@ -54,7 +54,11 @@ fi
 
 if [ "$RECREATE" = "1" ]; then
   docker rm -f "$NAME" >/dev/null 2>&1 || true
-  if ! docker run -d --restart=unless-stopped --name "$NAME" -p "127.0.0.1:${PORT}:8077" "$IMAGE"; then
+  # Жёсткие лимиты: OCR не должен душить сервер. 1 из 2 ядер оставляем dha-api/БД;
+  # память ограничиваем (у сервера нет swap → перерасход = OOM-kill процессов).
+  if ! docker run -d --restart=unless-stopped --name "$NAME" \
+       --cpus="${PASSPORT_OCR_CPUS:-1}" --memory="${PASSPORT_OCR_MEM:-1g}" \
+       -p "127.0.0.1:${PORT}:8077" "$IMAGE"; then
     echo "!! passport-ocr: запуск контейнера не удался — OCR не включаем, деплой продолжаем"
     exit 0
   fi
@@ -90,6 +94,10 @@ if ! grep -qE '^PASSPORT_OCR_URL=' "$ENV_FILE"; then
   printf 'PASSPORT_OCR_URL=%s\n' "http://127.0.0.1:${PORT}" >> "$ENV_FILE"
 fi
 echo "==> passport-ocr: PASSPORT_PROVIDER=http записан — перезапускаю dha-api"
+# @nestjs/config: process.env приоритетнее файла .env. Экспортируем флаг в окружение,
+# чтобы он гарантированно попал в процесс (--update-env), а не полагаться только на файл.
+export PASSPORT_PROVIDER=http
+export PASSPORT_OCR_URL="http://127.0.0.1:${PORT}"
 pm2 restart dha-api --update-env >/dev/null 2>&1 || true
 echo "==> passport-ocr: OCR включён. Для проверки МВД добавьте DADATA_API_KEY/DADATA_SECRET в apps/api/.env."
 exit 0

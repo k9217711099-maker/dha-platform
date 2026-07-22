@@ -29,6 +29,18 @@ app = FastAPI(title="D H&A Passport OCR", version="2.0.0")
 MRZ_CHARS = re.compile(r"^[A-Z0-9<]{28,}$")
 NUM_RE = re.compile(r"\b(\d{2})\s?(\d{2})\s?(\d{6})\b")
 
+# Фото паспорта с телефона бывают 4000+px по стороне — Tesseract на таких занимает
+# CPU десятки секунд и тормозит весь сервер. Ресайз до 2200px по большей стороне
+# ускоряет распознавание в разы, MRZ/текст остаются читаемыми.
+MAX_DIM = 2200
+
+
+def _prep(img: Image.Image) -> Image.Image:
+    img = ImageOps.exif_transpose(img).convert("RGB")
+    if max(img.size) > MAX_DIM:
+        img.thumbnail((MAX_DIM, MAX_DIM))  # пропорционально, только уменьшает
+    return img
+
 
 class RecognizeRequest(BaseModel):
     image: str
@@ -47,8 +59,7 @@ def recognize(req: RecognizeRequest) -> dict:
     except (binascii.Error, ValueError):
         return _empty("Некорректный base64 изображения.")
     try:
-        img = Image.open(io.BytesIO(raw))
-        img = ImageOps.exif_transpose(img).convert("RGB")
+        img = _prep(Image.open(io.BytesIO(raw)))
     except Exception:  # noqa: BLE001
         return _empty("Не удалось открыть изображение.")
 
