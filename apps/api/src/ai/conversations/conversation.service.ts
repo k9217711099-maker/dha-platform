@@ -242,8 +242,9 @@ export class ConversationService {
       // в последний раз открывал диалог (или он ещё ни разу не открывал).
       const unread = lastRole === 'user' && (!operatorReadAt || lastAt > operatorReadAt);
       // Подканал (для Umnico: telegram/whatsapp/… — откуда пишет гость, #14) + фото/телефон
-      // из канала (channelMeta) — для аватара и номера в списке диалогов.
-      const meta = (channelMeta as { sourceType?: string; avatar?: string; phone?: string } | null) ?? {};
+      // из канала (channelMeta) — для аватара и номера в списке диалогов. saId — чтобы
+      // добрать тип канала «на лету» для старых диалогов, у которых sourceType ещё не проставлен.
+      const meta = (channelMeta as { sourceType?: string; avatar?: string; phone?: string; saId?: string } | null) ?? {};
       return {
         ...rest,
         lastRole,
@@ -253,6 +254,7 @@ export class ConversationService {
         subChannel: meta.sourceType ?? null,
         avatar: meta.avatar ?? null,
         metaPhone: meta.phone ?? null,
+        saId: meta.saId ?? null,
       };
     });
   }

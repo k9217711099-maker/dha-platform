@@ -185,13 +185,19 @@ export class OperatorInboxService {
       this.directory.guestProfiles(rows.map((r) => r.guestId)),
       this.directory.operators(rows.map((r) => r.operatorId)),
     ]);
-    return rows.map(({ metaPhone, ...r }) => {
+    // #14: у старых Umnico-диалогов sourceType не проставлен — добираем тип канала по saId
+    // (кэш 5 мин, поэтому уникальные saId резолвятся дёшево).
+    const needType = [...new Set(rows.filter((r) => !r.subChannel && r.saId).map((r) => r.saId!))];
+    const typeBySaId = new Map<string, string | undefined>();
+    for (const said of needType) typeBySaId.set(said, await this.umnico.channelTypeBySaId(said));
+    return rows.map(({ metaPhone, saId, ...r }) => {
       const g = r.guestId ? guests.get(r.guestId) : undefined;
       return {
         ...r,
         guestName: g?.name || null,
         // Телефон: из профиля гостя (если сопоставлен), иначе — из канала (#8).
         guestPhone: g?.phone ?? metaPhone ?? null,
+        subChannel: r.subChannel ?? (saId ? typeBySaId.get(saId) ?? null : null),
         operatorName: (r.operatorId && operators.get(r.operatorId)) || null,
       };
     });
@@ -222,7 +228,10 @@ export class OperatorInboxService {
       phone?: string | null;
       sourceType?: string | null;
       avatar?: string | null;
+      saId?: string | null;
     };
+    // #14: старым диалогам добираем тип канала по saId (кэшируется).
+    const subChannel = meta.sourceType ?? (meta.saId ? (await this.umnico.channelTypeBySaId(meta.saId)) ?? null : null);
     const g = convo.guestId ? guests.get(convo.guestId) : undefined;
     return {
       conversation: {
@@ -230,7 +239,7 @@ export class OperatorInboxService {
         channel: convo.channel,
         status: convo.status,
         title: convo.title,
-        subChannel: meta.sourceType ?? null,
+        subChannel,
         guestId: convo.guestId,
         guestName: g?.name || null,
         // Телефон: из профиля гостя (надёжнее), иначе — из канала (#8).

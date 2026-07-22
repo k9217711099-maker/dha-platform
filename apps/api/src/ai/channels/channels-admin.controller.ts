@@ -504,6 +504,13 @@ export class ChannelsAdminController {
     return this.umnico.listChannels();
   }
 
+  @Get('umnico/debug')
+  @RequirePermission('guests')
+  @ApiOperation({ summary: 'Последние сырые вебхуки Umnico (диагностика телефона/канала/фото)' })
+  umnicoDebug() {
+    return this.umnico.readDebug();
+  }
+
   @Post('umnico/reach-out')
   @RequirePermission('guests')
   @ApiOperation({ summary: 'Написать гостю первым по телефону через канал Umnico (#12)' })

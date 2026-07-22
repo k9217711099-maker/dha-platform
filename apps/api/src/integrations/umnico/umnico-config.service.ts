@@ -118,6 +118,30 @@ export class UmnicoConfigService {
    * (он нужен для ответа), а тип канала берём из GET /integrations. Результат кэшируем
    * на 5 минут, чтобы не дёргать Umnico на каждое входящее (#14).
    */
+  /**
+   * Диагностика (#14/#1/фото): сохраняем последние 5 сырых вебхуков Umnico (с усечением
+   * длинных строк), чтобы точно увидеть, где лежат телефон гостя, тип канала и аватар —
+   * форматы каналов различаются. Читается через `GET /ai/channels/umnico/debug` (право guests).
+   */
+  async captureDebug(body: unknown): Promise<void> {
+    try {
+      const trunc = JSON.parse(
+        JSON.stringify(body, (_k, v) => (typeof v === 'string' && v.length > 160 ? `${v.slice(0, 160)}…` : v)),
+      );
+      const raw = await this.settings.get('ai.umnico.debug');
+      let arr: unknown[] = [];
+      try { arr = raw ? (JSON.parse(raw) as unknown[]) : []; } catch { arr = []; }
+      arr.unshift({ at: new Date().toISOString(), body: trunc });
+      await this.settings.set('ai.umnico.debug', JSON.stringify(arr.slice(0, 5)));
+    } catch {
+      /* диагностика не критична */
+    }
+  }
+  async readDebug(): Promise<unknown[]> {
+    const raw = await this.settings.get('ai.umnico.debug');
+    try { return raw ? (JSON.parse(raw) as unknown[]) : []; } catch { return []; }
+  }
+
   private channelsCache: { at: number; list: UmnicoChannel[] } | null = null;
   async channelTypeBySaId(saId: string | number | null | undefined): Promise<string | undefined> {
     if (saId == null) return undefined;

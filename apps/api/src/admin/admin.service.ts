@@ -170,8 +170,17 @@ export class AdminService {
    * с содержательными сообщениями. Показывается в карточке гостя.
    */
   async guestConversations(guestId: string) {
+    // История переписки гостя (#4/#7): берём диалоги, привязанные к гостю (guestId), И диалоги,
+    // где телефон канала совпал с телефоном гостя, но привязка ещё не проставилась (входящие из
+    // мессенджера часто без guestId). Иначе в карточке видно только исходящие «написать первым».
+    const guest = await this.prisma.guest.findUnique({ where: { id: guestId }, select: { phone: true } });
+    const tail = guest?.phone?.replace(/\D/g, '').slice(-10);
+    const where =
+      tail && tail.length === 10
+        ? { OR: [{ guestId }, { channelMeta: { path: ['phone'], string_contains: tail } }] }
+        : { guestId };
     const convos = await this.prisma.aiConversation.findMany({
-      where: { guestId },
+      where,
       orderBy: { updatedAt: 'desc' },
       take: 50,
       select: {

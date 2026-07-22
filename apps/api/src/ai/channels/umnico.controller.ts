@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, Logger, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UmnicoAgentService } from './umnico-agent.service.js';
+import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
 
 /**
  * Вебхук Umnico (событие message.incoming). Схема по офиц. документации:
@@ -73,12 +74,16 @@ function pickPhone(...vals: Array<unknown>): string | undefined {
 export class UmnicoController {
   private readonly logger = new Logger('UmnicoWebhook');
 
-  constructor(private readonly agent: UmnicoAgentService) {}
+  constructor(
+    private readonly agent: UmnicoAgentService,
+    private readonly umnico: UmnicoConfigService,
+  ) {}
 
   @Post('webhook')
   @HttpCode(200)
   @ApiOperation({ summary: 'Webhook Umnico (гостевой AI-агент)' })
   webhook(@Body() body: UmnicoWebhook): { ok: true } {
+    void this.umnico.captureDebug(body); // диагностика структуры (#14/#1/фото)
     const evt = body?.type ?? body?.event ?? '—';
     const m = body?.message ?? {};
     // Текст события message.incoming лежит в message.message.text (проверено на боевом
@@ -119,15 +124,15 @@ export class UmnicoController {
       // Фото профиля отправителя (если канал его отдаёт) — показываем оператору в диалоге.
       const s = m.sender;
       const avatar = s?.avatar ?? s?.avatarUrl ?? s?.photo ?? s?.picture ?? undefined;
-      // Телефон гостя (если канал его отдаёт) — защитно из нескольких мест: у WhatsApp/SMS
-      // это обычно login отправителя; плюс верхнеуровневые customer/contact/phone.
+      // Телефон ГОСТЯ (если канал его отдаёт) — только из полей отправителя/клиента.
+      // ВАЖНО (#1): НЕ берём source.identifier / sa.login — это номер ПОДКЛЮЧЁННОГО
+      // аккаунта (корпоративный номер Umnico), а не гостя (баг «показывался 7902…»).
+      // У Telegram телефона обычно нет — тогда номер не показываем (это нормально).
       const phone = pickPhone(
         m.sender?.phone,
         m.sender?.login,
-        m.source?.identifier,
         body.customer?.phone,
         body.contact?.phone,
-        body.phone,
       );
       void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, avatar, text });
     } else if (/message\.incoming/i.test(evt)) {
