@@ -34,25 +34,36 @@ fi
 # Пересборка только при изменении исходников (метка src_hash на образе).
 HASH="$( { cat "$DIR/app.py" "$DIR/requirements.txt" "$DIR/Dockerfile" 2>/dev/null | sha1sum 2>/dev/null || true; } | awk '{print $1}')"
 CUR="$(docker image inspect "$IMAGE" --format '{{ index .Config.Labels "src_hash" }}' 2>/dev/null || true)"
+RECREATE=1
 if [ -z "$CUR" ] || [ "$HASH" != "$CUR" ]; then
-  echo "==> passport-ocr: сборка образа (первый раз тянет модели PaddleOCR — несколько минут)"
+  echo "==> passport-ocr: сборка образа (Tesseract; apt/pip через зеркала — 1–2 минуты)"
   if ! docker build --label "src_hash=$HASH" -t "$IMAGE" "$DIR"; then
     echo "!! passport-ocr: сборка не удалась — OCR не включаем, деплой продолжаем"
     exit 0
   fi
 else
   echo "==> passport-ocr: образ актуален ($HASH) — без пересборки"
+  # Образ не менялся и контейнер уже поднят и здоров → НЕ пересоздаём. Пересоздание =
+  # холодный старт, который может не уложиться в окно health и оставить провайдер на mock.
+  if docker ps --filter "name=^${NAME}$" --filter status=running -q | grep -q . \
+     && curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+    RECREATE=0
+    echo "==> passport-ocr: контейнер уже поднят и здоров — переиспользуем без рестарта"
+  fi
 fi
 
-docker rm -f "$NAME" >/dev/null 2>&1 || true
-if ! docker run -d --restart=unless-stopped --name "$NAME" -p "127.0.0.1:${PORT}:8077" "$IMAGE"; then
-  echo "!! passport-ocr: запуск контейнера не удался — OCR не включаем, деплой продолжаем"
-  exit 0
+if [ "$RECREATE" = "1" ]; then
+  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  if ! docker run -d --restart=unless-stopped --name "$NAME" -p "127.0.0.1:${PORT}:8077" "$IMAGE"; then
+    echo "!! passport-ocr: запуск контейнера не удался — OCR не включаем, деплой продолжаем"
+    exit 0
+  fi
 fi
 
-# Ждём здоровья до ~40 c (модель грузится в память при старте).
+# Ждём здоровья до ~90 c: холодный старт (uvicorn + импорт pytesseract/PIL, 2 воркера)
+# может превышать минуту — иначе авто-включение не успевает и провайдер остаётся mock.
 HEALTHY=0
-for _ in $(seq 1 20); do
+for _ in $(seq 1 45); do
   if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then HEALTHY=1; break; fi
   sleep 2
 done
