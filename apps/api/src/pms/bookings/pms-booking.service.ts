@@ -87,7 +87,10 @@ export class PmsBookingService {
             propertyId: dto.propertyId,
             roomTypeId: dto.roomTypeId,
             roomId: dto.roomId ?? null,
-            status: BookingStatus.CONFIRMED,
+            // #13: новая бронь создаётся в статусе «Новое» (PENDING) — сотрудник проверяет и
+            // переводит в «Проверено» (CONFIRMED) в карточке. PENDING держит номер (входит в
+            // OCCUPYING_STATUSES), поэтому овербукинга нет; заезд доступен из CONFIRMED.
+            status: BookingStatus.PENDING,
             channel: dto.source ?? BookingChannel.MANAGER,
             checkIn: new Date(dto.checkIn),
             checkOut: new Date(dto.checkOut),

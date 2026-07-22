@@ -143,6 +143,17 @@ export default function ShakhmatkaPage() {
     const bid = new URLSearchParams(window.location.search).get('booking');
     if (bid) void adminApi.pmsBooking(bid).then(setFullBooking).catch(() => undefined);
   }, [ready]);
+  // #12: держим открытую карточку брони в URL (?booking=<id>) — при обновлении страницы
+  // она снова откроется (её подхватит загрузчик выше). Первый рендер пропускаем, чтобы не
+  // стереть параметр до его чтения.
+  const bookingUrlSynced = useRef(false);
+  useEffect(() => {
+    if (!bookingUrlSynced.current) { bookingUrlSynced.current = true; return; }
+    const url = new URL(window.location.href);
+    if (fullBooking) url.searchParams.set('booking', fullBooking.id);
+    else url.searchParams.delete('booking');
+    window.history.replaceState(null, '', url.toString());
+  }, [fullBooking]);
 
   // Режим доски: брони / уборка (§7-A).
   const [boardMode, setBoardMode] = useState<'bookings' | 'housekeeping'>('bookings');

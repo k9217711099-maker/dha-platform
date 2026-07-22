@@ -796,7 +796,12 @@ function TasksModule({ b }: { b: PmsBooking }) {
 
   return (
     <div className="rounded-xl border border-ink/10 p-4">
-      <p className="mb-2 text-xs uppercase tracking-wide text-dark-gray">Задачи · уборка и инженерия</p>
+      <p className="mb-1 text-xs uppercase tracking-wide text-dark-gray">Задачи · уборка и инженерия</p>
+      <p className="mb-2 text-[11px] leading-snug text-dark-gray">
+        Ставьте задачи по номеру этой брони: <b>＋ Уборка</b> — горничной, <b>＋ Инженер</b> — инженерная заявка.
+        Описание — по желанию. Ниже видны активные задачи по номеру; кнопки <b>«В работу» / «Готово»</b> меняют
+        статус. Исполнители видят их в разделе «Задачи» и мобильном приложении.
+      </p>
       {!b.roomId ? <p className="text-xs text-dark-gray">Назначьте номер, чтобы создавать задачи.</p> : (
         <>
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Описание (необязательно)" className="mb-2 w-full rounded-md border border-ink/20 bg-white px-3 py-2 text-sm" />
