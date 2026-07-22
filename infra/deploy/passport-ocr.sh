@@ -77,12 +77,9 @@ if [ "$HEALTHY" != "1" ]; then
 fi
 echo "==> passport-ocr: healthy на 127.0.0.1:${PORT}"
 
-# Сайдкар жив → включаем распознавание, если ещё не включено.
-CURPROV="$(grep -E '^PASSPORT_PROVIDER=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'\'' ')"
-if [ "$CURPROV" = "http" ]; then
-  echo "==> passport-ocr: распознавание уже включено (PASSPORT_PROVIDER=http)"
-  exit 0
-fi
+# Сайдкар жив → включаем распознавание. НЕ выходим рано при уже-http в файле:
+# deploy.sh перезапускает dha-api БЕЗ этого флага в окружении, а config.get на боевом
+# окружении ненадёжен — поэтому флаг нужно КАЖДЫЙ раз экспортировать в процесс (ниже).
 touch "$ENV_FILE"
 if grep -qE '^PASSPORT_PROVIDER=' "$ENV_FILE"; then
   sed -i 's|^PASSPORT_PROVIDER=.*|PASSPORT_PROVIDER=http|' "$ENV_FILE"
