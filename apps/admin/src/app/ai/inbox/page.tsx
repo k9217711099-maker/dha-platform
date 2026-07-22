@@ -8,6 +8,7 @@ import {
   type InboxOperator,
   type InboxTemplate,
   type InboxThread,
+  type UmnicoReachChannel,
 } from '../../../lib/api';
 import { useAdminMe, useRequireAdmin } from '../../../lib/use-admin';
 import { EmojiPicker } from '../../staff-chat/EmojiPicker';
@@ -110,6 +111,8 @@ export default function InboxPage() {
   const ready = useRequireAdmin();
   const me = useAdminMe();
   const [mode, setMode] = useState<'escalated' | 'all'>('escalated');
+  const [query, setQuery] = useState(''); // умный поиск по диалогам (#8)
+  const [showNewDialog, setShowNewDialog] = useState(false); // «написать гостю первым» (#9)
   const [list, setList] = useState<GuestConversationRow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [thread, setThread] = useState<InboxThread | null>(null);
@@ -396,6 +399,25 @@ export default function InboxPage() {
   const conv = thread?.conversation;
   const mineAssigned = Boolean(conv?.operatorId && me && conv.operatorId === me.id);
 
+  // Умный поиск по диалогам (#8): имя/телефон/название/текст последнего/канал.
+  const q = query.trim().toLowerCase();
+  const qDigits = q.replace(/\D/g, '');
+  const shown = !q
+    ? list
+    : list.filter((c) => {
+        const hay = [
+          c.guestName,
+          c.title,
+          c.lastMessage,
+          channelLabel(c.channel, c.subChannel),
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        const phoneHit = qDigits.length >= 3 && (c.guestPhone ?? '').replace(/\D/g, '').includes(qDigits);
+        return hay.includes(q) || phoneHit;
+      });
+
   return (
     <main className="flex h-[100dvh] flex-col overflow-hidden px-8 py-5">
       <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
@@ -409,29 +431,38 @@ export default function InboxPage() {
               : 'Диалоги, переданные AI-администратором человеку. Ответ уходит гостю в его канал.'}
           </p>
         </div>
-        <div className="flex shrink-0 rounded-lg border border-ink/10 p-0.5 text-sm">
+        <div className="flex shrink-0 items-center gap-2">
           <button
-            onClick={() => {
-              setMode('escalated');
-              setSelected(null);
-            }}
-            className={`rounded-md px-3 py-1.5 transition ${
-              mode === 'escalated' ? 'bg-primary text-white' : 'text-slate-500 hover:text-ink'
-            }`}
+            onClick={() => setShowNewDialog(true)}
+            className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-white transition hover:opacity-90"
+            title="Начать диалог: написать гостю первым по номеру телефона"
           >
-            Требуют ответа
+            ✍ Написать первым
           </button>
-          <button
-            onClick={() => {
-              setMode('all');
-              setSelected(null);
-            }}
-            className={`rounded-md px-3 py-1.5 transition ${
-              mode === 'all' ? 'bg-primary text-white' : 'text-slate-500 hover:text-ink'
-            }`}
-          >
-            Все диалоги
-          </button>
+          <div className="flex rounded-lg border border-ink/10 p-0.5 text-sm">
+            <button
+              onClick={() => {
+                setMode('escalated');
+                setSelected(null);
+              }}
+              className={`rounded-md px-3 py-1.5 transition ${
+                mode === 'escalated' ? 'bg-primary text-white' : 'text-slate-500 hover:text-ink'
+              }`}
+            >
+              Требуют ответа
+            </button>
+            <button
+              onClick={() => {
+                setMode('all');
+                setSelected(null);
+              }}
+              className={`rounded-md px-3 py-1.5 transition ${
+                mode === 'all' ? 'bg-primary text-white' : 'text-slate-500 hover:text-ink'
+              }`}
+            >
+              Все диалоги
+            </button>
+          </div>
         </div>
       </div>
 
@@ -444,16 +475,24 @@ export default function InboxPage() {
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]">
         {/* Очередь */}
         <Card className="flex min-h-0 flex-col overflow-hidden p-2">
-          <p className="shrink-0 px-2 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            {mode === 'all' ? 'Диалоги' : 'Очередь'} · {list.length}
+          <div className="shrink-0 px-1 pb-1.5 pt-1">
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="🔍 Поиск: имя, телефон, текст, канал…"
+              className="w-full rounded-lg border border-ink/15 bg-white px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+            />
+          </div>
+          <p className="shrink-0 px-2 py-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            {mode === 'all' ? 'Диалоги' : 'Очередь'} · {shown.length}{query ? ` из ${list.length}` : ''}
           </p>
-          {list.length === 0 ? (
+          {shown.length === 0 ? (
             <p className="px-2 py-6 text-center text-sm text-slate-400">
-              {mode === 'all' ? 'Диалогов пока нет' : 'Нет открытых диалогов 🎉'}
+              {query ? 'Ничего не найдено' : mode === 'all' ? 'Диалогов пока нет' : 'Нет открытых диалогов 🎉'}
             </p>
           ) : (
             <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-              {list.map((c) => (
+              {shown.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => setSelected(c.id)}
@@ -867,7 +906,130 @@ export default function InboxPage() {
           onSaved={setTemplates}
         />
       )}
+
+      {showNewDialog && (
+        <NewDialogModal
+          onClose={() => setShowNewDialog(false)}
+          onSent={(conversationId) => {
+            setShowNewDialog(false);
+            setMode('escalated');
+            void loadList();
+            if (conversationId) setSelected(conversationId);
+            setNote('Сообщение отправлено гостю — диалог создан.');
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+/** Модалка «Написать гостю первым» (#9): телефон + подключённый канал Umnico + текст → reachOut. */
+function NewDialogModal({
+  onClose,
+  onSent,
+}: {
+  onClose: () => void;
+  onSent: (conversationId?: string) => void;
+}) {
+  const [channels, setChannels] = useState<UmnicoReachChannel[] | null>(null);
+  const [saId, setSaId] = useState<number | null>(null);
+  const [phone, setPhone] = useState('');
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    adminApi
+      .umnicoReachChannels()
+      .then((cs) => {
+        const active = cs.filter((c) => !c.status || /open|active|connect|1/i.test(c.status));
+        setChannels(active.length ? active : cs);
+        setSaId((p) => p ?? (active[0]?.id ?? cs[0]?.id ?? null));
+      })
+      .catch(() => setChannels([]));
+  }, []);
+
+  async function send() {
+    const t = text.trim();
+    if (!t || !saId || phone.replace(/\D/g, '').length < 10) {
+      setErr('Укажите телефон (от 10 цифр), выберите канал и напишите сообщение.');
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await adminApi.umnicoReachOut({ phone, saId, text: t });
+      if (r.ok) onSent(r.conversationId);
+      else setErr(`Не удалось отправить: ${r.error ?? 'ошибка'}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Ошибка отправки');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="text-lg font-medium text-ink">Написать гостю первым</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-ink">✕</button>
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          Гостю уходит первое сообщение по номеру телефона через подключённый канал Umnico. История появится в диалогах.
+        </p>
+        {err && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</div>}
+        <label className="mb-2 block text-sm">
+          <span className="mb-1 block text-xs text-slate-500">Телефон гостя</span>
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            inputMode="tel"
+            placeholder="+7 900 000-00-00"
+            className="w-full rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+          />
+        </label>
+        <label className="mb-2 block text-sm">
+          <span className="mb-1 block text-xs text-slate-500">Канал</span>
+          {channels === null ? (
+            <p className="text-xs text-slate-400">Загрузка каналов…</p>
+          ) : channels.length === 0 ? (
+            <p className="text-xs text-slate-400">Нет подключённых каналов Umnico — подключите в «AI → Настройки и каналы».</p>
+          ) : (
+            <select
+              value={saId ?? ''}
+              onChange={(e) => setSaId(Number(e.target.value))}
+              className="w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-sm"
+            >
+              {channels.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          )}
+        </label>
+        <label className="mb-2 block text-sm">
+          <span className="mb-1 block text-xs text-slate-500">Сообщение</span>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={3}
+            placeholder="Здравствуйте! …"
+            className="w-full resize-none rounded-lg border border-ink/15 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+          />
+        </label>
+        <p className="mb-3 text-[11px] leading-tight text-slate-400">
+          Личные аккаунты мессенджеров могут блокировать за рассылки — используйте официальные каналы.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg px-4 py-2 text-sm text-slate-500 hover:text-ink">Отмена</button>
+          <button
+            onClick={() => void send()}
+            disabled={busy || !text.trim() || !saId}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+          >
+            {busy ? 'Отправка…' : 'Отправить'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

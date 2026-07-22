@@ -804,15 +804,15 @@ export default function StaffChatPage() {
   );
 
   return (
-    <main className="px-8 py-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-light text-ink">Мессенджер</h1>
-        <p className="mt-1 text-sm text-dark-gray">Внутренние чаты сотрудников — личные и групповые (§2).</p>
+    <main className="flex h-[100dvh] flex-col overflow-hidden px-8 py-5">
+      <div className="mb-3 shrink-0">
+        <h1 className="text-2xl font-light text-ink">Мессенджер</h1>
+        <p className="truncate text-xs text-dark-gray">Внутренние чаты сотрудников — личные и групповые (§2).</p>
       </div>
 
-      <div className="grid h-[76vh] gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]">
         {/* Левая панель: чаты / новый чат */}
-        <Card className="flex flex-col p-2">
+        <Card className="flex min-h-0 flex-col overflow-hidden p-2">
           <div className="flex items-center justify-between px-2 py-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Чаты</span>
             <button
@@ -1071,7 +1071,7 @@ export default function StaffChatPage() {
         </Card>
 
         {/* Правая панель: диалог */}
-        <Card className="flex flex-col p-0">
+        <Card className="flex min-h-0 flex-col p-0">
           {!chat ? (
             <div className="grid flex-1 place-items-center text-sm text-slate-400">Выберите чат слева</div>
           ) : (
