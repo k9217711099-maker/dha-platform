@@ -179,6 +179,24 @@ export class FunnelOrchestratorService {
         keyStage?.timing?.postCheckoutMinutes ?? this.config.get('KEY_POST_CHECKOUT_MINUTES', { infer: true }),
     });
 
+    // Смена дат/времени брони: если у брони есть активный ключ, а его окно разошлось с
+    // текущим (пересчитанным из новых дат) — перевыпускаем код (revoke+issue). Порог 1 мин,
+    // чтобы не дёргать замок из-за микро-расхождений. Ошибка перевыпуска → задача в СПИР
+    // (внутри keys.refreshForBooking). После перевыпуска окно совпадает — повторов нет.
+    const activeKey = await this.prisma.digitalKey.findFirst({
+      where: { bookingId: b.id, status: KeyStatus.ACTIVE },
+      select: { validFrom: true, validUntil: true },
+    });
+    if (
+      activeKey &&
+      (Math.abs(activeKey.validFrom.getTime() - window.start.getTime()) > 60_000 ||
+        Math.abs(activeKey.validUntil.getTime() - window.end.getTime()) > 60_000)
+    ) {
+      await this.keys.refreshForBooking(b.id).catch((e) =>
+        this.logger.warn(`Перевыпуск ключа по смене дат ${b.id}: ${String(e)}`),
+      );
+    }
+
     const hasContact = Boolean(b.guest?.phone || b.guest?.email);
     const registrationRequired = this.stageBlocks(stages, 'registration');
     const paymentRequired = this.stageBlocks(stages, 'payment');
@@ -329,9 +347,11 @@ export class FunnelOrchestratorService {
 
   /** Выехавшие с активными ключами: отзыв доступа + прощальное уведомление (§6.6). */
   private async revokeAfterCheckout(now: Date): Promise<void> {
+    // Отзыв кодов после выезда И после отмены брони (просьба владельца): активные
+    // ключи удаляются, magic-link гасится. Прощальное сообщение — только выехавшим.
     const leftovers = await this.prisma.booking.findMany({
       where: {
-        status: BookingStatus.CHECKED_OUT,
+        status: { in: [BookingStatus.CHECKED_OUT, BookingStatus.CANCELLED] },
         updatedAt: { gte: new Date(now.getTime() - 48 * 3_600_000) },
         digitalKeys: { some: { status: KeyStatus.ACTIVE } },
       },
@@ -341,9 +361,14 @@ export class FunnelOrchestratorService {
       await this.keys.revoke(b.id, 'funnel').catch(() => undefined);
       await this.links.revokeFor(b.id); // magic-link умирает вместе с доступом (§4)
       await this.prisma.booking
-        .update({ where: { id: b.id }, data: { funnelStage: FunnelStage.COMPLETED } })
+        .update({
+          where: { id: b.id },
+          data: { funnelStage: b.status === BookingStatus.CANCELLED ? FunnelStage.CANCELLED : FunnelStage.COMPLETED },
+        })
         .catch(() => undefined);
-      await this.sendOnce(b, `${b.id}:checkout_info`, 'checkout_revoke', 'CHECKOUT_INFO');
+      if (b.status === BookingStatus.CHECKED_OUT) {
+        await this.sendOnce(b, `${b.id}:checkout_info`, 'checkout_revoke', 'CHECKOUT_INFO');
+      }
     }
   }
 

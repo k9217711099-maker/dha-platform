@@ -111,6 +111,7 @@ export class KeysService {
     // код по алгоритму TTLock (см. issueOne). Один код на бронь, ротация в один вызов.
     const sharedPin = this.randomPin(this.config.get('TTLOCK_UNIFIED_PIN_LENGTH', { infer: true }));
 
+    const guestName = await this.guestNameFor(guestId);
     let success = 0;
     let failed = 0;
     for (const lock of locks) {
@@ -121,7 +122,7 @@ export class KeysService {
         success += 1;
         continue;
       }
-      const ok = await this.issueOne(guestId, bookingId, lock, window, sharedPin);
+      const ok = await this.issueOne(guestId, bookingId, lock, window, sharedPin, guestName);
       if (ok) success += 1;
       else failed += 1;
     }
@@ -203,6 +204,56 @@ export class KeysService {
     }
   }
 
+  /**
+   * Перевыпуск ключа после смены дат/времени брони: старый код удаляется, выдаётся
+   * новый на актуальное окно (TTLock не даёт менять офлайн-код — поэтому revoke+issue,
+   * PIN обновляется, гость видит новый в портале). Если перевыпуск не удался — задача
+   * в отдел СПИР с описанием проблемы (просьба владельца).
+   */
+  async refreshForBooking(bookingId: string): Promise<void> {
+    const active = await this.prisma.digitalKey.count({ where: { bookingId, status: KeyStatus.ACTIVE } });
+    if (active === 0) return;
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { guestId: true, tenantId: true, bookingNumber: true },
+    });
+    if (!booking) return;
+    try {
+      await this.revoke(bookingId, 'reschedule');
+      await this.issue(booking.guestId, bookingId);
+      this.logger.log(`Ключ перевыпущен после смены дат: бронь ${bookingId}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Перевыпуск ключа после смены дат ${bookingId}: ${message}`);
+      await this.escalation.escalateOnce({
+        bookingId,
+        dedupeKey: `${bookingId}:key_reschedule_failed`,
+        kind: 'key_reschedule_failed',
+        title: `Код замка не обновлён после смены дат брони`,
+        description: `Даты/время брони № ${booking.bookingNumber ?? bookingId.slice(0, 8)} изменились, но код замка не удалось перевыпустить: ${message}. Проверьте замок и выдайте актуальный код вручную.`,
+        groupId: await this.resolveSpirGroupId(booking.tenantId),
+        important: true,
+      });
+    }
+  }
+
+  /** ID отдела СПИР (UserGroup) для эскалаций по замкам; null — если отдел не заведён. */
+  private async resolveSpirGroupId(tenantId: string): Promise<string | null> {
+    const grp = await this.prisma.userGroup
+      .findFirst({ where: { tenantId, name: { contains: 'СПИР', mode: 'insensitive' } }, select: { id: true } })
+      .catch(() => null);
+    return grp?.id ?? null;
+  }
+
+  /** ФИО гостя для имени кода в TTLock (фамилия + имя; фолбэк — «Гость»). */
+  private async guestNameFor(guestId: string): Promise<string> {
+    const g = await this.prisma.guest
+      .findUnique({ where: { id: guestId }, select: { firstName: true, lastName: true } })
+      .catch(() => null);
+    const name = [g?.lastName, g?.firstName].filter(Boolean).join(' ').trim();
+    return name || 'Гость';
+  }
+
   /** Авто-отзыв ключей с истёкшим окном действия (§9.4). */
   async autoRevokeExpired(now: Date = new Date()): Promise<number> {
     const expired = await this.prisma.digitalKey.findMany({
@@ -227,6 +278,7 @@ export class KeysService {
     lock: Lock,
     window: { start: Date; end: Date },
     sharedPin: string,
+    guestName: string,
   ): Promise<boolean> {
     const key = await this.prisma.digitalKey.create({
       data: {
@@ -243,7 +295,8 @@ export class KeysService {
     });
     const startMs = window.start.getTime();
     const endMs = window.end.getTime();
-    const name = `${lock.name} · ${bookingId.slice(0, 8)}`;
+    // Имя кода в TTLock — по гостю (для удобства персонала). Ограничение длины TTLock (~32).
+    const name = `${guestName} · ${lock.name}`.slice(0, 32);
 
     // 1) Со шлюзом — пробуем записать ЕДИНЫЙ свой код (несколько попыток).
     if (lock.hasGateway) {
