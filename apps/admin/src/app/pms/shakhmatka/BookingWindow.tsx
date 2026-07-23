@@ -414,6 +414,14 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
     setShowHistory((v) => !v);
     if (!showHistory && convos === null) reloadHistory();
   };
+  // Живое обновление истории переписки, пока раздел открыт (новые сообщения появляются
+  // без перезагрузки страницы — «как в чате»). Опрос каждые 8 секунд.
+  useEffect(() => {
+    if (!showHistory || !gid) return;
+    const t = setInterval(reloadHistory, 8000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showHistory, gid]);
   // Подключённые каналы Umnico грузим при открытии карточки — показываем активные каналы
   // связи и выбираем канал для «Написать гостю» (#12; вместо статичных wa.me/t.me-ссылок).
   useEffect(() => {

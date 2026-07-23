@@ -52,8 +52,8 @@ const STATUS_RU: Record<string, { label: string; cls: string }> = {
   CLOSED: { label: 'закрыт', cls: 'bg-slate-100 text-slate-500' },
 };
 const shortId = (id: string) => id.slice(0, 8);
-const guestLabel = (name: string | null, id: string | null) =>
-  name || (id ? `гость ${shortId(id)}` : 'аноним');
+const guestLabel = (name: string | null, id: string | null, phone?: string | null) =>
+  name || phone || (id ? `гость ${shortId(id)}` : 'без имени');
 const operatorLabel = (name: string | null, id: string | null) =>
   name || (id ? `оператор ${shortId(id)}` : '');
 
@@ -87,10 +87,21 @@ function timeAgo(iso: string): string {
 }
 
 /**
- * Тело сообщения: маркеры `[img]<url>` (напр. картинки из Umnico) рисуем как <img>,
- * остальное — как текст. Клик по картинке открывает оригинал в новой вкладке.
+ * Тело сообщения: `[img]<url>` рисуем картинкой; маркер вложения `[вложение…]`/`[файл…]` и
+ * длинные ссылки (напр. authed-URL вложений Umnico) — компактной кликабельной ссылкой, чтобы
+ * гигантский URL не ломал вёрстку переписки. Обычный текст — как есть.
  */
 function MessageBody({ text }: { text: string }) {
+  // Компактная ссылка на вложение: `[вложение: photo]\nhttps://…` или `[файл: name]\nhttps://…`.
+  const attach = text.match(/^\[(вложение|файл)([^\]]*)\]\s*(https?:\/\/\S+)$/i);
+  if (attach) {
+    const isPhoto = /photo|image|фото|картин/i.test(attach[2] ?? '');
+    return (
+      <a href={attach[3]} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2 py-1 text-sm underline-offset-2 hover:underline">
+        {isPhoto ? '🖼' : '📎'} {isPhoto ? 'Фото' : `Файл${attach[2]?.trim() ? ` ${attach[2].replace(/^:\s*/, '')}` : ''}`} — открыть
+      </a>
+    );
+  }
   const parts = text.split(/(\[img\]\S+)/g).filter((p) => p !== '');
   return (
     <>
@@ -101,6 +112,13 @@ function MessageBody({ text }: { text: string }) {
             <a key={i} href={img[1]} target="_blank" rel="noreferrer" className="block">
               <img src={img[1]} alt="вложение" className="mt-1 max-h-64 max-w-full rounded-lg object-contain" />
             </a>
+          );
+        }
+        // Длинные «голые» ссылки в тексте — компактной ссылкой (не рвём вёрстку огромным URL).
+        const url = p.match(/^(https?:\/\/\S{40,})$/);
+        if (url) {
+          return (
+            <a key={i} href={url[1]} target="_blank" rel="noreferrer" className="underline underline-offset-2 [overflow-wrap:anywhere]">ссылка ↗</a>
           );
         }
         return <span key={i}>{p}</span>;
@@ -510,7 +528,7 @@ export default function InboxPage() {
                           <span className="h-2 w-2 shrink-0 rounded-full bg-rose-500" title="Непрочитанное сообщение" />
                         )}
                         <span className={`truncate text-sm text-ink ${c.unread ? 'font-semibold' : 'font-medium'}`}>
-                          {c.title || guestLabel(c.guestName, c.guestId) || `Диалог ${shortId(c.id)}`}
+                          {c.title || guestLabel(c.guestName, c.guestId, c.guestPhone) || `Диалог ${shortId(c.id)}`}
                         </span>
                       </span>
                       <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
@@ -525,8 +543,9 @@ export default function InboxPage() {
                     )}
                     <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-400">
                       <span className="truncate">
-                        {guestLabel(c.guestName, c.guestId)}
-                        {c.guestPhone ? ` · ${c.guestPhone}` : ''}
+                        {guestLabel(c.guestName, c.guestId, c.guestPhone)}
+                        {/* телефон отдельной строкой только если он не стал уже именем */}
+                        {c.guestPhone && (c.guestName || c.guestPhone) !== c.guestPhone ? ` · ${c.guestPhone}` : ''}
                       </span>
                       <span className="shrink-0">{timeAgo(c.lastAt ?? c.updatedAt)}</span>
                     </div>
@@ -621,8 +640,8 @@ export default function InboxPage() {
                     </div>
                   )}
                   <p className="text-xs text-slate-400">
-                    {guestLabel(conv.guestName, conv.guestId)}
-                    {conv.guestPhone ? ` · ${conv.guestPhone}` : ''}
+                    {guestLabel(conv.guestName, conv.guestId, conv.guestPhone)}
+                    {conv.guestPhone && conv.guestName ? ` · ${conv.guestPhone}` : ''}
                     {conv.operatorId
                       ? ` · ${mineAssigned ? 'у вас' : operatorLabel(conv.operatorName, conv.operatorId)}`
                       : ' · не взят'}
