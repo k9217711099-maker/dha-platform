@@ -7,6 +7,7 @@ import { CheckinService } from './checkin.service.js';
 import { AuditService } from '../warehouse/audit/audit.service.js';
 import { KeysModule } from '../keys/keys.module.js';
 import { PaymentsModule } from '../payments/payments.module.js';
+import { ChannelsModule } from '../ai/channels/channels.module.js';
 import { CheckinDeskService } from './funnel/checkin-desk.service.js';
 import { CheckinFunnelAdminController } from './funnel/checkin-funnel-admin.controller.js';
 import { CheckinFunnelService } from './funnel/checkin-funnel.service.js';
@@ -19,7 +20,7 @@ import { CheckinPortalController } from './portal/checkin-portal.controller.js';
 import { GuestCheckinLinkService } from './portal/guest-checkin-link.service.js';
 
 @Module({
-  imports: [AuthModule, KeysModule, PaymentsModule],
+  imports: [AuthModule, KeysModule, PaymentsModule, ChannelsModule],
   controllers: [CheckinController, CheckinReviewController, CheckinFunnelAdminController, FunnelConfigController, CheckinPortalController],
   providers: [
     CheckinService,

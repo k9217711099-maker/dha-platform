@@ -42,5 +42,6 @@ import { AttachmentStorageService } from '../../staff-chat/attachment-storage.se
     AuditService,
     AttachmentStorageService,
   ],
+  exports: [UmnicoAgentService],
 })
 export class ChannelsModule {}

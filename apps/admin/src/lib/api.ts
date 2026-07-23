@@ -348,6 +348,8 @@ export interface Suggestion {
 export interface GuestConversation {
   id: string;
   channel: string;
+  /** Подканал Umnico (telegram/whatsapp/…) — для группировки «1 канал = 1 чат». */
+  subChannel?: string | null;
   status: string;
   title: string | null;
   createdAt: string;

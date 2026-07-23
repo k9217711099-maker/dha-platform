@@ -188,6 +188,7 @@ export class AdminService {
         channel: true,
         status: true,
         title: true,
+        channelMeta: true,
         createdAt: true,
         updatedAt: true,
         messages: {
@@ -200,18 +201,23 @@ export class AdminService {
       },
     });
     const roleMap = { USER: 'user', ASSISTANT: 'ai', STAFF: 'staff' } as const;
-    return convos.map((c) => ({
-      id: c.id,
-      channel: c.channel,
-      status: c.status,
-      title: c.title,
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-      messages: c.messages.map((m) => ({
-        role: roleMap[m.role as 'USER' | 'ASSISTANT' | 'STAFF'],
-        text: m.content,
-        createdAt: m.createdAt,
-      })),
-    }));
+    return convos.map((c) => {
+      // Подканал (telegram/whatsapp/…) для группировки «1 канал = 1 чат»; «message» невалиден.
+      const st = (c.channelMeta as { sourceType?: string } | null)?.sourceType;
+      return {
+        id: c.id,
+        channel: c.channel,
+        subChannel: st && st !== 'message' ? st : null,
+        status: c.status,
+        title: c.title,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+        messages: c.messages.map((m) => ({
+          role: roleMap[m.role as 'USER' | 'ASSISTANT' | 'STAFF'],
+          text: m.content,
+          createdAt: m.createdAt,
+        })),
+      };
+    });
   }
 }

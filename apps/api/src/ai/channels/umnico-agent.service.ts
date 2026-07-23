@@ -89,20 +89,29 @@ export class UmnicoAgentService {
     phone: string;
     saId: number;
     text: string;
+    /** Идемпотентность на стороне Umnico (напр. `${bookingId}:${kind}` из воронки). */
+    customId?: string;
+    /** Системное сообщение (воронка/автоматика): логируем в чат, но НЕ эскалируем диалог. */
+    system?: boolean;
   }): Promise<{ ok: boolean; conversationId?: string; error?: string }> {
     const tenantId = await this.tenant.getDefaultTenantId();
-    const r = await this.umnico.reachOutFirst(input.saId, input.phone, input.text);
+    const r = await this.umnico.reachOutFirst(input.saId, input.phone, input.text, input.customId);
     if (!r.ok) return { ok: false, error: r.error };
     let conversationId: string | undefined;
     try {
       // Логируем исходящее в диалог ВСЕГДА, а не только когда Umnico вернул leadId —
       // иначе история переписки в карточке брони оставалась пустой (#12). Порядок поиска:
       // по leadId (если есть) → последний UMNICO-диалог гостя → создаём новый.
+      const subChannel = await this.umnico.channelTypeBySaId(String(input.saId));
+      // СЛИЯНИЕ «1 гость+канал=1 чат»: по leadId → существующий диалог гостя в этом подканале → создаём.
       let convo = r.leadId
         ? await this.conversations.findByExternal(tenantId, AiChannel.UMNICO, r.leadId)
         : null;
-      if (!convo && input.guestId) {
-        convo = await this.conversations.findGuestChannel(tenantId, input.guestId, AiChannel.UMNICO);
+      if (!convo) {
+        convo = await this.conversations.findMergeTarget(tenantId, {
+          guestId: input.guestId ?? null,
+          subChannel: subChannel ?? null,
+        });
       }
       if (!convo) {
         convo = await this.conversations.create({
@@ -113,14 +122,13 @@ export class UmnicoAgentService {
         });
       }
       conversationId = convo.id;
-      // externalId (leadId) выставляем, если он есть, а у диалога ещё не задан — чтобы
-      // входящие ответы гостя приклеились к этому же диалогу.
-      if (r.leadId && !convo.externalId) await this.conversations.setExternalId(conversationId, r.leadId);
+      // externalId держим на актуальном leadId — входящие ответы гостя приклеятся к этому диалогу.
+      if (r.leadId && convo.externalId !== r.leadId) await this.conversations.setExternalId(conversationId, r.leadId);
       const prevMeta = (convo.channelMeta ?? {}) as { avatar?: string | null; sourceType?: string | null };
       await this.conversations.setChannelMeta(conversationId, {
         saId: String(input.saId),
         phone: input.phone,
-        sourceType: prevMeta.sourceType ?? null,
+        sourceType: subChannel ?? prevMeta.sourceType ?? null,
         avatar: prevMeta.avatar ?? null,
       });
       if (input.guestId) await this.conversations.setGuestId(conversationId, input.guestId);
@@ -128,7 +136,8 @@ export class UmnicoAgentService {
         role: AiMessageRole.STAFF,
         content: input.text,
       });
-      await this.conversations.setStatus(conversationId, AiConversationStatus.ESCALATED);
+      // Ручное «написать первым» — эскалируем (оператор ведёт). Системное (воронка) — не трогаем статус.
+      if (!input.system) await this.conversations.setStatus(conversationId, AiConversationStatus.ESCALATED);
     } catch (e) {
       // Сообщение гостю уже ушло — не роняем ответ из-за проблем логирования.
       this.logger.error(`reachOut: сообщение ушло, но лог в диалог не удался: ${(e as Error).message}`);
@@ -146,16 +155,7 @@ export class UmnicoAgentService {
       // Канал Umnico выключен тумблером в админке — входящие игнорируем.
       if (!(await this.toggle.isChannelEnabledFor(AiChannel.UMNICO))) return;
       const tenantId = await this.tenant.getDefaultTenantId();
-      const existing = await this.conversations.findByExternal(tenantId, AiChannel.UMNICO, msg.leadId);
-      const res = await this.guestAgent.handle({
-        conversationId: existing?.id,
-        tenantId,
-        channel: AiChannel.UMNICO,
-        text,
-      });
-      if (!existing) await this.conversations.setExternalId(res.conversationId, msg.leadId);
-      // Телефон/фото/имя гостя (#1/#2): у Telegram приходят отдельным событием customer.* —
-      // добираем из кэша по customerId, если в самом сообщении их нет.
+      // Идентичность гостя (#1/#2): телефон/фото/имя/ник — из сообщения или кэша customer.* по customerId.
       const customer = await this.umnico.getCustomer(msg.customerId);
       const phone = msg.phone ?? customer?.phone ?? undefined;
       const avatar = msg.avatar ?? customer?.avatar ?? undefined;
@@ -164,6 +164,26 @@ export class UmnicoAgentService {
       // Подканал (#14): берём из sender.type; если это «message»/пусто — резолвим по saId.
       let sourceType = isRealChannelType(msg.sourceType) ? msg.sourceType : undefined;
       if (!sourceType) sourceType = await this.umnico.channelTypeBySaId(msg.saId);
+      // Гость по телефону — нужен и для слияния, и для привязки профиля.
+      const matchedGuestId = phone ? await this.conversations.findGuestIdByPhone(tenantId, phone) : null;
+      // СЛИЯНИЕ «1 гость + 1 подканал = 1 чат»: диалог по leadId → иначе существующий диалог
+      // того же человека (guestId/customerId) в этом подканале → иначе создаём новый.
+      let existing = await this.conversations.findByExternal(tenantId, AiChannel.UMNICO, msg.leadId);
+      if (!existing) {
+        existing = await this.conversations.findMergeTarget(tenantId, {
+          guestId: matchedGuestId,
+          customerId: msg.customerId,
+          subChannel: sourceType ?? null,
+        });
+      }
+      const res = await this.guestAgent.handle({
+        conversationId: existing?.id,
+        tenantId,
+        channel: AiChannel.UMNICO,
+        text,
+      });
+      // externalId держим на АКТУАЛЬНОМ leadId (ответы оператора уходят на последнее обращение).
+      if (existing?.externalId !== msg.leadId) await this.conversations.setExternalId(res.conversationId, msg.leadId);
       // Прежние значения: телефон/фото/подканал часто приходят лишь в первом сообщении,
       // поэтому setChannelMeta (полная замена) не должен их затирать — сохраняем известные.
       // sourceType «message» из прошлых версий тоже НЕ сохраняем (иначе так и висит «Умнико · message»).
@@ -184,11 +204,9 @@ export class UmnicoAgentService {
         name: name ?? prev.name ?? null,
         username: username ?? prev.username ?? null,
       });
-      // Подтягиваем профиль гостя по номеру телефона (#8): если диалог ещё не привязан
-      // к гостю, а телефон совпал с профилем — привязываем (в ленте появятся ФИО/профиль).
-      if (phone && !existing?.guestId) {
-        const guestId = await this.conversations.findGuestIdByPhone(tenantId, phone);
-        if (guestId) await this.conversations.setGuestId(res.conversationId, guestId);
+      // Привязка к профилю гостя (#8): если диалог ещё не привязан, а телефон совпал — привязываем.
+      if (matchedGuestId && !existing?.guestId) {
+        await this.conversations.setGuestId(res.conversationId, matchedGuestId);
       }
       // Авто-ответ в мессенджер шлём ТОЛЬКО когда отвечает бот. При эскалации/выключенном
       // AI молчим — иначе гость получал бы «администратор скоро ответит» на каждое сообщение;

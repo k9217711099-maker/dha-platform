@@ -415,10 +415,10 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
     if (!showHistory && convos === null) reloadHistory();
   };
   // Живое обновление истории переписки, пока раздел открыт (новые сообщения появляются
-  // без перезагрузки страницы — «как в чате»). Опрос каждые 8 секунд.
+  // без перезагрузки страницы — «как в чате»). Опрос каждые 5 секунд.
   useEffect(() => {
     if (!showHistory || !gid) return;
-    const t = setInterval(reloadHistory, 8000);
+    const t = setInterval(reloadHistory, 5000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHistory, gid]);
@@ -462,6 +462,30 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
     WEB: 'Сайт', APP: 'Приложение', TELEGRAM: 'Telegram', TELEGRAM_DIRECT: 'Telegram',
     MAX: 'MAX', WHATSAPP: 'WhatsApp', UMNICO: 'Умнико', ADMIN: 'Админка',
   };
+  const SUBCHANNEL_RU: Record<string, string> = {
+    telegram: 'Telegram', telebot: 'Telegram', telegramV2: 'Telegram', whatsapp: 'WhatsApp',
+    whatsapp2: 'WhatsApp', whatsappV2: 'WhatsApp', instagram: 'Instagram', instagramV3: 'Instagram',
+    vk: 'ВКонтакте', viber: 'Viber', avito: 'Avito', ok: 'Одноклассники', fb_messenger: 'Messenger', max: 'MAX',
+  };
+  const threadLabel = (channel: string, sub?: string | null) =>
+    (CHANNEL_RU[channel] ?? channel) + (sub ? ` · ${SUBCHANNEL_RU[sub] ?? sub}` : '');
+  // Группируем диалоги гостя «1 канал = 1 чат»: объединяем переписки одного (под)канала в одну
+  // ленту, сообщения по времени. Так 2 диалога Umnico·Telegram показываются как один чат.
+  const threads = useMemo(() => {
+    if (!convos) return null;
+    const map = new Map<string, { key: string; channel: string; subChannel: string | null; messages: GuestConversation['messages']; updatedAt: string }>();
+    for (const c of convos) {
+      const key = `${c.channel}|${c.subChannel ?? ''}`;
+      let g = map.get(key);
+      if (!g) { g = { key, channel: c.channel, subChannel: c.subChannel ?? null, messages: [], updatedAt: c.updatedAt }; map.set(key, g); }
+      g.messages.push(...c.messages);
+      if (c.updatedAt > g.updatedAt) g.updatedAt = c.updatedAt;
+    }
+    const arr = [...map.values()];
+    for (const g of arr) g.messages.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+    arr.sort((a, b) => (a.updatedAt > b.updatedAt ? -1 : 1));
+    return arr;
+  }, [convos]);
 
   return (
     <div className="rounded-xl border border-ink/10 p-4">
@@ -542,32 +566,31 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
           {gid ? (
             <div className="mt-3 border-t border-ink/10 pt-2">
               <button type="button" onClick={toggleHistory} className="flex w-full items-center justify-between text-xs font-medium text-primary hover:underline">
-                <span>💬 История переписки{convos ? ` · ${convos.length}` : ''}</span>
+                <span>💬 История переписки{threads ? ` · ${threads.length}` : ''}</span>
                 <span>{showHistory ? '▲ свернуть' : '▼ развернуть'}</span>
               </button>
               {showHistory ? (
-                convos === null ? (
+                threads === null ? (
                   <p className="mt-2 text-xs text-dark-gray">Загрузка…</p>
-                ) : convos.length === 0 ? (
+                ) : threads.length === 0 ? (
                   <p className="mt-2 text-xs text-dark-gray">Переписки с гостем пока нет.</p>
                 ) : (
                   <div className="mt-2 space-y-1.5">
-                    {convos.map((c) => {
-                      const isOpen = openConvo === c.id;
-                      const last = c.messages[c.messages.length - 1];
-                      const chan = CHANNEL_RU[c.channel] ?? c.channel;
+                    {threads.map((t) => {
+                      const isOpen = openConvo === t.key;
+                      const last = t.messages[t.messages.length - 1];
                       return (
-                        <div key={c.id} className="rounded-lg border border-ink/10">
-                          <button type="button" onClick={() => setOpenConvo(isOpen ? null : c.id)} className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left hover:bg-ink/[0.03]">
+                        <div key={t.key} className="rounded-lg border border-ink/10">
+                          <button type="button" onClick={() => setOpenConvo(isOpen ? null : t.key)} className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left hover:bg-ink/[0.03]">
                             <span className="min-w-0">
-                              <span className="text-xs text-ink">{c.title || `Диалог · ${chan}`}</span>
+                              <span className="text-xs text-ink">{threadLabel(t.channel, t.subChannel)}</span>
                               {last ? <span className="block truncate text-[11px] text-dark-gray">{last.role === 'user' ? '👤 ' : last.role === 'staff' ? '🧑‍💼 ' : '🤖 '}{last.text.replace(/\[img\]\S+/g, '📷 фото')}</span> : null}
                             </span>
-                            <span className="shrink-0 text-[11px] text-dark-gray">{new Date(c.updatedAt).toLocaleDateString('ru')} {isOpen ? '▲' : '▼'}</span>
+                            <span className="shrink-0 text-[11px] text-dark-gray">{new Date(t.updatedAt).toLocaleDateString('ru')} {isOpen ? '▲' : '▼'}</span>
                           </button>
                           {isOpen ? (
                             <div className="max-h-64 space-y-1 overflow-y-auto border-t border-ink/10 px-2.5 py-1.5">
-                              {c.messages.map((m, i) => (
+                              {t.messages.map((m, i) => (
                                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-start' : 'justify-end'}`}>
                                   <div className={`max-w-[85%] whitespace-pre-wrap break-words [overflow-wrap:anywhere] rounded-lg px-2 py-1 text-[11px] ${m.role === 'user' ? 'bg-ink/[0.06] text-ink' : m.role === 'staff' ? 'bg-ink text-white' : 'border border-ink/10 text-dark-gray'}`}>
                                     {(() => {

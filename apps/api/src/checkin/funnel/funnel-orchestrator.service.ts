@@ -18,6 +18,7 @@ import { PmsBookingService } from '../../pms/bookings/pms-booking.service.js';
 import { combineDateAndTime } from '../../keys/key-window.js';
 import { OtaMessagingPort } from '../../integrations/ota-messaging/ota-messaging.port.js';
 import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
+import { UmnicoAgentService } from '../../ai/channels/umnico-agent.service.js';
 import { FunnelEscalationService } from './funnel-escalation.service.js';
 import { GuestCheckinLinkService } from '../portal/guest-checkin-link.service.js';
 import type { Env } from '../../config/env.schema.js';
@@ -70,6 +71,7 @@ export class FunnelOrchestratorService {
     private readonly links: GuestCheckinLinkService,
     private readonly otaMessaging: OtaMessagingPort,
     private readonly umnico: UmnicoConfigService,
+    private readonly umnicoAgent: UmnicoAgentService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -490,8 +492,10 @@ export class FunnelOrchestratorService {
         const text = title ? `${title}\n${body}` : body;
         for (const ch of umnicoChannels) {
           const saId = Number(ch.slice('umnico:'.length));
-          const r = await this.umnico
-            .reachOutFirst(saId, b.guest.phone, text, `${b.id}:${kind}`)
+          // reachOut (а не reachOutFirst) — чтобы сообщение воронки попало в чат гостя
+          // (диалог сливается «1 гость+канал=1 чат»); system:true — статус не эскалируем.
+          const r = await this.umnicoAgent
+            .reachOut({ guestId: b.guestId, phone: b.guest.phone, saId, text, customId: `${b.id}:${kind}`, system: true })
             .catch((e: unknown) => ({ ok: false as const, error: String(e) }));
           if (!r.ok) await this.markUnreachable(b, ch, r.error);
         }

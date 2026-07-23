@@ -81,6 +81,34 @@ export class ConversationService {
     });
   }
 
+  /**
+   * Диалог для СЛИЯНИЯ «1 гость + 1 подканал = 1 чат»: ищем существующий диалог того же
+   * человека в том же подканале (Telegram/WhatsApp/…), чтобы не плодить по одному на каждый
+   * leadId Umnico. Идентичность — по guestId (если сопоставлен) ИЛИ по customerId Umnico;
+   * подканал — по channelMeta.sourceType. Берём самый свежий.
+   */
+  async findMergeTarget(
+    tenantId: string,
+    opts: { guestId?: string | null; customerId?: string | null; subChannel?: string | null },
+  ) {
+    const { guestId, customerId, subChannel } = opts;
+    if (!guestId && !customerId) return null;
+    const idOr: Prisma.AiConversationWhereInput[] = [];
+    if (guestId) idOr.push({ guestId });
+    if (customerId) idOr.push({ channelMeta: { path: ['customerId'], equals: customerId } });
+    const rows = await this.prisma.aiConversation.findMany({
+      where: { tenantId, channel: AiChannel.UMNICO, OR: idOr },
+      orderBy: { updatedAt: 'desc' },
+      take: 20,
+    });
+    // Совпадение подканала: если он известен — берём тот же (иначе — любой самый свежий).
+    if (subChannel) {
+      const same = rows.find((r) => (r.channelMeta as { sourceType?: string } | null)?.sourceType === subChannel);
+      if (same) return same;
+    }
+    return rows[0] ?? null;
+  }
+
   setExternalId(id: string, externalId: string) {
     return this.prisma.aiConversation.update({ where: { id }, data: { externalId } });
   }
