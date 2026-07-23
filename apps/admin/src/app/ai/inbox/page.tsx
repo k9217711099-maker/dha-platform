@@ -161,22 +161,36 @@ export default function InboxPage() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Гварды опросов: не запускаем новый запрос, пока не завершился предыдущий — иначе на
+  // медленном ответе интервалы (5/10 c) наслаиваются и забивают лимит соединений браузера.
+  const listBusy = useRef(false);
+  const threadBusy = useRef(false);
 
   const loadList = useCallback(async () => {
+    if (listBusy.current) return;
+    listBusy.current = true;
     try {
       const rows = mode === 'all' ? await adminApi.inboxAll() : await adminApi.inboxList();
       setList(rows);
       setSelected((cur) => cur ?? rows[0]?.id ?? null); // авто-выбор первого, если ничего не выбрано
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Не удалось загрузить очередь');
+    } finally {
+      listBusy.current = false;
     }
   }, [mode]);
 
-  const loadThread = useCallback(async (id: string) => {
+  const loadThread = useCallback(async (id: string, force = false) => {
+    // force=true — открытие/смена диалога (грузим сразу); без force — фоновый опрос (пропускаем,
+    // если предыдущий ещё не завершился, чтобы не наслаивать запросы).
+    if (threadBusy.current && !force) return;
+    threadBusy.current = true;
     try {
       setThread(await adminApi.inboxThread(id));
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Не удалось загрузить диалог');
+    } finally {
+      threadBusy.current = false;
     }
   }, []);
 
@@ -211,10 +225,10 @@ export default function InboxPage() {
       setThread(null);
       return;
     }
-    void loadThread(selected);
+    void loadThread(selected, true); // смена диалога — грузим сразу, минуя гвард опроса
     // Открыли диалог → backend отметит прочитанным; локально гасим «непрочитано» сразу (#1).
     setList((rows) => rows.map((r) => (r.id === selected ? { ...r, unread: false } : r)));
-    const t = setInterval(() => void loadThread(selected), 5_000);
+    const t = setInterval(() => void loadThread(selected), 5_000); // опрос — с гвардом (не наслаивается)
     return () => clearInterval(t);
   }, [selected, loadThread]);
 

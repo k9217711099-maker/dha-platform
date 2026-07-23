@@ -174,11 +174,16 @@ export class ConversationService {
       AiMessageRole.STAFF,
     ];
     if (opts.includeSystem) roles.push(AiMessageRole.SYSTEM);
+    // Лимит: берём ПОСЛЕДНИЕ 500 сообщений (desc + take), затем разворачиваем в хронологию.
+    // Без лимита активный диалог (сотни сообщений) отвечал дольше 5-сек опроса → запросы
+    // наслаивались и забивали лимит соединений браузера («Load failed»). 500 для чат-вью с избытком.
     const rows = await this.prisma.aiMessage.findMany({
       where: { conversationId, role: { in: roles } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
       select: { role: true, content: true, createdAt: true },
     });
+    rows.reverse();
     const map = { USER: 'user', ASSISTANT: 'ai', STAFF: 'staff', SYSTEM: 'system' } as const;
     return rows.map((m) => ({
       role: map[m.role as 'USER' | 'ASSISTANT' | 'STAFF' | 'SYSTEM'],
