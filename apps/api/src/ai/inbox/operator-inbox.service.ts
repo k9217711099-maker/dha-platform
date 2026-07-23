@@ -181,22 +181,27 @@ export class OperatorInboxService {
     opts: { status?: AiConversationStatus; channel?: AiChannel } = {},
   ) {
     const rows = await this.conversations.listGuestConversations(tenantId, opts);
-    const [guests, operators] = await Promise.all([
+    const [guests, operators, customers] = await Promise.all([
       this.directory.guestProfiles(rows.map((r) => r.guestId)),
       this.directory.operators(rows.map((r) => r.operatorId)),
+      this.umnico.getCustomers(rows.map((r) => r.customerId)), // кэш телефон/фото/ник по customerId
     ]);
-    // #14: у старых Umnico-диалогов sourceType не проставлен — добираем тип канала по saId
-    // (кэш 5 мин, поэтому уникальные saId резолвятся дёшево).
+    // #14: у старых Umnico-диалогов канал не проставлен — добираем тип по saId (кэш 5 мин).
     const needType = [...new Set(rows.filter((r) => !r.subChannel && r.saId).map((r) => r.saId!))];
     const typeBySaId = new Map<string, string | undefined>();
     for (const said of needType) typeBySaId.set(said, await this.umnico.channelTypeBySaId(said));
-    return rows.map(({ metaPhone, saId, ...r }) => {
+    return rows.map(({ metaPhone, metaName, saId, customerId, ...r }) => {
       const g = r.guestId ? guests.get(r.guestId) : undefined;
+      const c = customerId ? customers.get(customerId) : undefined;
       return {
         ...r,
-        guestName: g?.name || null,
-        // Телефон: из профиля гостя (если сопоставлен), иначе — из канала (#8).
-        guestPhone: g?.phone ?? metaPhone ?? null,
+        // Имя: профиль → имя из Umnico/ник (без «анонимов», #ники).
+        guestName: g?.name || metaName || c?.name || c?.username || null,
+        // Телефон: профиль → канал → кэш клиента (#1).
+        guestPhone: g?.phone ?? metaPhone ?? c?.phone ?? null,
+        // Фото: канал → кэш клиента (#2).
+        avatar: r.avatar ?? c?.avatar ?? null,
+        // Канал: sourceType → по saId → тип из кэша (#14).
         subChannel: r.subChannel ?? (saId ? typeBySaId.get(saId) ?? null : null),
         operatorName: (r.operatorId && operators.get(r.operatorId)) || null,
       };
@@ -225,13 +230,13 @@ export class OperatorInboxService {
     // Телефон/фото гостя из мессенджера (напр. Umnico) храним в channelMeta — показываем
     // оператору даже если профиль ещё не сопоставлен (#8). sourceType — подканал (#14).
     const meta = (convo.channelMeta ?? {}) as {
-      phone?: string | null;
-      sourceType?: string | null;
-      avatar?: string | null;
-      saId?: string | null;
+      phone?: string | null; sourceType?: string | null; avatar?: string | null;
+      saId?: string | null; customerId?: string | null; name?: string | null; username?: string | null;
     };
-    // #14: старым диалогам добираем тип канала по saId (кэшируется).
-    const subChannel = meta.sourceType ?? (meta.saId ? (await this.umnico.channelTypeBySaId(meta.saId)) ?? null : null);
+    const c = await this.umnico.getCustomer(meta.customerId);
+    // #14: канал из sourceType (если валиден, не «message»), иначе — по saId.
+    const validType = meta.sourceType && meta.sourceType !== 'message' ? meta.sourceType : null;
+    const subChannel = validType ?? (meta.saId ? (await this.umnico.channelTypeBySaId(meta.saId)) ?? null : null);
     const g = convo.guestId ? guests.get(convo.guestId) : undefined;
     return {
       conversation: {
@@ -241,10 +246,12 @@ export class OperatorInboxService {
         title: convo.title,
         subChannel,
         guestId: convo.guestId,
-        guestName: g?.name || null,
-        // Телефон: из профиля гостя (надёжнее), иначе — из канала (#8).
-        guestPhone: g?.phone ?? meta.phone ?? null,
-        avatar: meta.avatar ?? null,
+        // Имя: профиль → имя/ник из Umnico или кэша (без «анонимов»).
+        guestName: g?.name || meta.name || meta.username || c?.name || c?.username || null,
+        // Телефон: профиль → канал → кэш клиента (#1).
+        guestPhone: g?.phone ?? meta.phone ?? c?.phone ?? null,
+        // Фото: канал → кэш клиента (#2).
+        avatar: meta.avatar ?? c?.avatar ?? null,
         operatorId: convo.operatorId,
         operatorName: (convo.operatorId && operators.get(convo.operatorId)) || null,
         createdAt: convo.createdAt,

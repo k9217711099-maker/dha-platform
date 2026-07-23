@@ -21,8 +21,10 @@ interface UmnicoWebhook {
   customerId?: number | string;
   /** Событие customer.created/updated: телефон/аватар/имя гостя (у Telegram приходят ЗДЕСЬ,
    *  а не в самом сообщении — в message.sender только username). Связь с диалогом — по id. */
-  customer?: { id?: number | string; phone?: string; name?: string; avatar?: string };
+  customer?: { id?: number | string; phone?: string; name?: string; avatar?: string; login?: string };
   contact?: { phone?: string };
+  /** Событие lead.changed: тоже несёт клиента (id/phone/name/avatar/login) и канал. */
+  lead?: { customer?: { id?: number | string; phone?: string; name?: string; avatar?: string; login?: string } };
   message?: {
     text?: string;
     body?: string;
@@ -88,13 +90,16 @@ export class UmnicoController {
   webhook(@Body() body: UmnicoWebhook): { ok: true } {
     void this.umnico.captureDebug(body); // диагностика структуры (#14/#1/фото)
     const evt = body?.type ?? body?.event ?? '—';
-    // Событие customer.created/updated: телефон и фото гостя приходят отдельно от сообщения
-    // (у Telegram в сообщении только username). Кэшируем по id и связываем с диалогом (#1/#2).
-    if (body?.customer?.id != null) {
-      void this.umnico.saveCustomer(String(body.customer.id), {
-        phone: body.customer.phone ?? null,
-        avatar: body.customer.avatar ?? null,
-        name: body.customer.name ?? null,
+    // Телефон/фото/имя гостя приходят отдельно от сообщения (у Telegram в сообщении только
+    // username). Кэшируем клиента из customer.created/updated И из lead.changed — оба несут
+    // {id, phone, name, avatar, login}. Связь с диалогом — по customerId (#1/#2/ники).
+    const cust = body?.customer?.id != null ? body.customer : body?.lead?.customer;
+    if (cust?.id != null) {
+      void this.umnico.saveCustomer(String(cust.id), {
+        phone: cust.phone ?? null,
+        avatar: cust.avatar ?? null,
+        name: cust.name ?? null,
+        username: cust.login ?? null,
       });
     }
     const m = body?.message ?? {};
@@ -138,17 +143,16 @@ export class UmnicoController {
       // Фото профиля отправителя (если пришло прямо в сообщении) — иначе возьмём из кэша customer.
       const s = m.sender;
       const avatar = s?.avatar ?? s?.avatarUrl ?? s?.photo ?? s?.picture ?? undefined;
-      // Телефон ГОСТЯ (если канал его отдаёт) — только из полей отправителя/клиента.
-      // ВАЖНО (#1): НЕ берём source.identifier / sa.login — это номер ПОДКЛЮЧЁННОГО
-      // аккаунта (корпоративный номер Umnico), а не гостя (баг «показывался 7902…»).
-      // У Telegram телефона обычно нет — тогда номер не показываем (это нормально).
-      const phone = pickPhone(
-        m.sender?.phone,
-        m.sender?.login,
-        body.customer?.phone,
-        body.contact?.phone,
-      );
-      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, avatar, customerId, text });
+      // Ник/логин гостя — чтобы в диалогах не было «анонимов»: у Telegram это username
+      // (напр. Vera16011993), у WhatsApp — его же номер. Показываем как имя, если профиля нет.
+      const username = s?.login ?? undefined;
+      // Телефон ГОСТЯ — из полей отправителя/клиента. ВАЖНО (#1): НЕ берём source.identifier /
+      // sa.login — это номер ПОДКЛЮЧЁННОГО аккаунта (корп-номер Umnico). У WhatsApp телефон = это
+      // sender.login (напр. 79264376263); у Telegram телефона нет — добираем из кэша customer.*.
+      const phone = pickPhone(m.sender?.phone, m.sender?.login, body.customer?.phone, body.contact?.phone);
+      // Кэшируем отправителя, чтобы ник/телефон были доступны и для отображения списка.
+      if (customerId) void this.umnico.saveCustomer(customerId, { username: username ?? null, phone: phone ?? null, avatar: avatar ?? null });
+      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, avatar, customerId, username, text });
     } else if (/message\.incoming/i.test(evt)) {
       // message.incoming без текста и без распознанного вложения — просто отметим (warn
       // на проде подавлен, спама не будет; поднять уровень при разборе новых типов медиа).

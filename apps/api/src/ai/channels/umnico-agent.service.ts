@@ -20,8 +20,14 @@ export interface UmnicoIncoming {
   avatar?: string;
   /** id клиента Umnico — по нему берём телефон/фото из кэша customer.* (#1/#2). */
   customerId?: string;
+  /** Ник/логин гостя (username Telegram / номер WhatsApp) — имя, если профиля нет (без «анонимов»). */
+  username?: string;
   text: string;
 }
+
+/** «message»/пусто — это НЕ тип канала (source.type всегда «message»). Считаем невалидным. */
+export const isRealChannelType = (t: string | null | undefined): t is string =>
+  !!t && t !== 'message' && t !== 'unknown';
 
 /**
  * Оркестратор канала Umnico: входящее сообщение (из вебхука message.incoming) →
@@ -113,30 +119,35 @@ export class UmnicoAgentService {
         text,
       });
       if (!existing) await this.conversations.setExternalId(res.conversationId, msg.leadId);
-      // Подканал (#14): тип канала берём из sourceType (sender.type), фолбэк — по saId.
-      const sourceType = msg.sourceType ?? (await this.umnico.channelTypeBySaId(msg.saId));
-      // Телефон/фото гостя (#1/#2): у Telegram приходят отдельным событием customer.* —
+      // Телефон/фото/имя гостя (#1/#2): у Telegram приходят отдельным событием customer.* —
       // добираем из кэша по customerId, если в самом сообщении их нет.
       const customer = await this.umnico.getCustomer(msg.customerId);
       const phone = msg.phone ?? customer?.phone ?? undefined;
       const avatar = msg.avatar ?? customer?.avatar ?? undefined;
-      // Прежние значения: телефон/фото/подканал канал часто отдаёт лишь в первом сообщении,
-      // поэтому setChannelMeta (полная замена) не должен их затирать — сохраняем ранее известные.
+      const username = msg.username ?? customer?.username ?? undefined; // ник (без «анонимов»)
+      const name = customer?.name ?? undefined; // человекочитаемое имя из Umnico, если есть
+      // Подканал (#14): берём из sender.type; если это «message»/пусто — резолвим по saId.
+      let sourceType = isRealChannelType(msg.sourceType) ? msg.sourceType : undefined;
+      if (!sourceType) sourceType = await this.umnico.channelTypeBySaId(msg.saId);
+      // Прежние значения: телефон/фото/подканал часто приходят лишь в первом сообщении,
+      // поэтому setChannelMeta (полная замена) не должен их затирать — сохраняем известные.
+      // sourceType «message» из прошлых версий тоже НЕ сохраняем (иначе так и висит «Умнико · message»).
       const prev = (existing?.channelMeta ?? {}) as {
-        phone?: string | null;
-        sourceType?: string | null;
-        avatar?: string | null;
+        phone?: string | null; sourceType?: string | null; avatar?: string | null;
+        name?: string | null; username?: string | null;
       };
-      // Сохраняем адрес ответа (source/userId/saId) — без него оператор не сможет
-      // ответить в Umnico из инбокса (в leadId этих полей нет, а они обязательны).
-      // Телефон и фото гостя кладём сюда же — оператор видит их в инбоксе (#8/#14).
+      const prevType = isRealChannelType(prev.sourceType) ? prev.sourceType : null;
+      // Сохраняем адрес ответа (source/userId/saId/customerId) + телефон/фото/имя/ник гостя.
       await this.conversations.setChannelMeta(res.conversationId, {
         source: msg.source ?? null,
         userId: msg.userId ?? null,
         saId: msg.saId ?? null,
+        customerId: msg.customerId ?? null,
         phone: phone ?? prev.phone ?? null,
-        sourceType: sourceType ?? prev.sourceType ?? null,
+        sourceType: sourceType ?? prevType ?? null,
         avatar: avatar ?? prev.avatar ?? null,
+        name: name ?? prev.name ?? null,
+        username: username ?? prev.username ?? null,
       });
       // Подтягиваем профиль гостя по номеру телефона (#8): если диалог ещё не привязан
       // к гостю, а телефон совпал с профилем — привязываем (в ленте появятся ФИО/профиль).

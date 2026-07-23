@@ -1076,7 +1076,7 @@ export default function StaffChatPage() {
             <div className="grid flex-1 place-items-center text-sm text-slate-400">Выберите чат слева</div>
           ) : (
             <div
-              className="relative flex flex-1 flex-col"
+              className="relative flex min-h-0 flex-1 flex-col"
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
               onDrop={onDrop}
@@ -1219,7 +1219,7 @@ export default function StaffChatPage() {
                 </div>
               )}
 
-              <div className="flex-1 space-y-1.5 overflow-y-auto px-5 py-4">
+              <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-5 py-4">
                 {data?.messages.map((m) => {
                   const mine = m.senderId === me?.id;
                   const actions = !m.deleted ? (

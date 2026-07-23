@@ -558,7 +558,7 @@ export default function InboxPage() {
             <div className="grid flex-1 place-items-center text-sm text-slate-400">Выберите диалог слева</div>
           ) : (
             <div
-              className="relative flex flex-1 flex-col"
+              className="relative flex min-h-0 flex-1 flex-col"
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
               onDrop={onDrop}
@@ -694,7 +694,7 @@ export default function InboxPage() {
                 </div>
               )}
 
-              <div ref={messagesRef} className="flex-1 space-y-2 overflow-y-auto px-5 py-4">
+              <div ref={messagesRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-4">
                 {thread?.messages.map((m, i) =>
                   m.role === 'system' ? (
                     <div key={i} className="flex justify-center">

@@ -9,6 +9,9 @@ const K = {
   token: 'ai.umnico.token',
 } as const;
 
+/** Клиент Umnico (телефон/аватар/имя/ник) — из событий customer.created/updated и lead.changed (#1/#2). */
+export type UmnicoCustomer = { phone?: string | null; avatar?: string | null; name?: string | null; username?: string | null };
+
 /** Подключённый в Umnico канал (интеграция). */
 export interface UmnicoChannel {
   id: number;
@@ -148,39 +151,40 @@ export class UmnicoConfigService {
    * (в message.sender только username) — связываем с диалогом по customerId (#1/#2).
    */
   private customerKey(id: string): string { return String(id); }
-  async saveCustomer(
-    id: string,
-    data: { phone?: string | null; avatar?: string | null; name?: string | null },
-  ): Promise<void> {
+  async saveCustomer(id: string, data: UmnicoCustomer): Promise<void> {
     try {
       const raw = await this.settings.get('ai.umnico.customers');
-      let map: Record<string, { phone?: string | null; avatar?: string | null; name?: string | null; at: number }> = {};
+      let map: Record<string, UmnicoCustomer & { at: number }> = {};
       try { map = raw ? JSON.parse(raw) : {}; } catch { map = {}; }
       const k = this.customerKey(id);
       map[k] = {
         phone: data.phone ?? map[k]?.phone ?? null,
         avatar: data.avatar ?? map[k]?.avatar ?? null,
         name: data.name ?? map[k]?.name ?? null,
+        username: data.username ?? map[k]?.username ?? null,
         at: Date.now(),
       };
-      // Держим последние 300 клиентов, чтобы Setting не рос бесконечно.
-      const entries = Object.entries(map).sort((a, b) => b[1].at - a[1].at).slice(0, 300);
+      // Держим последние 500 клиентов, чтобы Setting не рос бесконечно.
+      const entries = Object.entries(map).sort((a, b) => b[1].at - a[1].at).slice(0, 500);
       await this.settings.set('ai.umnico.customers', JSON.stringify(Object.fromEntries(entries)));
     } catch {
       /* не критично */
     }
   }
-  async getCustomer(
-    id: string | null | undefined,
-  ): Promise<{ phone?: string | null; avatar?: string | null; name?: string | null } | null> {
-    if (!id) return null;
+  private async customerMap(): Promise<Record<string, UmnicoCustomer>> {
     const raw = await this.settings.get('ai.umnico.customers');
-    try {
-      const map = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-      return (map[this.customerKey(id)] as { phone?: string; avatar?: string; name?: string }) ?? null;
-    } catch {
-      return null;
-    }
+    try { return raw ? (JSON.parse(raw) as Record<string, UmnicoCustomer>) : {}; } catch { return {}; }
+  }
+  async getCustomer(id: string | null | undefined): Promise<UmnicoCustomer | null> {
+    if (!id) return null;
+    return (await this.customerMap())[this.customerKey(id)] ?? null;
+  }
+  /** Батч-версия для отображения списка диалогов (одно чтение Setting). */
+  async getCustomers(ids: Array<string | null | undefined>): Promise<Map<string, UmnicoCustomer>> {
+    const uniq = [...new Set(ids.filter((x): x is string => !!x).map((x) => this.customerKey(x)))];
+    if (!uniq.length) return new Map();
+    const map = await this.customerMap();
+    return new Map(uniq.filter((k) => map[k]).map((k) => [k, map[k]!]));
   }
 
   private channelsCache: { at: number; list: UmnicoChannel[] } | null = null;

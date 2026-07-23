@@ -241,20 +241,26 @@ export class ConversationService {
       // Непрочитано: последнее сообщение — от гостя и новее момента, когда оператор
       // в последний раз открывал диалог (или он ещё ни разу не открывал).
       const unread = lastRole === 'user' && (!operatorReadAt || lastAt > operatorReadAt);
-      // Подканал (для Umnico: telegram/whatsapp/… — откуда пишет гость, #14) + фото/телефон
-      // из канала (channelMeta) — для аватара и номера в списке диалогов. saId — чтобы
-      // добрать тип канала «на лету» для старых диалогов, у которых sourceType ещё не проставлен.
-      const meta = (channelMeta as { sourceType?: string; avatar?: string; phone?: string; saId?: string } | null) ?? {};
+      // Подканал (для Umnico: telegram/whatsapp/… — откуда пишет гость, #14) + фото/телефон/ник
+      // из канала (channelMeta). saId/customerId — чтобы добрать тип/телефон/фото «на лету» для
+      // старых диалогов. sourceType «message» из старых версий считаем невалидным (не «message»).
+      const meta = (channelMeta as {
+        sourceType?: string; avatar?: string; phone?: string; saId?: string;
+        customerId?: string; name?: string; username?: string;
+      } | null) ?? {};
+      const st = meta.sourceType && meta.sourceType !== 'message' ? meta.sourceType : null;
       return {
         ...rest,
         lastRole,
         lastMessage: last?.content ?? null,
         lastAt,
         unread,
-        subChannel: meta.sourceType ?? null,
+        subChannel: st,
         avatar: meta.avatar ?? null,
         metaPhone: meta.phone ?? null,
+        metaName: meta.name ?? meta.username ?? null,
         saId: meta.saId ?? null,
+        customerId: meta.customerId ?? null,
       };
     });
   }
