@@ -195,7 +195,10 @@ export class AdminService {
           where: {
             role: { in: [AiMessageRole.USER, AiMessageRole.ASSISTANT, AiMessageRole.STAFF] },
           },
-          orderBy: { createdAt: 'asc' },
+          // Последние 100 сообщений (desc+take): без лимита на «болтливых» гостях грузилась ВСЯ
+          // история — раздувало ответ и вешало API при опросе. В map разворачиваем в хронологию.
+          orderBy: { createdAt: 'desc' },
+          take: 100,
           select: { role: true, content: true, createdAt: true },
         },
       },
@@ -212,11 +215,15 @@ export class AdminService {
         title: c.title,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
-        messages: c.messages.map((m) => ({
-          role: roleMap[m.role as 'USER' | 'ASSISTANT' | 'STAFF'],
-          text: m.content,
-          createdAt: m.createdAt,
-        })),
+        // desc из БД → разворачиваем в хронологию (старые сверху, новые снизу — как в чате).
+        messages: c.messages
+          .slice()
+          .reverse()
+          .map((m) => ({
+            role: roleMap[m.role as 'USER' | 'ASSISTANT' | 'STAFF'],
+            text: m.content,
+            createdAt: m.createdAt,
+          })),
       };
     });
   }

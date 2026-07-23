@@ -415,10 +415,11 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
     if (!showHistory && convos === null) reloadHistory();
   };
   // Живое обновление истории переписки, пока раздел открыт (новые сообщения появляются
-  // без перезагрузки страницы — «как в чате»). Опрос каждые 5 секунд.
+  // без перезагрузки страницы — «как в чате»). Опрос раз в 15 c: реже, чтобы не забивать
+  // пул соединений БД (5 c + тяжёлый запрос вешали API); закрыт раздел — не опрашиваем.
   useEffect(() => {
     if (!showHistory || !gid) return;
-    const t = setInterval(reloadHistory, 5000);
+    const t = setInterval(reloadHistory, 15000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHistory, gid]);
