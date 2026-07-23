@@ -122,27 +122,67 @@ export class UmnicoConfigService {
    * на 5 минут, чтобы не дёргать Umnico на каждое входящее (#14).
    */
   /**
-   * Диагностика (#14/#1/фото): сохраняем последние 5 сырых вебхуков Umnico (с усечением
-   * длинных строк), чтобы точно увидеть, где лежат телефон гостя, тип канала и аватар —
-   * форматы каналов различаются. Читается через `GET /ai/channels/umnico/debug` (право guests).
+   * Есть ли в вебхуке вложение/медиа (или это MAX-канал). Такие события кладём в ОТДЕЛЬНЫЙ
+   * медиа-буфер, чтобы поток текстовых сообщений (активный аккаунт) их не вытеснял — иначе
+   * редкое MAX-фото исчезает из общего буфера до того, как мы успеем снять формат (#6).
+   */
+  private hasMedia(body: unknown): boolean {
+    let found = false;
+    const scan = (v: unknown, depth: number): void => {
+      if (found || depth > 8 || v == null || typeof v !== 'object') return;
+      if (Array.isArray(v)) { for (const x of v) scan(x, depth + 1); return; }
+      const o = v as Record<string, unknown>;
+      if (Array.isArray(o.attachments) && o.attachments.length) { found = true; return; }
+      const t = typeof o.type === 'string' ? o.type.toLowerCase() : '';
+      if (['photo', 'image', 'picture', 'video', 'file', 'audio', 'voice', 'document', 'sticker'].includes(t)) {
+        found = true; return;
+      }
+      const saType = (o.sa as { type?: string } | undefined)?.type ?? (o.sender as { type?: string } | undefined)?.type;
+      if (typeof saType === 'string' && saType.toLowerCase() === 'max') { found = true; return; }
+      for (const val of Object.values(o)) scan(val, depth + 1);
+    };
+    scan(body, 0);
+    return found;
+  }
+
+  /**
+   * Диагностика (#14/#1/фото): сохраняем последние сырые вебхуки Umnico (с усечением длинных
+   * строк), чтобы видеть, где лежат телефон гостя, тип канала и аватар — форматы каналов
+   * различаются. События с медиа/MAX дублируем в отдельный буфер `ai.umnico.debug.media`
+   * (не вытесняется текстом, URL режем мягче — виден весь формат вложения). Читается через
+   * `GET /ai/channels/umnico/debug` (право guests).
    */
   async captureDebug(body: unknown): Promise<void> {
     try {
-      const trunc = JSON.parse(
-        JSON.stringify(body, (_k, v) => (typeof v === 'string' && v.length > 160 ? `${v.slice(0, 160)}…` : v)),
-      );
+      const truncTo = (limit: number): unknown =>
+        JSON.parse(JSON.stringify(body, (_k, v) => (typeof v === 'string' && v.length > limit ? `${v.slice(0, limit)}…` : v)));
+      const now = new Date().toISOString();
       const raw = await this.settings.get('ai.umnico.debug');
       let arr: unknown[] = [];
       try { arr = raw ? (JSON.parse(raw) as unknown[]) : []; } catch { arr = []; }
-      arr.unshift({ at: new Date().toISOString(), body: trunc });
-      await this.settings.set('ai.umnico.debug', JSON.stringify(arr.slice(0, 5)));
+      arr.unshift({ at: now, body: truncTo(160) });
+      await this.settings.set('ai.umnico.debug', JSON.stringify(arr.slice(0, 8)));
+      // Медиа/MAX-события — в отдельный буфер (поток текста их не затирает), с полными URL.
+      if (this.hasMedia(body)) {
+        const mraw = await this.settings.get('ai.umnico.debug.media');
+        let marr: unknown[] = [];
+        try { marr = mraw ? (JSON.parse(mraw) as unknown[]) : []; } catch { marr = []; }
+        marr.unshift({ at: now, body: truncTo(600) });
+        await this.settings.set('ai.umnico.debug.media', JSON.stringify(marr.slice(0, 8)));
+      }
     } catch {
       /* диагностика не критична */
     }
   }
-  async readDebug(): Promise<unknown[]> {
-    const raw = await this.settings.get('ai.umnico.debug');
-    try { return raw ? (JSON.parse(raw) as unknown[]) : []; } catch { return []; }
+  async readDebug(): Promise<{ media: unknown[]; recent: unknown[] }> {
+    const parse = (r: string | null): unknown[] => {
+      try { return r ? (JSON.parse(r) as unknown[]) : []; } catch { return []; }
+    };
+    const [mraw, raw] = await Promise.all([
+      this.settings.get('ai.umnico.debug.media'),
+      this.settings.get('ai.umnico.debug'),
+    ]);
+    return { media: parse(mraw), recent: parse(raw) };
   }
 
   /**
