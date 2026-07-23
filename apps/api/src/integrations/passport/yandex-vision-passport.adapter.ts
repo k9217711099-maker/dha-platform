@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import sharp from 'sharp';
 import { PassportPort, type PassportFields, type RecognizeResult, type VerifyInput, type VerifyResult } from './passport.port.js';
 import type { Env } from '../../config/env.schema.js';
 
@@ -36,6 +37,25 @@ export class YandexVisionPassportAdapter extends PassportPort {
       process.env.YANDEX_VISION_OCR_URL ??
       this.config.get('YANDEX_VISION_OCR_URL', { infer: true }) ??
       'https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText';
+    // Ужимаем изображение ПЕРЕД отправкой: фото с телефона до 10 МБ раздувают процесс
+    // (base64 в памяти) и вешают маленький VPS. Ресайз до 2200px + JPEG q80 = сотни КБ.
+    // PDF/битые файлы шлём как есть.
+    let payload = scan;
+    let mime = this.mimeType(contentType);
+    if ((contentType || '').toLowerCase().includes('image')) {
+      try {
+        payload = await sharp(scan)
+          .rotate() // выпрямляем по EXIF — важно для OCR
+          .resize({ width: 2200, height: 2200, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+        mime = 'image/jpeg';
+        console.error(`[YANDEX-OCR] ресайз: ${scan.length} → ${payload.length} байт`);
+      } catch (e) {
+        console.error(`[YANDEX-OCR] ресайз не удался (${(e as Error).message}) — шлём оригинал`);
+      }
+    }
+
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 25_000);
     try {
@@ -49,10 +69,10 @@ export class YandexVisionPassportAdapter extends PassportPort {
           'x-data-logging-enabled': 'false',
         },
         body: JSON.stringify({
-          mimeType: this.mimeType(contentType),
+          mimeType: mime,
           languageCodes: ['ru', 'en'],
           model: 'passport',
-          content: scan.toString('base64'),
+          content: payload.toString('base64'),
         }),
       });
       if (!res.ok) {

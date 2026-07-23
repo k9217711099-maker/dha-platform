@@ -2,7 +2,25 @@
 // mobile (Expo) сюда не входит — деплоится отдельно через сборки/сторы.
 // Порты фиксированы и одинаковы на staging и production (окружения — разные серверы).
 const path = require('path');
+const fs = require('fs');
 const root = path.resolve(__dirname, '..', '..');
+
+// Читаем apps/api/.env и кладём ВСЕ переменные в env процесса api. Причина: на боевом
+// окружении @nestjs/config (config.get) ненадёжно отдавал значения, дописанные в .env в
+// рантайме (PASSPORT_PROVIDER, ключи Yandex). Через process.env — читается всегда. pm2
+// вычисляет env отсюда при каждом старте/деплое, так что ключи не слетают.
+function loadEnvFile(file) {
+  const out = {};
+  try {
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  } catch {
+    /* нет файла (напр. локально) — не критично */
+  }
+  return out;
+}
 
 module.exports = {
   apps: [
@@ -10,10 +28,8 @@ module.exports = {
       name: 'dha-api',
       cwd: path.join(root, 'apps/api'),
       script: 'dist/main.js',
-      // PASSPORT_PROVIDER закреплён здесь (а не только в .env): роутер читает его из
-      // process.env, а pm2 кладёт env отсюда при каждом старте — провайдер переживает
-      // деплой без зависимости от порядка чтения .env. Ключи Yandex — в apps/api/.env.
-      env: { NODE_ENV: 'production', PORT: 3001, PASSPORT_PROVIDER: 'yandex' },
+      // Сначала весь .env, затем жёстко NODE_ENV/PORT (они не должны переопределяться).
+      env: { ...loadEnvFile(path.join(root, 'apps/api/.env')), NODE_ENV: 'production', PORT: 3001 },
       max_memory_restart: '600M',
     },
     {
