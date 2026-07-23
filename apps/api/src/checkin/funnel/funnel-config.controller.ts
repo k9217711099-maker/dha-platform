@@ -49,7 +49,8 @@ export class FunnelConfigController {
     // Раз интеграция вернулась из listChannels — она подключена и пригодна для «написать
     // первым», поэтому active: true (не завязываемся на строку status, значения которой у
     // Umnico разнятся — иначе рабочий канал ошибочно прячется фильтром «только подключённые»).
-    const umnicoList = await this.umnico.listChannels();
+    // Кэш (без ожидания сети) — чтобы медленный Umnico не вешал загрузку «Заселения».
+    const umnicoList = this.umnico.channelsCached();
     for (const ch of umnicoList) {
       channels.push({ key: `umnico:${ch.id}`, label: `Umnico · ${ch.label}`, active: true });
     }

@@ -94,30 +94,40 @@ export class UmnicoConfigService {
     return { Authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   }
 
-  /** Список подключённых каналов из Umnico (GET /v1.3/integrations). */
+  /**
+   * Список подключённых каналов из Umnico (GET /v1.3/integrations). Этот запрос лежит в пути
+   * загрузки «Диалогов» (channelTypeBySaId), «Заселения» (funnel-config), AI-настроек и
+   * «написать первым». ЖЁСТКИЙ предохранитель: Promise.race с таймером на 7с гарантирует
+   * возврат даже если fetch/AbortSignal почему-то не прервётся на этом Node — иначе медленный
+   * Umnico вешал все эти разделы разом.
+   */
   async listChannels(): Promise<UmnicoChannel[]> {
     const token = await this.token();
     if (!token) return [];
-    try {
-      // ВАЖНО: таймаут обязателен — этот запрос лежит в пути загрузки списка диалогов
-      // (channelTypeBySaId). Без него медленный/недоступный Umnico вешал весь инбокс.
-      const res = await fetch(`${this.base}/v1.3/integrations`, {
-        headers: this.authHeaders(token),
-        signal: AbortSignal.timeout(6000),
-      });
-      if (!res.ok) return [];
-      const data = (await res.json()) as { id: number; type: string; login?: string; status?: string }[];
-      return (Array.isArray(data) ? data : []).map((i) => ({
-        id: i.id,
-        type: i.type,
-        login: i.login ?? '',
-        status: i.status ?? '',
-        label: `${TYPE_LABEL[i.type] ?? i.type}${i.login ? ` · ${i.login}` : ''}`,
-      }));
-    } catch (e) {
-      this.logger.warn(`listChannels: ${(e as Error).message}`);
-      return [];
-    }
+    const fetchChannels = async (): Promise<UmnicoChannel[]> => {
+      try {
+        const res = await fetch(`${this.base}/v1.3/integrations`, {
+          headers: this.authHeaders(token),
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!res.ok) return [];
+        const data = (await res.json()) as { id: number; type: string; login?: string; status?: string }[];
+        return (Array.isArray(data) ? data : []).map((i) => ({
+          id: i.id,
+          type: i.type,
+          login: i.login ?? '',
+          status: i.status ?? '',
+          label: `${TYPE_LABEL[i.type] ?? i.type}${i.login ? ` · ${i.login}` : ''}`,
+        }));
+      } catch (e) {
+        this.logger.warn(`listChannels: ${(e as Error).message}`);
+        return [];
+      }
+    };
+    return Promise.race([
+      fetchChannels(),
+      new Promise<UmnicoChannel[]>((resolve) => setTimeout(() => resolve([]), 7000)),
+    ]);
   }
 
   /**
@@ -254,34 +264,44 @@ export class UmnicoConfigService {
   private channelsInFlight: Promise<UmnicoChannel[]> | null = null;
   async channelTypeBySaId(saId: string | number | null | undefined): Promise<string | undefined> {
     if (saId == null) return undefined;
-    const list = await this.cachedChannels();
+    const list = this.cachedChannels(); // синхронно: кэш/пусто сразу, обновление — в фоне
     return list.find((c) => String(c.id) === String(saId))?.type;
   }
 
   /**
-   * Кэш списка каналов Umnico (5 мин) с двумя защитами от «залипания» инбокса:
-   *  1) дедуп параллельных запросов — пока идёт один fetch, остальные ждут его же (иначе на
-   *     активном аккаунте десятки одновременных запросов инбокса разом дёргали Umnico);
-   *  2) мягкая деградация — при сбое/таймауте отдаём прошлый список и коротко (30с) повторяем,
-   *     а не кэшируем пустоту на 5 минут и не виснем.
+   * Кэш списка каналов Umnico (5 мин). КЛЮЧЕВОЕ: обновление идёт ТОЛЬКО в фоне — запрос
+   * (загрузка «Диалогов» и т.п.) НИКОГДА не ждёт Umnico, а сразу получает то, что уже есть
+   * в кэше (свежее/прошлое/пусто). Так медленный Umnico не может подвесить страницу вообще.
+   *  - дедуп: одновременно идёт не более одного фонового обновления;
+   *  - мягкая деградация: при сбое сохраняем прошлый список и коротко (30с) повторяем.
+   * Тип канала — косметика (подпись «Умнико · Telegram»), поэтому «пусто до первой загрузки»
+   * абсолютно допустимо и самоизлечивается за секунды.
    */
-  private async cachedChannels(): Promise<UmnicoChannel[]> {
+  private cachedChannels(): UmnicoChannel[] {
     const now = Date.now();
-    if (this.channelsCache && now - this.channelsCache.at <= 5 * 60_000) return this.channelsCache.list;
-    if (this.channelsInFlight) return this.channelsInFlight;
-    this.channelsInFlight = (async () => {
-      const list = await this.listChannels();
-      if (list.length || !this.channelsCache) {
-        this.channelsCache = { at: Date.now(), list };
-      } else {
-        // Сбой, но прежний список есть — сохраняем его и помечаем «протух через 30с».
-        this.channelsCache = { at: Date.now() - 5 * 60_000 + 30_000, list: this.channelsCache.list };
-      }
-      return this.channelsCache.list;
-    })().finally(() => {
-      this.channelsInFlight = null;
-    });
-    return this.channelsInFlight;
+    const fresh = this.channelsCache && now - this.channelsCache.at <= 5 * 60_000;
+    if (!fresh && !this.channelsInFlight) {
+      this.channelsInFlight = this.listChannels()
+        .then((list) => {
+          if (list.length || !this.channelsCache) this.channelsCache = { at: Date.now(), list };
+          else this.channelsCache = { at: Date.now() - 5 * 60_000 + 30_000, list: this.channelsCache.list };
+          return this.channelsCache.list;
+        })
+        .catch(() => this.channelsCache?.list ?? [])
+        .finally(() => {
+          this.channelsInFlight = null;
+        });
+    }
+    return this.channelsCache?.list ?? [];
+  }
+
+  /**
+   * Кэшированный список каналов БЕЗ ожидания сети (обновляется в фоне) — для страниц, где
+   * важнее скорость, чем свежесть (напр. конфиг воронки/«Заселение»). Не вешает страницу,
+   * даже если Umnico недоступен; на холодном кэше вернёт пусто и догрузит в фоне.
+   */
+  channelsCached(): UmnicoChannel[] {
+    return this.cachedChannels();
   }
 
   async getPublicConfig(): Promise<UmnicoPublicConfig> {
