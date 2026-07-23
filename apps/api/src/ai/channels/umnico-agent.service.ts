@@ -5,6 +5,7 @@ import { ConversationService } from '../conversations/conversation.service.js';
 import { UmnicoConfigService } from '../../integrations/umnico/umnico-config.service.js';
 import { TenantService } from '../../pms/tenant/tenant.service.js';
 import { ChannelToggleService } from './channel-toggle.service.js';
+import { AttachmentStorageService } from '../../staff-chat/attachment-storage.service.js';
 
 /** Входящее из Umnico (упрощённо): обращение + текст + адрес для ответа. */
 export interface UmnicoIncoming {
@@ -22,6 +23,8 @@ export interface UmnicoIncoming {
   customerId?: string;
   /** Ник/логин гостя (username Telegram / номер WhatsApp) — имя, если профиля нет (без «анонимов»). */
   username?: string;
+  /** Сырые вложения (фото/файлы) — перехостим на наш /uploads для отображения (#медиа). */
+  attachments?: Array<{ type?: string; url?: string; link?: string; src?: string; name?: string; text?: string }>;
   text: string;
 }
 
@@ -45,7 +48,36 @@ export class UmnicoAgentService {
     private readonly umnico: UmnicoConfigService,
     private readonly tenant: TenantService,
     private readonly toggle: ChannelToggleService,
+    private readonly storage: AttachmentStorageService,
   ) {}
+
+  /**
+   * Перехостинг входящих вложений Umnico (#медиа): их URL (umnico.com/api/doc/…) требуют
+   * авторизации и не рендерятся в админке. Скачиваем на наш `/uploads` и подставляем нашу
+   * ссылку. Картинки помечаем `[img]<url>` (рисуются инлайн), прочее — `[файл: имя]\n<url>`.
+   * При неудаче оставляем исходную ссылку (гость всё равно её увидит в Umnico).
+   */
+  private async rehostAttachments(
+    atts: Array<{ type?: string; url?: string; link?: string; src?: string; name?: string; text?: string }>,
+  ): Promise<string> {
+    if (!atts.length) return '';
+    const bearer = await this.umnico.token().catch(() => '');
+    const parts: string[] = [];
+    for (const a of atts) {
+      const url = a?.url ?? a?.link ?? a?.src;
+      const isImage = /photo|image|picture/i.test(a?.type ?? '');
+      const name = a?.name ?? a?.text ?? (isImage ? 'photo.jpg' : 'file');
+      if (!url) { parts.push(`[вложение${a?.type ? `: ${a.type}` : ''}]`); continue; }
+      const saved = await this.storage.saveFromUrl(url, name, bearer || undefined).catch(() => null);
+      if (saved) {
+        parts.push(saved.kind === 'IMAGE' ? `[img]${saved.url}` : `[файл: ${saved.name}]\n${saved.url}`);
+      } else {
+        // Не скачалось — оставляем исходную ссылку компактным маркером.
+        parts.push(isImage ? `[вложение: photo]\n${url}` : `[вложение${a?.type ? `: ${a.type}` : ''}]\n${url}`);
+      }
+    }
+    return parts.join('\n');
+  }
 
   /**
    * «Написать гостю первым» из карточки брони (#12): инициируем диалог по телефону через
@@ -105,7 +137,10 @@ export class UmnicoAgentService {
   }
 
   async handleIncoming(msg: UmnicoIncoming): Promise<void> {
-    const text = msg.text?.trim();
+    // Текст + перехостённые вложения (фото/файлы отображаются в админке нашей ссылкой).
+    const media = msg.attachments?.length ? await this.rehostAttachments(msg.attachments) : '';
+    const plain = msg.text?.trim() ?? '';
+    const text = [plain, media].filter(Boolean).join('\n').trim();
     if (!msg.leadId || !text) return;
     try {
       // Канал Umnico выключен тумблером в админке — входящие игнорируем.

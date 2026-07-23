@@ -106,25 +106,13 @@ export class UmnicoController {
     // Текст события message.incoming лежит в message.message.text (проверено на боевом
     // payload Umnico); запасные варианты — на случай других типов каналов.
     const realText = String(m.message?.text ?? m.text ?? m.body ?? m.content ?? '').trim();
-    // Вложения (картинки/файлы) — в message.message.attachments. Картинки помечаем
-    // маркером `[img]<url>` (админка рисует их как <img>), прочие типы — ссылкой.
-    // Работает и с подписью (caption), и с несколькими вложениями.
+    // Вложения (картинки/файлы) — в message.message.attachments. Их перехостит агент на наш
+    // /uploads (URL Umnico требуют авторизации) — сюда передаём сырой список.
     const atts = Array.isArray(m.message?.attachments) ? m.message.attachments : [];
-    let text = realText;
-    for (const a of atts) {
-      const url = a?.url ?? a?.link ?? a?.src;
-      const isImage = /photo|image|picture/i.test(a?.type ?? '');
-      const marker = url
-        ? isImage
-          ? `[img]${url}`
-          : `[вложение${a?.type ? `: ${a.type}` : ''}]\n${url}`
-        : `[вложение${a?.type ? `: ${a.type}` : ''}]`;
-      text = text ? `${text}\n${marker}` : marker;
-    }
     const isIncoming = m.incoming !== false && m.direction !== 'outgoing';
-    // Обрабатываем как входящее, если есть обращение (leadId), текст и это не исходящее.
-    // На точное имя type не завязываемся (Umnico шлёт ещё lead.changed и т.п. — их пропускаем).
-    if (body?.leadId != null && text && isIncoming) {
+    // Обрабатываем как входящее, если есть обращение (leadId), текст ИЛИ вложение, и это не
+    // исходящее. На точное имя type не завязываемся (Umnico шлёт ещё lead.changed и т.п.).
+    if (body?.leadId != null && (realText || atts.length) && isIncoming) {
       const src = m.source;
       const source =
         src?.realId != null ? String(src.realId) : src?.saId != null ? String(src.saId) : undefined;
@@ -152,7 +140,7 @@ export class UmnicoController {
       const phone = pickPhone(m.sender?.phone, m.sender?.login, body.customer?.phone, body.contact?.phone);
       // Кэшируем отправителя, чтобы ник/телефон были доступны и для отображения списка.
       if (customerId) void this.umnico.saveCustomer(customerId, { username: username ?? null, phone: phone ?? null, avatar: avatar ?? null });
-      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, avatar, customerId, username, text });
+      void this.agent.handleIncoming({ leadId: String(body.leadId), source, userId, saId, phone, sourceType, avatar, customerId, username, attachments: atts, text: realText });
     } else if (/message\.incoming/i.test(evt)) {
       // message.incoming без текста и без распознанного вложения — просто отметим (warn
       // на проде подавлен, спама не будет; поднять уровень при разборе новых типов медиа).

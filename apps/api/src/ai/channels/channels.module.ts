@@ -16,6 +16,7 @@ import { TgUserbotAgentService } from './tg-userbot-agent.service.js';
 import { UmnicoAgentService } from './umnico-agent.service.js';
 import { UmnicoController } from './umnico.controller.js';
 import { ChannelToggleService } from './channel-toggle.service.js';
+import { AttachmentStorageService } from '../../staff-chat/attachment-storage.service.js';
 
 /**
  * Каналы гостевого агента, требующие серверного адаптера. Этап E: Telegram
@@ -39,6 +40,7 @@ import { ChannelToggleService } from './channel-toggle.service.js';
     ChannelToggleService,
     AdminAuthGuard,
     AuditService,
+    AttachmentStorageService,
   ],
 })
 export class ChannelsModule {}

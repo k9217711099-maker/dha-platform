@@ -96,6 +96,35 @@ export class AttachmentStorageService {
     }
   }
 
+  /**
+   * Скачать вложение по URL и сохранить в наш `/uploads` (перехостинг). Нужен для входящих
+   * медиа из Umnico: их URL (umnico.com/api/doc/…) требуют авторизации и не рендерятся в
+   * админке напрямую. Пробуем без заголовков и с Bearer-токеном. Возвращает null при неудаче
+   * (тогда вызывающий оставит ссылку). Картинки не пережимаем — берём как есть.
+   */
+  async saveFromUrl(url: string, name: string, bearer?: string): Promise<SavedAttachment | null> {
+    if (!/^https?:\/\//i.test(url)) return null;
+    const attempts: Array<Record<string, string> | undefined> = [undefined];
+    if (bearer) attempts.push({ Authorization: `Bearer ${bearer}` });
+    for (const headers of attempts) {
+      try {
+        const res = await fetch(url, headers ? { headers } : {});
+        if (!res.ok) continue;
+        const buffer = Buffer.from(await res.arrayBuffer());
+        if (!buffer.length || buffer.length > this.maxBytes) return null;
+        const mime = (res.headers.get('content-type') ?? '').split(';')[0]?.trim() || 'application/octet-stream';
+        if (/^text\/html/i.test(mime)) continue; // это страница-ошибка, а не файл
+        const ext = safeExt(name, mime);
+        const stored = `${randomUUID()}.${ext}`;
+        await writeFile(join(this.dir, stored), buffer);
+        return { url: `/uploads/${stored}`, name: decodeUploadName(name || 'file'), size: buffer.length, mime, kind: kindFromMime(mime) };
+      } catch (e) {
+        this.logger.warn(`saveFromUrl (${headers ? 'auth' : 'no-auth'}) не удалось: ${(e as Error).message}`);
+      }
+    }
+    return null;
+  }
+
   async save(file?: Express.Multer.File): Promise<SavedAttachment> {
     if (!file) throw new BadRequestException('Файл не передан');
     if (file.size > this.maxBytes) {

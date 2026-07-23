@@ -4,6 +4,7 @@ import { type ChangeEvent, type DragEvent, useCallback, useEffect, useRef, useSt
 import { Card } from '@dha/ui';
 import {
   adminApi,
+  fileUrl,
   type GuestConversationRow,
   type InboxOperator,
   type InboxTemplate,
@@ -92,13 +93,13 @@ function timeAgo(iso: string): string {
  * гигантский URL не ломал вёрстку переписки. Обычный текст — как есть.
  */
 function MessageBody({ text }: { text: string }) {
-  // Компактная ссылка на вложение: `[вложение: photo]\nhttps://…` или `[файл: name]\nhttps://…`.
-  const attach = text.match(/^\[(вложение|файл)([^\]]*)\]\s*(https?:\/\/\S+)$/i);
+  // Компактная ссылка на вложение-файл: `[файл: name]\n<url>` или `[вложение: type]\n<url>`.
+  const attach = text.match(/^\[(вложение|файл)([^\]]*)\]\s*(https?:\/\/\S+|\/uploads\/\S+)$/i);
   if (attach) {
     const isPhoto = /photo|image|фото|картин/i.test(attach[2] ?? '');
     return (
-      <a href={attach[3]} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2 py-1 text-sm underline-offset-2 hover:underline">
-        {isPhoto ? '🖼' : '📎'} {isPhoto ? 'Фото' : `Файл${attach[2]?.trim() ? ` ${attach[2].replace(/^:\s*/, '')}` : ''}`} — открыть
+      <a href={fileUrl(attach[3])} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-2 py-1 text-sm underline-offset-2 hover:underline">
+        {isPhoto ? '🖼' : '📎'} {isPhoto ? 'Фото' : `Файл${attach[2]?.replace(/^:\s*/, '').trim() ? ` ${attach[2].replace(/^:\s*/, '').trim()}` : ''}`} — открыть
       </a>
     );
   }
@@ -109,8 +110,8 @@ function MessageBody({ text }: { text: string }) {
         const img = p.match(/^\[img\](\S+)$/);
         if (img) {
           return (
-            <a key={i} href={img[1]} target="_blank" rel="noreferrer" className="block">
-              <img src={img[1]} alt="вложение" className="mt-1 max-h-64 max-w-full rounded-lg object-contain" />
+            <a key={i} href={fileUrl(img[1])} target="_blank" rel="noreferrer" className="block">
+              <img src={fileUrl(img[1])} alt="вложение" className="mt-1 max-h-64 max-w-full rounded-lg object-contain" />
             </a>
           );
         }
