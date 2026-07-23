@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import sharp from 'sharp';
 import { PassportPort, type PassportFields, type RecognizeResult, type VerifyInput, type VerifyResult } from './passport.port.js';
 import type { Env } from '../../config/env.schema.js';
@@ -27,21 +27,31 @@ export class YandexVisionPassportAdapter extends PassportPort {
 
   /**
    * Значение переменной: process.env → ConfigService → ПРЯМОЕ чтение apps/api/.env.
-   * На этом проде и process.env, и config.get иногда НЕ отдают ключ, хотя он есть в
-   * окружении процесса и в файле — прямое чтение файла работает всегда (cwd = apps/api).
+   * На этом проде и process.env, и config.get не отдавали ключ (хотя он есть в окружении и
+   * в файле — необъяснимо), поэтому чтение файла — главный надёжный путь. Пути к .env
+   * пробуем несколько (cwd бывает не apps/api), включая относительный к dist/main.js.
    */
   private envValue(key: 'YANDEX_VISION_API_KEY' | 'YANDEX_VISION_FOLDER_ID' | 'YANDEX_VISION_OCR_URL'): string | undefined {
     const fromProc = process.env[key];
     if (fromProc) return fromProc;
     const fromCfg = this.config.get(key, { infer: true });
     if (fromCfg) return fromCfg;
-    try {
-      const content = readFileSync(join(process.cwd(), '.env'), 'utf8');
-      const val = content.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'm'))?.[1];
-      return val ? val.replace(/^["']|["']$/g, '') : undefined;
-    } catch {
-      return undefined;
+    const script = process.argv[1] || '.';
+    const candidates = [
+      join(process.cwd(), '.env'), // cwd = apps/api
+      join(process.cwd(), 'apps/api/.env'), // cwd = корень репо
+      resolve(dirname(script), '..', '.env'), // dist/main.js → apps/api/.env (не зависит от cwd)
+      '/var/www/dha/apps/api/.env', // прод-путь как последний фолбэк
+    ];
+    for (const p of candidates) {
+      try {
+        const val = readFileSync(p, 'utf8').match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'm'))?.[1];
+        if (val) return val.replace(/^["']|["']$/g, '');
+      } catch {
+        /* следующий путь */
+      }
     }
+    return undefined;
   }
 
   async recognize(scan: Buffer, contentType: string): Promise<RecognizeResult> {
