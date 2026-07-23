@@ -99,7 +99,12 @@ export class UmnicoConfigService {
     const token = await this.token();
     if (!token) return [];
     try {
-      const res = await fetch(`${this.base}/v1.3/integrations`, { headers: this.authHeaders(token) });
+      // ВАЖНО: таймаут обязателен — этот запрос лежит в пути загрузки списка диалогов
+      // (channelTypeBySaId). Без него медленный/недоступный Umnico вешал весь инбокс.
+      const res = await fetch(`${this.base}/v1.3/integrations`, {
+        headers: this.authHeaders(token),
+        signal: AbortSignal.timeout(6000),
+      });
       if (!res.ok) return [];
       const data = (await res.json()) as { id: number; type: string; login?: string; status?: string }[];
       return (Array.isArray(data) ? data : []).map((i) => ({
@@ -228,14 +233,37 @@ export class UmnicoConfigService {
   }
 
   private channelsCache: { at: number; list: UmnicoChannel[] } | null = null;
+  private channelsInFlight: Promise<UmnicoChannel[]> | null = null;
   async channelTypeBySaId(saId: string | number | null | undefined): Promise<string | undefined> {
     if (saId == null) return undefined;
+    const list = await this.cachedChannels();
+    return list.find((c) => String(c.id) === String(saId))?.type;
+  }
+
+  /**
+   * Кэш списка каналов Umnico (5 мин) с двумя защитами от «залипания» инбокса:
+   *  1) дедуп параллельных запросов — пока идёт один fetch, остальные ждут его же (иначе на
+   *     активном аккаунте десятки одновременных запросов инбокса разом дёргали Umnico);
+   *  2) мягкая деградация — при сбое/таймауте отдаём прошлый список и коротко (30с) повторяем,
+   *     а не кэшируем пустоту на 5 минут и не виснем.
+   */
+  private async cachedChannels(): Promise<UmnicoChannel[]> {
     const now = Date.now();
-    if (!this.channelsCache || now - this.channelsCache.at > 5 * 60_000) {
-      this.channelsCache = { at: now, list: await this.listChannels() };
-    }
-    const hit = this.channelsCache.list.find((c) => String(c.id) === String(saId));
-    return hit?.type;
+    if (this.channelsCache && now - this.channelsCache.at <= 5 * 60_000) return this.channelsCache.list;
+    if (this.channelsInFlight) return this.channelsInFlight;
+    this.channelsInFlight = (async () => {
+      const list = await this.listChannels();
+      if (list.length || !this.channelsCache) {
+        this.channelsCache = { at: Date.now(), list };
+      } else {
+        // Сбой, но прежний список есть — сохраняем его и помечаем «протух через 30с».
+        this.channelsCache = { at: Date.now() - 5 * 60_000 + 30_000, list: this.channelsCache.list };
+      }
+      return this.channelsCache.list;
+    })().finally(() => {
+      this.channelsInFlight = null;
+    });
+    return this.channelsInFlight;
   }
 
   async getPublicConfig(): Promise<UmnicoPublicConfig> {
@@ -345,7 +373,10 @@ export class UmnicoConfigService {
     const token = await this.token();
     if (!token) return undefined;
     try {
-      const res = await fetch(`${this.base}/v1.3/managers`, { headers: this.authHeaders(token) });
+      const res = await fetch(`${this.base}/v1.3/managers`, {
+        headers: this.authHeaders(token),
+        signal: AbortSignal.timeout(6000),
+      });
       if (!res.ok) return undefined;
       const data = (await res.json().catch(() => [])) as { id: number; role?: string; confirmed?: boolean }[];
       const arr = Array.isArray(data) ? data : [];
@@ -380,6 +411,7 @@ export class UmnicoConfigService {
       method: 'POST',
       headers: this.authHeaders(token),
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
     }).catch((err: unknown) => {
       this.logger.error(`Umnico send сеть: ${(err as Error).message}`);
       return null;
@@ -416,6 +448,7 @@ export class UmnicoConfigService {
       method: 'POST',
       headers: this.authHeaders(token),
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000),
     }).catch((err: unknown) => {
       this.logger.error(`Umnico reachOut сеть: ${(err as Error).message}`);
       return null;
@@ -460,6 +493,7 @@ export class UmnicoConfigService {
       method: 'POST',
       headers: this.authHeaders(token),
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
     }).catch((err: unknown) => {
       this.logger.error(`Umnico attachment сеть: ${(err as Error).message}`);
       return null;
