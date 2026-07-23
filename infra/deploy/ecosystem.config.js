@@ -10,7 +10,10 @@ module.exports = {
       name: 'dha-api',
       cwd: path.join(root, 'apps/api'),
       script: 'dist/main.js',
-      env: { NODE_ENV: 'production', PORT: 3001 },
+      // PASSPORT_PROVIDER закреплён здесь (а не только в .env): роутер читает его из
+      // process.env, а pm2 кладёт env отсюда при каждом старте — провайдер переживает
+      // деплой без зависимости от порядка чтения .env. Ключи Yandex — в apps/api/.env.
+      env: { NODE_ENV: 'production', PORT: 3001, PASSPORT_PROVIDER: 'yandex' },
       max_memory_restart: '600M',
     },
     {

@@ -23,13 +23,19 @@ export class YandexVisionPassportAdapter extends PassportPort {
   }
 
   async recognize(scan: Buffer, contentType: string): Promise<RecognizeResult> {
-    const apiKey = this.config.get('YANDEX_VISION_API_KEY', { infer: true });
-    const folderId = this.config.get('YANDEX_VISION_FOLDER_ID', { infer: true });
+    // process.env приоритетнее (надёжнее ConfigService на этом окружении), фолбэк на config.
+    const apiKey = process.env.YANDEX_VISION_API_KEY ?? this.config.get('YANDEX_VISION_API_KEY', { infer: true });
+    const folderId = process.env.YANDEX_VISION_FOLDER_ID ?? this.config.get('YANDEX_VISION_FOLDER_ID', { infer: true });
+    // console.error — чтобы диагностика точно попадала в pm2-лог (Nest-логгер глушится pino).
+    console.error(`[YANDEX-OCR] recognize вызван; ключ=${apiKey ? 'есть' : 'НЕТ'} folder=${folderId ? 'есть' : 'НЕТ'} тип=${contentType}`);
     if (!apiKey || !folderId) {
       return { fields: {}, confidence: 0, source: 'page', note: 'Yandex Vision не настроен (нет ключа/каталога) — заполните поля вручную.' };
     }
 
-    const url = this.config.get('YANDEX_VISION_OCR_URL', { infer: true });
+    const url =
+      process.env.YANDEX_VISION_OCR_URL ??
+      this.config.get('YANDEX_VISION_OCR_URL', { infer: true }) ??
+      'https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText';
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 25_000);
     try {
@@ -51,20 +57,22 @@ export class YandexVisionPassportAdapter extends PassportPort {
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        throw new Error(`Yandex Vision ${res.status}: ${body.slice(0, 200)}`);
+        console.error(`[YANDEX-OCR] HTTP ${res.status}: ${body.slice(0, 300)}`);
+        throw new Error(`Yandex Vision ${res.status}`);
       }
       const data = (await res.json()) as YandexOcrResponse;
       const entities = data.result?.textAnnotation?.entities ?? [];
-      // Логируем ТОЛЬКО имена сущностей (без значений — это ПДн), чтобы сверить маппинг.
-      this.logger.log(`Yandex Vision: сущности [${entities.map((e) => e.name).join(', ') || '—'}]`);
+      // Только ИМЕНА сущностей (без значений — это ПДн), чтобы сверить маппинг.
+      console.error(`[YANDEX-OCR] сущности [${entities.map((e) => e.name).join(', ') || '—'}]`);
 
       const fields = this.mapEntities(entities);
+      console.error(`[YANDEX-OCR] замаплено полей: ${Object.keys(fields).join(', ') || '—'}`);
       if (!Object.values(fields).some(Boolean)) {
         return { fields: {}, confidence: 0, source: 'yandex', note: 'Yandex Vision не извлёк поля — заполните вручную.' };
       }
       return { fields, confidence: 0.9, source: 'yandex', note: 'Распознано Yandex Vision (модель passport).' };
     } catch (e) {
-      this.logger.warn(`Yandex Vision недоступен (${(e as Error).message}) — поля вводятся вручную`);
+      console.error(`[YANDEX-OCR] ошибка: ${(e as Error).message}`);
       return { fields: {}, confidence: 0, source: 'yandex', note: 'Сервис распознавания недоступен — заполните поля вручную.' };
     } finally {
       clearTimeout(t);

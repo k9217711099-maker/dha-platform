@@ -60,9 +60,8 @@ jobs:
             # мог держать в памяти старый код/пререндер → отдавались старые чанки и старые
             # роуты API (деплой зелёный, а код старый). restart = гарантированно новый процесс.
             pm2 restart dha-api dha-web dha-admin --update-env || pm2 restart all --update-env || true
-            # Self-hosted OCR-сайдкар паспорта (services/passport-ocr). PASSPORT_OCR_ENABLE=1 →
-            # скрипт поднимает контейнер и, если он здоров, САМ включает распознавание
-            # (PASSPORT_PROVIDER=http + рестарт dha-api). Нет docker / не поднялся → тихо
-            # оставляет текущий провайдер. НИКОГДА не роняет деплой (|| true).
-            export PASSPORT_OCR_ENABLE=1
+            # Self-hosted OCR-сайдкар (Tesseract) ОТКЛЮЧЁН: перешли на облачный Yandex Vision
+            # (PASSPORT_PROVIDER=yandex в ecosystem/.env). PASSPORT_OCR_ENABLE=0 — скрипт не
+            # трогает провайдера, иначе он перебивал бы yandex на http при каждом деплое.
+            export PASSPORT_OCR_ENABLE=0
             bash infra/deploy/passport-ocr.sh || true
