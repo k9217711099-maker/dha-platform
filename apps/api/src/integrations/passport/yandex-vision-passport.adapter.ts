@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import sharp from 'sharp';
 import { PassportPort, type PassportFields, type RecognizeResult, type VerifyInput, type VerifyResult } from './passport.port.js';
 import type { Env } from '../../config/env.schema.js';
@@ -23,14 +25,33 @@ export class YandexVisionPassportAdapter extends PassportPort {
     super();
   }
 
+  /**
+   * Значение переменной: process.env → ConfigService → ПРЯМОЕ чтение apps/api/.env.
+   * На этом проде и process.env, и config.get иногда НЕ отдают ключ, хотя он есть в
+   * окружении процесса и в файле — прямое чтение файла работает всегда (cwd = apps/api).
+   */
+  private envValue(key: 'YANDEX_VISION_API_KEY' | 'YANDEX_VISION_FOLDER_ID' | 'YANDEX_VISION_OCR_URL'): string | undefined {
+    const fromProc = process.env[key];
+    if (fromProc) return fromProc;
+    const fromCfg = this.config.get(key, { infer: true });
+    if (fromCfg) return fromCfg;
+    try {
+      const content = readFileSync(join(process.cwd(), '.env'), 'utf8');
+      const val = content.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'm'))?.[1];
+      return val ? val.replace(/^["']|["']$/g, '') : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   async recognize(scan: Buffer, contentType: string): Promise<RecognizeResult> {
-    // process.env приоритетнее (надёжнее ConfigService на этом окружении), фолбэк на config.
-    const apiKey = process.env.YANDEX_VISION_API_KEY ?? this.config.get('YANDEX_VISION_API_KEY', { infer: true });
-    const folderId = process.env.YANDEX_VISION_FOLDER_ID ?? this.config.get('YANDEX_VISION_FOLDER_ID', { infer: true });
-    // console.error — чтобы диагностика точно попадала в pm2-лог (Nest-логгер глушится pino).
-    console.error(`[YANDEX-OCR] recognize вызван; ключ=${apiKey ? 'есть' : 'НЕТ'} folder=${folderId ? 'есть' : 'НЕТ'} тип=${contentType}`);
+    const apiKey = this.envValue('YANDEX_VISION_API_KEY');
+    const folderId = this.envValue('YANDEX_VISION_FOLDER_ID');
     if (!apiKey || !folderId) {
-      return { fields: {}, confidence: 0, source: 'page', note: 'Yandex Vision не настроен (нет ключа/каталога) — заполните поля вручную.' };
+      // Диагностика прямо в note (единственный надёжный канал — ответ виден в DevTools/curl).
+      const pk = process.env.YANDEX_VISION_API_KEY;
+      const dbg = `proc=${pk === undefined ? 'UNDEF' : pk.length} cfg=${(this.config.get('YANDEX_VISION_API_KEY', { infer: true }) ?? 'UNDEF').length} folder=${folderId ? 'ok' : 'НЕТ'}`;
+      return { fields: {}, confidence: 0, source: 'page', note: `Yandex Vision не настроен — заполните вручную. [dbg ${dbg}]` };
     }
 
     const url =
