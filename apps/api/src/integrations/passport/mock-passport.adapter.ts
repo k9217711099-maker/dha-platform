@@ -9,6 +9,11 @@ import { PassportPort, type RecognizeResult, type VerifyInput, type VerifyResult
 @Injectable()
 export class MockPassportAdapter extends PassportPort {
   async recognize(_scan: Buffer, _contentType: string): Promise<RecognizeResult> {
+    // В проде НЕ подставляем демо-данные — иначе гость может отправить фейковый паспорт.
+    // Пустые поля = ручной ввод. Образец «Иванова» отдаём только вне production (прокликать сценарий).
+    if (process.env.NODE_ENV === 'production') {
+      return { fields: {}, confidence: 0, source: 'mock', note: 'Автораспознавание не подключено — заполните поля вручную.' };
+    }
     return {
       fields: {
         series: '4017',
@@ -22,7 +27,7 @@ export class MockPassportAdapter extends PassportPort {
       },
       confidence: 0.62,
       source: 'mock',
-      note: 'Демо-распознавание (mock). Для реальных данных подключите OCR-сервис (PASSPORT_PROVIDER=http).',
+      note: 'Демо-распознавание (mock, только dev). Для реальных данных — PASSPORT_PROVIDER=yandex.',
     };
   }
 

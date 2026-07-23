@@ -157,10 +157,19 @@ export const envSchema = z.object({
   BITRIX24_PROVIDER: z.enum(['mock', 'http']).default('mock'),
   BITRIX24_WEBHOOK_URL: z.string().optional(),
 
-  /** Верификация паспорта: mock (демо) или http (self-hosted OCR + Dadata). */
-  PASSPORT_PROVIDER: z.enum(['mock', 'http']).default('mock'),
-  /** URL self-hosted OCR-сайдкара (PaddleOCR + MRZ). */
+  /**
+   * Распознавание паспорта:
+   *  - mock   — демо/ручной ввод (в проде поля не подставляются);
+   *  - http   — self-hosted OCR-сайдкар (Tesseract). Слаб на внутреннем паспорте РФ (нет MRZ);
+   *  - yandex — Yandex Vision OCR, модель `passport` (структурные поля паспорта РФ, точно).
+   */
+  PASSPORT_PROVIDER: z.enum(['mock', 'http', 'yandex']).default('mock'),
+  /** URL self-hosted OCR-сайдкара (для PASSPORT_PROVIDER=http). */
   PASSPORT_OCR_URL: z.string().url().default('http://localhost:8077'),
+  /** Yandex Vision OCR (для PASSPORT_PROVIDER=yandex): API-ключ сервисного аккаунта + ID каталога. */
+  YANDEX_VISION_API_KEY: z.string().optional(),
+  YANDEX_VISION_FOLDER_ID: z.string().optional(),
+  YANDEX_VISION_OCR_URL: z.string().url().default('https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText'),
   /** Dadata «Проверка паспорта» (список недействительных МВД). */
   DADATA_API_KEY: z.string().optional(),
   DADATA_SECRET: z.string().optional(),

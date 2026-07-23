@@ -23,8 +23,8 @@ export interface RecognizeResult {
   fields: PassportFields;
   /** Уверенность распознавания 0..1. */
   confidence: number;
-  /** Источник: MRZ (машиночитаемая зона, наиболее надёжно) / страница / демо. */
-  source: 'mrz' | 'page' | 'mock';
+  /** Источник: MRZ / страница / Yandex Vision / демо. */
+  source: 'mrz' | 'page' | 'yandex' | 'mock';
   /** Пояснение для UI/лога. */
   note: string;
 }
