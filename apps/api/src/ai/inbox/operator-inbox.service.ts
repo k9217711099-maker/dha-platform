@@ -346,6 +346,11 @@ export class OperatorInboxService {
     return this.directory.listOperators(tenantId);
   }
 
+  /** Диагностика тормозов инбокса (живые запросы БД/индексы) — GET /ai/inbox/diag. */
+  diag() {
+    return this.conversations.diag();
+  }
+
   /**
    * Передать диалог другому сотруднику с комментарием-контекстом (§4.8). История
    * сохраняется; у нового ответственного диалог появляется в его ленте, гость

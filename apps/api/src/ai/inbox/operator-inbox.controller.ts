@@ -83,6 +83,12 @@ export class OperatorInboxController {
     });
   }
 
+  @Get('diag')
+  @ApiOperation({ summary: 'Диагностика тормозов инбокса (живые запросы БД, индексы)' })
+  diag() {
+    return this.inbox.diag();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Диалог с историей' })
   thread(@Param('id') id: string) {

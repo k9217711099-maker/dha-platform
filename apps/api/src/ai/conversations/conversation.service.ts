@@ -192,6 +192,31 @@ export class ConversationService {
     }));
   }
 
+  /**
+   * Диагностика тормозов инбокса (#инцидент): живые запросы к БД >2с (что реально висит),
+   * индексы ai_messages (есть ли [conversationId, createdAt]) и оценка размеров таблиц.
+   * Только чтение системных вьюх Postgres. Доступ через GET /ai/inbox/diag (право guest_inbox).
+   */
+  async diag(): Promise<unknown> {
+    const active = await this.prisma.$queryRawUnsafe(
+      `select pid, extract(epoch from (now()-query_start))::int as dur_s, state,
+              coalesce(wait_event_type,'') as wait,
+              left(regexp_replace(query, '\\s+', ' ', 'g'), 220) as query
+       from pg_stat_activity
+       where state <> 'idle' and query_start < now() - interval '2 seconds'
+       order by query_start asc limit 25`,
+    );
+    const indexes = await this.prisma.$queryRawUnsafe(
+      `select indexname, indexdef from pg_indexes where tablename = 'ai_messages'`,
+    );
+    const sizes = await this.prisma.$queryRawUnsafe(
+      `select
+         (select reltuples::bigint::text from pg_class where relname='ai_messages') as ai_messages_est,
+         (select reltuples::bigint::text from pg_class where relname='ai_conversations') as ai_conversations_est`,
+    );
+    return { active, indexes, sizes };
+  }
+
   /** История в формате LLM (для передачи модели). */
   async history(conversationId: string): Promise<LlmMessage[]> {
     const rows = await this.prisma.aiMessage.findMany({
