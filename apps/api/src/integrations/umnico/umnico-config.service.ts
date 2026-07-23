@@ -179,15 +179,33 @@ export class UmnicoConfigService {
       /* диагностика не критична */
     }
   }
-  async readDebug(): Promise<{ media: unknown[]; recent: unknown[] }> {
+  /**
+   * Диагностика ИСХОДЯЩИХ вложений (#6 MAX): запрос + статус/ответ Umnico на попытку отправить
+   * фото/файл — чтобы видеть, ушло ли нативно или упало в фолбэк-ссылку и почему. Последние 5.
+   */
+  async captureSend(entry: {
+    at: string; leadId: string; body: unknown; status: number | string; response: string;
+  }): Promise<void> {
+    try {
+      const raw = await this.settings.get('ai.umnico.debug.send');
+      let arr: unknown[] = [];
+      try { arr = raw ? (JSON.parse(raw) as unknown[]) : []; } catch { arr = []; }
+      arr.unshift(entry);
+      await this.settings.set('ai.umnico.debug.send', JSON.stringify(arr.slice(0, 5)));
+    } catch {
+      /* не критично */
+    }
+  }
+  async readDebug(): Promise<{ send: unknown[]; media: unknown[]; recent: unknown[] }> {
     const parse = (r: string | null): unknown[] => {
       try { return r ? (JSON.parse(r) as unknown[]) : []; } catch { return []; }
     };
-    const [mraw, raw] = await Promise.all([
+    const [sraw, mraw, raw] = await Promise.all([
+      this.settings.get('ai.umnico.debug.send'),
       this.settings.get('ai.umnico.debug.media'),
       this.settings.get('ai.umnico.debug'),
     ]);
-    return { media: parse(mraw), recent: parse(raw) };
+    return { send: parse(sraw), media: parse(mraw), recent: parse(raw) };
   }
 
   /**
@@ -464,10 +482,11 @@ export class UmnicoConfigService {
   }
 
   /**
-   * Отправка сообщения с вложением (фото/видео/файл). Точный формат медиа в Umnico API
-   * v1.3 в публичной доке не описан — пробуем attachments по симметрии со входящим
-   * вебхуком (message.message.attachments[{type,url}]); при ошибке — фолбэк ссылкой текстом,
-   * чтобы гость гарантированно получил файл. type: photo/video/file.
+   * Отправка сообщения с вложением (фото/видео/файл). Формат ПОДТВЕРЖДЁН по реальному
+   * исходящему MAX-вебхуку: `message.attachments[{type,url}]` (без `name` — Umnico его не
+   * принимал/не эхоил, лишнее поле могло ронять запрос в фолбэк). type: photo/video/file.
+   * Результат отправки пишем в диагностику (`captureSend`) — видно, ушло нативно или упало.
+   * При ошибке — фолбэк ссылкой текстом, чтобы гость гарантированно получил файл (#6).
    */
   async sendAttachment(
     target: { leadId: string; source?: string; userId?: string; saId?: string },
@@ -479,10 +498,15 @@ export class UmnicoConfigService {
       return;
     }
     const type = media.kind === 'IMAGE' ? 'photo' : media.kind === 'VIDEO' ? 'video' : 'file';
+    // Имя файла (для type=file) не теряем — кладём в подпись, т.к. в объект вложения Umnico
+    // принимает только {type,url}. Для фото/видео имя не нужно.
+    const caption = media.kind === 'FILE' && media.name
+      ? [media.caption, media.name].filter(Boolean).join(' — ')
+      : media.caption ?? '';
     const body: Record<string, unknown> = {
       message: {
-        text: media.caption ?? '',
-        attachments: [{ type, url: media.url, name: media.name }],
+        text: caption,
+        attachments: [{ type, url: media.url }],
       },
     };
     if (target.source) body.source = target.source;
@@ -498,8 +522,16 @@ export class UmnicoConfigService {
       this.logger.error(`Umnico attachment сеть: ${(err as Error).message}`);
       return null;
     });
+    const detail = res ? await res.text().catch(() => '') : 'network';
+    // Диагностика #6: фиксируем запрос+ответ, чтобы точно видеть, ушло нативно или в фолбэк.
+    void this.captureSend({
+      at: new Date().toISOString(),
+      leadId: target.leadId,
+      body,
+      status: res?.status ?? 'network',
+      response: String(detail).slice(0, 300),
+    });
     if (!res || !res.ok) {
-      const detail = res ? await res.text().catch(() => '') : 'network';
       this.logger.error(`Umnico attachment ${res?.status ?? '—'}: ${String(detail).slice(0, 300)} — фолбэк ссылкой`);
       // Гарантируем доставку: отправляем подпись + прямую ссылку обычным сообщением.
       await this.sendMessage(target, media.caption ? `${media.caption}\n${media.url}` : media.url);
