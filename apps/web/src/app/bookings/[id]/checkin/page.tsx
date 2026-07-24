@@ -35,7 +35,8 @@ export default function CheckinPage() {
   const [number, setNumber] = useState('');
   const [consents, setConsents] = useState(false);
   const [houseRules, setHouseRules] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [fileMain, setFileMain] = useState<File | null>(null);
+  const [fileReg, setFileReg] = useState<File | null>(null);
 
   useEffect(() => {
     if (!loading && !guest) router.replace('/login');
@@ -90,10 +91,11 @@ export default function CheckinPage() {
       }),
     );
 
-  const upload = () =>
+  const uploadPage = (page: 'main' | 'registration') =>
     run(async () => {
-      if (!file) throw new Error('Выберите файл');
-      await api.uploadPassport(id, file);
+      const f = page === 'main' ? fileMain : fileReg;
+      if (!f) throw new Error('Выберите файл');
+      await api.uploadPassport(id, f, page);
       return api.getCheckin(id);
     });
 
@@ -170,17 +172,22 @@ export default function CheckinPage() {
               <Input id="series" label="Серия" value={series} onChange={(e) => setSeries(e.target.value)} />
               <Input id="number" label="Номер" value={number} onChange={(e) => setNumber(e.target.value)} />
             </div>
-            <div>
-              <p className="mb-1 text-sm text-dark-gray">
-                Скан паспорта {c.documentsCount > 0 ? `(загружено: ${c.documentsCount})` : ''}
-              </p>
-              <input
-                type="file"
-                accept="image/*,application/pdf"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="text-sm"
-              />
-              <Button variant="secondary" onClick={() => void upload()} disabled={busy || !file} className="ml-2">
+            <p className="text-sm text-dark-gray">Нужны две страницы паспорта:</p>
+            <div className={`rounded-lg border p-3 ${c.hasMainPage ? 'border-emerald-300 bg-emerald-50/40' : 'border-ink/15'}`}>
+              <p className="text-sm text-ink">1) Разворот с фотографией {c.hasMainPage ? '✓ загружено' : ''}</p>
+              <p className="mb-2 text-xs text-dark-gray">Страницы 2–3: фото, ФИО, серия и номер.</p>
+              <input type="file" accept="image/*,application/pdf"
+                onChange={(e) => setFileMain(e.target.files?.[0] ?? null)} className="text-sm" />
+              <Button variant="secondary" onClick={() => void uploadPage('main')} disabled={busy || !fileMain} className="ml-2">
+                Загрузить
+              </Button>
+            </div>
+            <div className={`rounded-lg border p-3 ${c.hasRegistrationPage ? 'border-emerald-300 bg-emerald-50/40' : 'border-ink/15'}`}>
+              <p className="text-sm text-ink">2) Страница с регистрацией (пропиской) {c.hasRegistrationPage ? '✓ загружено' : ''}</p>
+              <p className="mb-2 text-xs text-dark-gray">Страница со штампом «Место жительства» — для адреса регистрации.</p>
+              <input type="file" accept="image/*,application/pdf"
+                onChange={(e) => setFileReg(e.target.files?.[0] ?? null)} className="text-sm" />
+              <Button variant="secondary" onClick={() => void uploadPage('registration')} disabled={busy || !fileReg} className="ml-2">
                 Загрузить
               </Button>
             </div>
@@ -197,11 +204,16 @@ export default function CheckinPage() {
             </label>
           </Card>
 
+          {(!c.hasMainPage || !c.hasRegistrationPage) && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Чтобы отправить на проверку: {[!c.hasMainPage && 'загрузите разворот с фото', !c.hasRegistrationPage && 'загрузите страницу с регистрацией'].filter(Boolean).join(', ')}.
+            </p>
+          )}
           <div className="flex gap-3">
             <Button variant="secondary" onClick={() => void save()} disabled={busy}>
               Сохранить черновик
             </Button>
-            <Button onClick={() => void submit()} disabled={busy}>
+            <Button onClick={() => void submit()} disabled={busy || !c.hasMainPage || !c.hasRegistrationPage}>
               Отправить на проверку
             </Button>
           </div>

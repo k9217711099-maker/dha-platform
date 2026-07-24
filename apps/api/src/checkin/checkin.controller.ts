@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -49,14 +50,19 @@ export class CheckinController {
     @CurrentGuestId() guestId: string,
     @Param('bookingId') bookingId: string,
     @UploadedFile() file: Express.Multer.File,
+    @Query('page') page?: string,
   ) {
-    return this.checkin.uploadPassport(guestId, bookingId, file);
+    return this.checkin.uploadPassport(guestId, bookingId, file, page === 'registration' ? 'registration' : 'main');
   }
 
   @Post('passport/recognize')
   @ApiOperation({ summary: 'Распознать паспорт со скана (OCR) для автозаполнения' })
-  recognizePassport(@CurrentGuestId() guestId: string, @Param('bookingId') bookingId: string) {
-    return this.checkin.recognizePassport(guestId, bookingId);
+  recognizePassport(
+    @CurrentGuestId() guestId: string,
+    @Param('bookingId') bookingId: string,
+    @Query('page') page?: string,
+  ) {
+    return this.checkin.recognizePassport(guestId, bookingId, page === 'registration' ? 'registration' : 'main');
   }
 
   @Post('submit')

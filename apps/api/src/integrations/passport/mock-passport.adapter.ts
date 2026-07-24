@@ -31,6 +31,11 @@ export class MockPassportAdapter extends PassportPort {
     };
   }
 
+  async recognizeAddress(_scan: Buffer, _contentType: string): Promise<RecognizeResult> {
+    // Демо не читает адрес — вводится вручную (реально это делает Yandex-адаптер).
+    return { fields: {}, confidence: 0, source: 'mock', note: 'Демо: адрес регистрации вводится вручную.' };
+  }
+
   async verify(input: VerifyInput): Promise<VerifyResult> {
     const series = (input.series ?? '').replace(/\s/g, '');
     const number = (input.number ?? '').replace(/\s/g, '');

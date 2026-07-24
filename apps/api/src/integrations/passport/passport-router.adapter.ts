@@ -43,6 +43,10 @@ export class PassportRouterAdapter extends PassportPort {
     return this.pick().recognize(scan, contentType);
   }
 
+  recognizeAddress(scan: Buffer, contentType: string): Promise<RecognizeResult> {
+    return this.pick().recognizeAddress(scan, contentType);
+  }
+
   verify(input: VerifyInput): Promise<VerifyResult> {
     return this.pick().verify(input);
   }

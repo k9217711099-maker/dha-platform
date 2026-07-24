@@ -252,10 +252,10 @@ export const api = {
       body: { lockId },
       auth: true,
     }),
-  uploadPassport: async (bookingId: string, file: File): Promise<{ documentId: string }> => {
+  uploadPassport: async (bookingId: string, file: File, page: 'main' | 'registration' = 'main'): Promise<{ documentId: string }> => {
     const fd = new FormData();
     fd.append('file', file);
-    const res = await fetch(`${API_BASE}/bookings/${bookingId}/checkin/passport`, {
+    const res = await fetch(`${API_BASE}/bookings/${bookingId}/checkin/passport?page=${page}`, {
       method: 'POST',
       headers: tokenStore.access ? { Authorization: `Bearer ${tokenStore.access}` } : {},
       body: fd,

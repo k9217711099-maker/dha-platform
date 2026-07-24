@@ -317,6 +317,10 @@ export interface CheckinView {
   hasPassportData: boolean;
   passport: PassportData | null;
   documentsCount: number;
+  /** Загружен ли главный разворот паспорта (страница с фото). */
+  hasMainPage: boolean;
+  /** Загружена ли страница с регистрацией (прописка). */
+  hasRegistrationPage: boolean;
   consentsSigned: boolean;
   houseRulesAccepted: boolean;
   rejectionReason: string | null;

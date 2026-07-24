@@ -36,7 +36,7 @@ export interface AdminPassportView {
   passport: PassportData | null;
   checkStatus: 'VALID' | 'INVALID' | 'MANUAL' | null;
   checkNote: string | null;
-  documents: { id: string; contentType: string; createdAt: Date }[];
+  documents: { id: string; contentType: string; createdAt: Date; kind: string }[];
 }
 
 export interface CheckinView {
@@ -50,6 +50,10 @@ export interface CheckinView {
   children: unknown;
   hasPassportData: boolean;
   documentsCount: number;
+  /** Загружен ли главный разворот паспорта (страница с фото). */
+  hasMainPage: boolean;
+  /** Загружена ли страница с регистрацией (прописка). */
+  hasRegistrationPage: boolean;
   consentsSigned: boolean;
   houseRulesAccepted: boolean;
   rejectionReason: string | null;
@@ -97,10 +101,10 @@ export class CheckinService {
     await this.assertBooking(guestId, bookingId);
     const existing = await this.prisma.checkin.findUnique({
       where: { bookingId },
-      include: { _count: { select: { documents: true } } },
+      include: { documents: { select: { kind: true } } },
     });
     if (existing) {
-      const view = this.toView(existing, existing._count.documents);
+      const view = this.toView(existing, existing.documents);
       // Предзаполнение: если в этой брони паспорта ещё нет — подставляем из прошлой
       // регистрации гостя (данные уже есть в системе). Гость проверяет и сохраняет.
       if (!view.passport) view.passport = await this.lastPassportForGuest(guestId, bookingId);
@@ -169,10 +173,15 @@ export class CheckinService {
     guestId: string,
     bookingId: string,
     file: { buffer: Buffer; mimetype: string },
+    page: 'main' | 'registration' = 'main',
   ): Promise<{ documentId: string }> {
     await this.assertBooking(guestId, bookingId);
     const checkin = await this.prisma.checkin.findUnique({ where: { bookingId } });
     if (!checkin) throw new BadRequestException('Сначала начните регистрацию');
+
+    // Тип страницы: главный разворог с фото (`passport`, легаси-значение) или страница с
+    // регистрацией/пропиской (`passport_registration`). По типу гейтим приём и распознаём.
+    const kind = page === 'registration' ? CheckinService.REG_KIND : 'passport';
 
     const key = `passports/${guestId}/${bookingId}/${randomUUID()}.enc`;
     const encrypted = this.crypto.encryptBuffer(file.buffer);
@@ -185,7 +194,7 @@ export class CheckinService {
       data: {
         guestId,
         checkinId: checkin.id,
-        kind: 'passport',
+        kind,
         storageKey: key,
         contentType: file.mimetype,
         retentionUntil,
@@ -199,23 +208,35 @@ export class CheckinService {
    * Распознать паспорт со скана (OCR) — поля для автозаполнения формы.
    * Скан расшифровывается и передаётся в OCR (по умолчанию — наш self-hosted сервис).
    */
-  async recognizePassport(guestId: string, bookingId: string): Promise<RecognizeResult> {
+  async recognizePassport(
+    guestId: string,
+    bookingId: string,
+    page: 'main' | 'registration' = 'main',
+  ): Promise<RecognizeResult> {
     await this.assertBooking(guestId, bookingId);
     const checkin = await this.prisma.checkin.findUnique({ where: { bookingId } });
     if (!checkin) throw new BadRequestException('Сначала начните регистрацию');
 
-    const doc = await this.prisma.document.findFirst({
-      where: { checkinId: checkin.id, kind: 'passport' },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!doc) throw new BadRequestException('Сначала загрузите скан паспорта');
+    // Берём последний скан нужного типа страницы: главный разворот → `passport`-модель
+    // (структурные поля), страница регистрации → общий OCR адреса (best-effort).
+    const where =
+      page === 'registration'
+        ? { checkinId: checkin.id, kind: CheckinService.REG_KIND }
+        : { checkinId: checkin.id, kind: { in: CheckinService.MAIN_KINDS } };
+    const doc = await this.prisma.document.findFirst({ where, orderBy: { createdAt: 'desc' } });
+    if (!doc)
+      throw new BadRequestException(
+        page === 'registration' ? 'Сначала загрузите страницу с регистрацией' : 'Сначала загрузите главный разворот паспорта',
+      );
 
     const encrypted = await this.storage.get(doc.storageKey);
     const scan = this.crypto.decryptBuffer(encrypted);
     // Лог доступа к скану (§18.2)
     await this.prisma.documentAccessLog.create({ data: { documentId: doc.id, actor: guestId, action: 'ocr' } });
 
-    return this.passport.recognize(scan, doc.contentType);
+    return page === 'registration'
+      ? this.passport.recognizeAddress(scan, doc.contentType)
+      : this.passport.recognize(scan, doc.contentType);
   }
 
   /** Авто-проверка действительности паспорта; результат сохраняется на регистрации. */
@@ -248,12 +269,20 @@ export class CheckinService {
     await this.assertBooking(guestId, bookingId);
     const checkin = await this.prisma.checkin.findUnique({
       where: { bookingId },
-      include: { _count: { select: { documents: true } } },
+      include: { documents: { select: { kind: true } } },
     });
     if (!checkin) throw new BadRequestException('Регистрация не начата');
 
     if (!checkin.passportEncrypted) throw new BadRequestException('Заполните паспортные данные');
-    if (checkin._count.documents === 0) throw new BadRequestException('Загрузите скан паспорта');
+    // Приём документов — только когда страниц достаточно (CHECK-IN-TZ): для паспорта РФ нужны
+    // ОБА разворота — страница с фотографией и страница с регистрацией (пропиской).
+    const hasMain = checkin.documents.some((d) => CheckinService.MAIN_KINDS.includes(d.kind));
+    const hasRegistration = checkin.documents.some((d) => d.kind === CheckinService.REG_KIND);
+    const docType = this.decodePassport(checkin.passportEncrypted)?.docType ?? 'passport_rf';
+    if (!hasMain) throw new BadRequestException('Загрузите главный разворот паспорта (страница с фотографией)');
+    if (docType === 'passport_rf' && !hasRegistration) {
+      throw new BadRequestException('Загрузите страницу паспорта с регистрацией (пропиской)');
+    }
     if (!checkin.consentsSigned) throw new BadRequestException('Подпишите согласия');
     if (!checkin.houseRulesAccepted) throw new BadRequestException('Подтвердите правила проживания');
 
@@ -330,11 +359,15 @@ export class CheckinService {
   }
 
   private toPassportView(
-    c: { bookingId: string; passportEncrypted: string | null; passportCheckStatus: 'VALID' | 'INVALID' | 'MANUAL' | null; passportCheckNote: string | null; documents: { id: string; contentType: string; createdAt: Date }[] } | null,
+    c: { bookingId: string; passportEncrypted: string | null; passportCheckStatus: 'VALID' | 'INVALID' | 'MANUAL' | null; passportCheckNote: string | null; documents: { id: string; contentType: string; createdAt: Date; kind: string }[] } | null,
   ): AdminPassportView {
     if (!c) return { bookingId: null, passport: null, checkStatus: null, checkNote: null, documents: [] };
     return { bookingId: c.bookingId, passport: this.decodePassport(c.passportEncrypted), checkStatus: c.passportCheckStatus, checkNote: c.passportCheckNote, documents: c.documents };
   }
+
+  /** Виды документов паспорта: главный разворот (легаси `passport` + `passport_main`) и страница регистрации. */
+  private static readonly MAIN_KINDS = ['passport', 'passport_main'];
+  private static readonly REG_KIND = 'passport_registration';
 
   private static readonly PASSPORT_DOC_SELECT = {
     id: true,
@@ -343,8 +376,9 @@ export class CheckinService {
     passportCheckNote: true,
     bookingId: true,
     documents: {
-      where: { kind: 'passport' },
-      select: { id: true, contentType: true, createdAt: true },
+      // Все страницы паспорта (главный разворот + регистрация) — администратору нужны обе.
+      where: { kind: { startsWith: 'passport' } },
+      select: { id: true, contentType: true, createdAt: true, kind: true },
       orderBy: { createdAt: 'desc' as const },
     },
   } as const;
@@ -362,7 +396,7 @@ export class CheckinService {
   /** Паспортные данные + сканы гостя (последняя регистрация с данными/сканом). */
   async passportForGuest(tenantId: string, guestId: string, actorId: string): Promise<AdminPassportView> {
     const c = await this.prisma.checkin.findFirst({
-      where: { guestId, booking: { tenantId }, OR: [{ passportEncrypted: { not: null } }, { documents: { some: { kind: 'passport' } } }] },
+      where: { guestId, booking: { tenantId }, OR: [{ passportEncrypted: { not: null } }, { documents: { some: { kind: { startsWith: 'passport' } } } }] },
       orderBy: { updatedAt: 'desc' },
       select: CheckinService.PASSPORT_DOC_SELECT,
     });
@@ -373,7 +407,7 @@ export class CheckinService {
   /** Скан паспорта как data-URL (расшифровка). Доступ логируется (documentAccessLog). */
   async passportDocument(tenantId: string, docId: string, actorId: string): Promise<{ dataUrl: string; contentType: string }> {
     const doc = await this.prisma.document.findFirst({
-      where: { id: docId, kind: 'passport', checkin: { booking: { tenantId } } },
+      where: { id: docId, kind: { startsWith: 'passport' }, checkin: { booking: { tenantId } } },
     });
     if (!doc) throw new NotFoundException('Скан не найден');
     const encrypted = await this.storage.get(doc.storageKey);
@@ -471,7 +505,11 @@ export class CheckinService {
     rejectionReason: string | null;
     instructions: string | null;
     submittedAt: Date | null;
-  }, documentsCount: number): CheckinView {
+    // Второй аргумент: либо готовый счётчик (когда типы страниц не важны),
+    // либо список документов с `kind` — тогда считаем и флаги страниц.
+  }, docs: number | { kind: string }[]): CheckinView {
+    const docList = Array.isArray(docs) ? docs : [];
+    const documentsCount = Array.isArray(docs) ? docs.length : docs;
     return {
       id: c.id,
       bookingId: c.bookingId,
@@ -483,6 +521,8 @@ export class CheckinService {
       hasPassportData: c.passportEncrypted !== null,
       passport: this.decodePassport(c.passportEncrypted),
       documentsCount,
+      hasMainPage: docList.some((d) => CheckinService.MAIN_KINDS.includes(d.kind)),
+      hasRegistrationPage: docList.some((d) => d.kind === CheckinService.REG_KIND),
       consentsSigned: c.consentsSigned,
       houseRulesAccepted: c.houseRulesAccepted,
       rejectionReason: c.rejectionReason,

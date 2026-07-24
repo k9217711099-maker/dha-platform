@@ -20,6 +20,7 @@ export interface PassportFields {
   citizenship?: string; // гражданство
   issuedBy?: string;
   issuedDate?: string; // YYYY-MM-DD
+  registrationAddress?: string; // адрес регистрации (со страницы с пропиской)
 }
 
 export interface RecognizeResult {
@@ -47,8 +48,14 @@ export interface VerifyInput {
 }
 
 export abstract class PassportPort {
-  /** Распознать поля паспорта со скана (изображение/PDF). */
+  /** Распознать поля паспорта со скана главного разворота (изображение/PDF). */
   abstract recognize(scan: Buffer, contentType: string): Promise<RecognizeResult>;
+  /**
+   * Best-effort распознавание адреса со страницы регистрации (прописка). Структурного
+   * поля адреса модель `passport` не даёт — читаем общим текстовым OCR и эвристикой
+   * достаём адрес в `fields.registrationAddress`. Гость обязан проверить/поправить.
+   */
+  abstract recognizeAddress(scan: Buffer, contentType: string): Promise<RecognizeResult>;
   /** Проверить действительность паспорта (формат + список недействительных МВД). */
   abstract verify(input: VerifyInput): Promise<VerifyResult>;
 }

@@ -50,6 +50,11 @@ export class HttpPassportAdapter extends PassportPort {
     }
   }
 
+  async recognizeAddress(_scan: Buffer, _contentType: string): Promise<RecognizeResult> {
+    // Self-hosted сайдкар структурный адрес не отдаёт — адрес вводится вручную.
+    return { fields: {}, confidence: 0, source: 'page', note: 'Распознавание адреса недоступно — заполните вручную.' };
+  }
+
   async verify(input: VerifyInput): Promise<VerifyResult> {
     const series = (input.series ?? '').replace(/\s/g, '');
     const number = (input.number ?? '').replace(/\s/g, '');

@@ -130,6 +130,85 @@ export class YandexVisionPassportAdapter extends PassportPort {
     }
   }
 
+  /**
+   * Best-effort адрес со страницы регистрации: общий текстовый OCR (модель `page`, а не
+   * `passport`) → полный текст → эвристикой достаём адресную часть штампа. Читается неровно —
+   * гость обязан проверить. Тот же ресайз/тайм-аут/152-ФЗ-заголовок, что и в recognize.
+   */
+  async recognizeAddress(scan: Buffer, contentType: string): Promise<RecognizeResult> {
+    this.lastTrace = '';
+    const apiKey = this.envValue('YANDEX_VISION_API_KEY');
+    const folderId = this.envValue('YANDEX_VISION_FOLDER_ID');
+    if (!apiKey || !folderId) {
+      return { fields: {}, confidence: 0, source: 'page', note: 'Распознавание адреса недоступно — заполните вручную.' };
+    }
+    const url =
+      process.env.YANDEX_VISION_OCR_URL ??
+      this.config.get('YANDEX_VISION_OCR_URL', { infer: true }) ??
+      'https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText';
+    let payload = scan;
+    let mime = this.mimeType(contentType);
+    if ((contentType || '').toLowerCase().includes('image')) {
+      try {
+        payload = await sharp(scan)
+          .rotate()
+          .resize({ width: 2200, height: 2200, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+        mime = 'image/jpeg';
+      } catch {
+        /* шлём оригинал */
+      }
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 25_000);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Api-Key ${apiKey}`,
+          'x-folder-id': folderId,
+          'x-data-logging-enabled': 'false',
+        },
+        body: JSON.stringify({ mimeType: mime, languageCodes: ['ru'], model: 'page', content: payload.toString('base64') }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        console.error(`[YANDEX-OCR addr] HTTP ${res.status}: ${body.slice(0, 200)}`);
+        throw new Error(`Yandex Vision ${res.status}`);
+      }
+      const data = (await res.json()) as YandexOcrResponse;
+      const fullText = data.result?.textAnnotation?.fullText ?? '';
+      const address = this.extractRegistrationAddress(fullText);
+      console.error(`[YANDEX-OCR addr] текст ${fullText.length} симв. → адрес ${address ? 'найден' : 'не выделен'}`);
+      if (!address) {
+        return { fields: {}, confidence: 0, source: 'yandex', note: 'Адрес не удалось выделить автоматически — впишите вручную со страницы регистрации.' };
+      }
+      return { fields: { registrationAddress: address }, confidence: 0.5, source: 'yandex', note: 'Адрес распознан со страницы регистрации — обязательно проверьте и поправьте.' };
+    } catch (e) {
+      console.error(`[YANDEX-OCR addr] ошибка: ${(e as Error).message}`);
+      return { fields: {}, confidence: 0, source: 'yandex', note: 'Сервис распознавания недоступен — впишите адрес вручную.' };
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  /** Эвристика: из полного текста штампа регистрации выделяем адресную часть (best-effort). */
+  private extractRegistrationAddress(fullText: string): string | undefined {
+    if (!fullText) return undefined;
+    const text = fullText.replace(/[\r ]/g, ' ');
+    // Ищем блок после маркеров прописки; если маркера нет — берём весь текст.
+    const marker = text.match(/(?:зарегистрирован\w*(?:\s+по\s+месту\s+жительства)?|место\s+жительства|прописан\w*|адрес)/i);
+    let chunk = marker ? text.slice(marker.index! + marker[0].length) : text;
+    // Отрезаем на дате регистрации (дд.мм.гггг) и на служебных словах органа/подписи.
+    chunk = chunk.split(/\d{2}[.\-/]\d{2}[.\-/]\d{4}/)[0] ?? '';
+    chunk = chunk.replace(/(отдел\w*|уфмс|гу\s?мвд|гувд|омвд|мвд|код\s*подразделения|подпис\w*|дата)[\s\S]*$/i, '');
+    const addr = chunk.replace(/\s+/g, ' ').replace(/^[\s:.,;-]+/, '').trim();
+    return addr.length >= 8 ? addr.slice(0, 300) : undefined;
+  }
+
   /** Собираем наши поля из сущностей Yandex (имена сущностей мапим терпимо — по нескольким вариантам). */
   private mapEntities(entities: YandexEntity[]): PassportFields {
     const by = new Map<string, string>();

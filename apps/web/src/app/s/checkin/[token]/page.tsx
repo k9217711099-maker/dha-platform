@@ -249,6 +249,32 @@ function StepCard({ n, title, done, hint, children }: {
   );
 }
 
+/** Одна область загрузки страницы паспорта (разворот / регистрация): статус, подсказка, файл, распознавание. */
+function PageSlot({ n, title, hint, done, file, onPick, busy, cta, recog, onUpload }: {
+  n: string; title: string; hint: string; done: boolean; file: File | null;
+  onPick: (f: File | null) => void; busy: boolean; cta: string;
+  recog: { ok: boolean; text: string } | null; onUpload: () => void;
+}) {
+  return (
+    <div className={`rounded-lg border p-3 ${done ? 'border-emerald-300 bg-emerald-50/40' : 'border-ink/15'}`}>
+      <div className="flex items-center gap-2">
+        <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${done ? 'bg-emerald-500 text-white' : 'bg-ink/10 text-ink'}`}>
+          {done ? '✓' : n}
+        </span>
+        <p className="text-sm font-medium text-ink">{title}</p>
+        {done ? <span className="ml-auto text-xs text-emerald-700">загружено</span> : null}
+      </div>
+      <p className="mb-2 mt-1 text-xs text-dark-gray">{hint}</p>
+      <input type="file" accept="image/*,application/pdf"
+        onChange={(e) => onPick(e.target.files?.[0] ?? null)} className="text-sm" />
+      <div className="mt-2">
+        <Button variant="secondary" disabled={busy || !file} onClick={onUpload}>{cta}</Button>
+      </div>
+      {recog ? <p className={`mt-2 text-xs ${recog.ok ? 'text-emerald-700' : 'text-dark-gray'}`}>{recog.text}</p> : null}
+    </div>
+  );
+}
+
 /** Анкета регистрации — та же, что в ЛК, но через токен-эндпоинты. */
 function RegistrationForm({ token, checkin, earlyCheckin, busy, run }: {
   token: string; checkin: CheckinView; earlyCheckin: PortalContext['earlyCheckin'];
@@ -275,10 +301,20 @@ function RegistrationForm({ token, checkin, earlyCheckin, busy, run }: {
     setP((prev) => ({ ...prev, [k]: e.target.value }));
   const [consents, setConsents] = useState(checkin.consentsSigned);
   const [houseRules, setHouseRules] = useState(checkin.houseRulesAccepted);
-  const [file, setFile] = useState<File | null>(null);
-  const [uploaded, setUploaded] = useState(false);
-  const [recog, setRecog] = useState<{ ok: boolean; text: string } | null>(null);
+  const [fileMain, setFileMain] = useState<File | null>(null);
+  const [fileReg, setFileReg] = useState<File | null>(null);
+  const [recogMain, setRecogMain] = useState<{ ok: boolean; text: string } | null>(null);
+  const [recogReg, setRecogReg] = useState<{ ok: boolean; text: string } | null>(null);
   const prefilled = !checkin.hasPassportData && Boolean(checkin.passport);
+  // Приём документов только когда страниц достаточно: для паспорта РФ нужны обе страницы.
+  const isRf = (p.docType ?? 'passport_rf') === 'passport_rf';
+  const missing = [
+    !checkin.hasMainPage && 'загрузите разворот с фото',
+    isRf && !checkin.hasRegistrationPage && 'загрузите страницу с регистрацией',
+    !consents && 'подпишите согласия',
+    !houseRules && 'подтвердите правила проживания',
+  ].filter(Boolean) as string[];
+  const canSubmit = missing.length === 0;
 
   const save = (): Promise<unknown> => {
     const body: SaveCheckinInput = {
@@ -291,51 +327,57 @@ function RegistrationForm({ token, checkin, earlyCheckin, busy, run }: {
     return portal(token, '/registration', { method: 'PUT', body: JSON.stringify(body) });
   };
 
-  const uploadOnly = async () => {
-    if (!file) return;
-    const fd = new FormData();
-    fd.append('file', file);
-    const res = await fetch(`${API_BASE}/s/checkin/${token}/passport`, { method: 'POST', body: fd });
-    if (!res.ok) throw new Error('Не удалось загрузить скан');
-    setUploaded(true);
-  };
-
-  /** Шаг 1: загрузить скан и распознать → автозаполнить поля документа. */
-  const uploadAndRecognize = async () => {
-    if (!file) throw new Error('Выберите файл скана паспорта');
+  /** Загрузить страницу (main|registration) и распознать → автозаполнить поля/адрес. */
+  const uploadAndRecognize = async (page: 'main' | 'registration') => {
+    const file = page === 'main' ? fileMain : fileReg;
+    if (!file) throw new Error('Выберите файл');
+    const setRecog = page === 'main' ? setRecogMain : setRecogReg;
     setRecog(null);
     await save(); // регистрация должна существовать, чтобы привязать скан
-    await uploadOnly();
+    const fd = new FormData();
+    fd.append('file', file);
+    const up = await fetch(`${API_BASE}/s/checkin/${token}/passport?page=${page}`, { method: 'POST', body: fd });
+    if (!up.ok) throw new Error('Не удалось загрузить файл');
     try {
-      const r = await portal<{ fields: PassportData }>(token, '/passport/recognize', { method: 'POST' });
+      const r = await portal<{ fields: PassportData }>(token, `/passport/recognize?page=${page}`, { method: 'POST' });
       const filled = Object.entries(r.fields).filter(([, v]) => v);
       if (filled.length) setP((prev) => ({ ...prev, ...Object.fromEntries(filled) }));
       setRecog({
         ok: filled.length > 0,
-        text: filled.length
-          ? 'Паспорт распознан — проверьте поля ниже и при необходимости поправьте.'
-          : 'Скан загружен. Автораспознавание недоступно — заполните поля вручную.',
+        text:
+          page === 'main'
+            ? filled.length
+              ? 'Паспорт распознан — проверьте поля ниже и при необходимости поправьте.'
+              : 'Скан загружен. Автораспознавание недоступно — заполните поля вручную.'
+            : filled.length
+              ? 'Адрес распознан со страницы регистрации — обязательно проверьте и поправьте ниже.'
+              : 'Страница загружена. Впишите адрес регистрации вручную ниже.',
       });
     } catch {
-      setRecog({ ok: false, text: 'Скан загружен. Заполните поля вручную.' });
+      setRecog({ ok: false, text: 'Файл загружен. Заполните поля вручную.' });
     }
   };
 
   return (
     <div className="space-y-4">
-      {/* Шаг 1 — скан паспорта: поля документа подставятся автоматически */}
-      <div className="rounded-lg border border-ink/10 p-3">
-        <p className="text-sm text-ink">Шаг 1. Скан или фото паспорта {checkin.documentsCount > 0 ? `(загружено: ${checkin.documentsCount})` : ''}</p>
-        <p className="mb-2 mt-0.5 text-xs text-dark-gray">Загрузите разворот паспорта — данные подставим автоматически, останется проверить. Данные шифруются.</p>
-        <input type="file" accept="image/*,application/pdf"
-          onChange={(e) => { setFile(e.target.files?.[0] ?? null); setUploaded(false); setRecog(null); }}
-          className="text-sm" />
-        <div className="mt-2">
-          <Button variant="secondary" disabled={busy || !file} onClick={() => void run(uploadAndRecognize)}>
-            Загрузить и распознать
-          </Button>
-        </div>
-        {recog ? <p className={`mt-2 text-xs ${recog.ok ? 'text-emerald-700' : 'text-dark-gray'}`}>{recog.text}</p> : null}
+      {/* Шаг 1 — сканы паспорта: две страницы (разворот с фото + регистрация) */}
+      <div className="space-y-3 rounded-lg border border-ink/10 p-3">
+        <p className="text-sm font-medium text-ink">Шаг 1. Сканы или фото паспорта</p>
+        <p className="-mt-1 text-xs text-dark-gray">Нужны две страницы. Данные подставим автоматически — останется проверить. Файлы шифруются.</p>
+        <PageSlot
+          n="1" title="Разворот с фотографией"
+          hint="Страницы 2–3: фото, ФИО, серия и номер. Сфотографируйте целиком при хорошем свете."
+          done={checkin.hasMainPage} file={fileMain} onPick={setFileMain}
+          busy={busy} cta="Загрузить и распознать" recog={recogMain}
+          onUpload={() => void run(() => uploadAndRecognize('main'))}
+        />
+        <PageSlot
+          n="2" title="Страница с регистрацией (пропиской)"
+          hint="Страница со штампом «Место жительства» — с неё возьмём адрес регистрации (обязательно проверьте его ниже)."
+          done={checkin.hasRegistrationPage} file={fileReg} onPick={setFileReg}
+          busy={busy} cta="Загрузить" recog={recogReg}
+          onUpload={() => void run(() => uploadAndRecognize('registration'))}
+        />
       </div>
 
       {/* Шаг 2 — данные для регистрации (полный набор МВД) */}
@@ -391,19 +433,23 @@ function RegistrationForm({ token, checkin, earlyCheckin, busy, run }: {
 
       <label className="flex items-start gap-2 text-sm text-dark-gray">
         <input type="checkbox" checked={consents} onChange={(e) => setConsents(e.target.checked)} className="mt-0.5" />
-        <span>Подписываю согласия на обработку персональных данных.</span>
+        <span>Согласен на обработку персональных данных и передачу сканов документов в сервис распознавания.</span>
       </label>
       <label className="flex items-start gap-2 text-sm text-dark-gray">
         <input type="checkbox" checked={houseRules} onChange={(e) => setHouseRules(e.target.checked)} className="mt-0.5" />
         <span>Подтверждаю правила проживания.</span>
       </label>
+      {!canSubmit ? (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          Чтобы отправить на проверку: {missing.join(', ')}.
+        </p>
+      ) : null}
       <div className="flex gap-2">
-        <Button variant="secondary" disabled={busy} onClick={() => void run(async () => { await save(); if (file && !uploaded) await uploadOnly(); })}>
+        <Button variant="secondary" disabled={busy} onClick={() => void run(save)}>
           Сохранить
         </Button>
-        <Button disabled={busy} onClick={() => void run(async () => {
+        <Button disabled={busy || !canSubmit} onClick={() => void run(async () => {
           await save();
-          if (file && !uploaded) await uploadOnly();
           await portal(token, '/registration/submit', { method: 'POST' });
         })}>
           Отправить на проверку

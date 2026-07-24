@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -142,22 +143,23 @@ export class CheckinPortalController {
     return this.checkin.submit(booking.guestId, booking.id);
   }
 
-  /** Загрузить скан паспорта (шифруется, как в ЛК). */
+  /** Загрузить скан паспорта (шифруется, как в ЛК). page=main|registration — тип страницы. */
   @Post(':token/passport')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
   async uploadPassport(
     @Param('token') token: string,
     @UploadedFile() file: { buffer: Buffer; mimetype: string },
+    @Query('page') page?: string,
   ) {
     const { booking } = await this.resolve(token);
-    return this.checkin.uploadPassport(booking.guestId, booking.id, file);
+    return this.checkin.uploadPassport(booking.guestId, booking.id, file, page === 'registration' ? 'registration' : 'main');
   }
 
   /** Распознать загруженный скан паспорта (OCR) для автозаполнения полей. */
   @Post(':token/passport/recognize')
-  async recognizePassport(@Param('token') token: string) {
+  async recognizePassport(@Param('token') token: string, @Query('page') page?: string) {
     const { booking } = await this.resolve(token);
-    return this.checkin.recognizePassport(booking.guestId, booking.id);
+    return this.checkin.recognizePassport(booking.guestId, booking.id, page === 'registration' ? 'registration' : 'main');
   }
 
   /** Ссылка на оплату остатка (эквайринг — как в ЛК/админке). */
