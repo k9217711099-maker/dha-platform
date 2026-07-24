@@ -611,6 +611,31 @@ export class ChannelsAdminController {
         const t4 = await r4.text().catch(() => '');
         steps['umnico /v1.3/files/upload'] = { status: r4.status, body: t4.slice(0, 300) };
       } catch (e) { steps['umnico /v1.3/files/upload'] = { error: (e as Error).message }; }
+
+      // Попытка 3: message как JSON-blob (Content-Type: application/json в части multipart)
+      // → multipart-парсер читает как объект, не строку → AJV валидация проходит
+      try {
+        const leadId3 = '65028025';
+        const umnicoManagers = await fetch(`${umnicoBase}/v1.3/managers`, {
+          headers: { Authorization: `Bearer ${umnicoToken}` },
+          signal: AbortSignal.timeout(5000),
+        }).then(r => r.json()).catch(() => null) as { id?: number }[] | null;
+        const uid = Array.isArray(umnicoManagers) ? umnicoManagers[0]?.id : undefined;
+        const form5 = new FormData();
+        form5.append('message', new Blob([JSON.stringify({ text: '', attachments: [{ type: 'photo' }] })], { type: 'application/json' }));
+        form5.append('source', '77010278');
+        if (uid != null) form5.append('userId', String(uid));
+        form5.append('saId', '111632');
+        form5.append('attachment', new Blob([fileBytes], { type: 'image/jpeg' }), 'test.jpg');
+        const r5 = await fetch(`${umnicoBase}/v1.3/messaging/${leadId3}/send`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${umnicoToken}` },
+          body: form5,
+          signal: AbortSignal.timeout(20000),
+        });
+        const t5 = await r5.text().catch(() => '');
+        steps['umnico multipart json-blob message'] = { status: r5.status, body: t5.slice(0, 500) };
+      } catch (e) { steps['umnico multipart json-blob message'] = { error: (e as Error).message }; }
     } else {
       steps['umnico'] = { umnicoTokenSet: !!umnicoToken, fileBytesOk: !!fileBytes };
     }

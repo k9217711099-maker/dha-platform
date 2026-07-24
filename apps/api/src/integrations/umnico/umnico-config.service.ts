@@ -245,12 +245,14 @@ export class UmnicoConfigService {
     const type = media.kind === 'IMAGE' ? 'photo' : media.kind === 'VIDEO' ? 'video' : 'file';
     const senderId = await this.managerUserId();
 
-    // PHP-стиль: multipart-парсер Умнико восстанавливает объект message из вложенных полей.
-    // message[text]=... + message[attachments][0][type]=photo → { message:{text, attachments:[{type}]} }
-    // source/userId/saId — плоские поля верхнего уровня (то что валидатор требует как req.body свойства).
+    // Multipart: поле `message` отправляем как Blob с Content-Type: application/json —
+    // тогда multipart-парсер Умнико (busboy/multer) прочитает его как JSON-объект, а не строку.
+    // Без этого поле приходит как text/plain-строка → AJV видит тип "string" вместо "object" → 422.
     const form = new FormData();
-    form.append('message[text]', media.caption ?? '');
-    form.append('message[attachments][0][type]', type);
+    form.append(
+      'message',
+      new Blob([JSON.stringify({ text: media.caption ?? '', attachments: [{ type }] })], { type: 'application/json' }),
+    );
     if (target.source) form.append('source', target.source);
     if (senderId != null) form.append('userId', String(senderId));
     if (target.saId) form.append('saId', /^\d+$/.test(target.saId) ? String(Number(target.saId)) : target.saId);
