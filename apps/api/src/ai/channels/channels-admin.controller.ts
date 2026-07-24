@@ -523,7 +523,7 @@ export class ChannelsAdminController {
   @ApiOperation({ summary: 'Тест MAX Upload API (диагностика)' })
   async maxTestUpload(@Query('url') fileUrl?: string): Promise<unknown> {
     const creds = await this.max.resolve();
-    const steps: Record<string, unknown> = { apiBase: creds.apiBase, tokenSet: !!creds.botToken };
+    const steps: Record<string, unknown> = { v: 'cca731f', at: new Date().toISOString(), apiBase: creds.apiBase, tokenSet: !!creds.botToken };
     if (!fileUrl) return { ...steps, error: 'Передайте ?url=https://... с URL файла' };
 
     // Шаг 1: попробуем uploadMedia через наш адаптер
