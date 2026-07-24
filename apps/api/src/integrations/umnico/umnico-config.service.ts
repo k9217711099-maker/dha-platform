@@ -287,7 +287,12 @@ export class UmnicoConfigService {
   private channelsInFlight: Promise<UmnicoChannel[]> | null = null;
   async channelTypeBySaId(saId: string | number | null | undefined): Promise<string | undefined> {
     if (saId == null) return undefined;
-    const list = this.cachedChannels(); // синхронно: кэш/пусто сразу, обновление — в фоне
+    let list = this.cachedChannels(); // запускает фоновое обновление если кэш пуст/устарел
+    // Если кэш холодный (первый запрос после рестарта) — дождаться уже стартовавшего fetch.
+    // Для UI-виджетов «пусто» допустимо, для отправки фото нам нужна точность.
+    if (!list.length && this.channelsInFlight) {
+      try { list = await this.channelsInFlight; } catch { list = []; }
+    }
     return list.find((c) => String(c.id) === String(saId))?.type;
   }
 
