@@ -1580,6 +1580,10 @@ export interface OpsTask {
   blockerNote: string | null;
   pausedSince: string | null;
   blockerUntil: string | null;
+  followUpText: string | null;
+  followUpAssigneeId: string | null;
+  followUpFiredAt: string | null;
+  parentTaskId: string | null;
   pmRuleId: string | null;
   createdBy: string | null;
   workSeconds: number;

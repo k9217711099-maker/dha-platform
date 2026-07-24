@@ -351,6 +351,9 @@ export class OpsTaskService {
           requirePhotoResult: dto.requirePhotoResult ?? false,
           requireConfirmation: dto.requireConfirmation ?? false,
           guestRequest: dto.guestRequest ?? false,
+          followUpText: dto.followUpText?.trim() || null,
+          followUpAssigneeId: dto.followUpAssigneeId ?? null,
+          parentTaskId: dto.parentTaskId ?? null,
           createdBy: actorId ?? null,
           groupId: dto.groupId ?? null,
           assignees: { create: (dto.assigneeIds ?? []).map((userId) => ({ userId })) },
@@ -475,6 +478,8 @@ export class OpsTaskService {
 
     const now = new Date();
     const leaveProgress = from === 'IN_PROGRESS' && task.inProgressSince ? Math.round((now.getTime() - task.inProgressSince.getTime()) / 1000) : 0;
+    // Возвратный шаг (workflow-ТЗ §6): при первом закрытии задачи с followUpText порождаем задачу автору.
+    const willFireFollowUp = to === 'DONE' && !!task.followUpText && !task.followUpFiredAt;
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const data: Prisma.OpsTaskUpdateInput = {
@@ -494,6 +499,7 @@ export class OpsTaskService {
         // Пере-считываем напоминания под новую дату отсчёта.
         notifiedDue7At: to === 'PAUSED' ? null : undefined,
         notifiedDue2At: to === 'PAUSED' ? null : undefined,
+        followUpFiredAt: willFireFollowUp ? now : undefined,
         statusLog: { create: { from, to, actorId: viewer.id, note: dto.note ?? null } },
       };
       const t = await tx.opsTask.update({ where: { id }, data, include: TASK_INCLUDE });
@@ -523,6 +529,25 @@ export class OpsTaskService {
     await this.audit.record({ tenantId, actorId: viewer.id, action: 'status', entity: 'OpsTask', entityId: id, payload: { from, to } });
     const notifyIds = [...updated.assignees.map((a) => a.userId), ...updated.watchers.map((w) => w.userId), ...(task.createdBy ? [task.createdBy] : [])];
     this.events.emit({ kind: 'task_status', taskId: id, userIds: notifyIds, payload: { from, to, title: updated.title } });
+
+    // Возвратный шаг: после успешного закрытия создаём задачу автору/указанному сотруднику (вне транзакции —
+    // create() открывает свою). Наследуем объект/номер, чтобы было понятно, о ком речь (сценарий «перезвонить гостю»).
+    if (willFireFollowUp) {
+      const assignee = task.followUpAssigneeId ?? task.createdBy;
+      if (assignee) {
+        await this.create(tenantId, {
+          title: task.followUpText!,
+          kind: 'TASK',
+          propertyId: task.propertyId,
+          roomId: task.roomId ?? undefined,
+          zoneId: task.roomId ? undefined : (task.zoneId ?? undefined),
+          assigneeIds: [assignee],
+          important: task.important,
+          guestRequest: task.guestRequest,
+          parentTaskId: id,
+        } as CreateOpsTaskDto, viewer.id).catch(() => undefined);
+      }
+    }
     return updated;
   }
 

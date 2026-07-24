@@ -113,6 +113,7 @@ export function TaskCard({ taskId, staff, onClose, onChanged }: {
               <span className={`rounded-full px-2.5 py-0.5 text-xs ${st.cls}`}>{st.label}</span>
               <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-600">{task.kind === 'CLEANING' ? 'Уборка' : 'Задача'}</span>
               {task.blocksSale ? <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-xs text-rose-700">снят с продажи</span> : null}
+              {task.parentTaskId ? <span title="Эта задача вернулась после закрытия другой" className="rounded-full bg-sky-100 px-2.5 py-0.5 text-xs text-sky-700">↩︎ возвратный шаг</span> : null}
               {task.tags.map((t) => (
                 <span key={t.tagId} className="rounded-full px-2.5 py-0.5 text-xs" style={{ backgroundColor: `${t.tag.color}22`, color: t.tag.color }}>{t.tag.name}</span>
               ))}
@@ -136,6 +137,7 @@ export function TaskCard({ taskId, staff, onClose, onChanged }: {
             {task.supervisorId ? <p className="text-dark-gray">Супервайзер: <span className="text-ink">{userName(task.supervisorId)}</span></p> : null}
             {task.group ? <p className="text-dark-gray">Отдел: <span className="inline-flex items-center gap-1 text-ink"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: task.group.color }} />{task.group.name}</span></p> : null}
             {task.requireConfirmation ? <p className="text-dark-gray">Завершение: <span className="text-violet-700">по подтверждению установщика</span></p> : null}
+            {task.followUpText && !task.followUpFiredAt ? <p className="text-dark-gray sm:col-span-2">↩︎ После закрытия вернётся: <span className="text-ink">«{task.followUpText}»</span> → {userName(task.followUpAssigneeId ?? task.createdBy)}</p> : null}
           </div>
 
           {/* Статус-степпер (§4.3): контур = цвет статуса, заливка = текущий этап, hover = полупрозрачный тот же цвет */}
