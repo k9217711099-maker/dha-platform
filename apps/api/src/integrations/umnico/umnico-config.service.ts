@@ -245,18 +245,15 @@ export class UmnicoConfigService {
     const type = media.kind === 'IMAGE' ? 'photo' : media.kind === 'VIDEO' ? 'video' : 'file';
     const senderId = await this.managerUserId();
 
-    // Умнико для multipart читает поле `message` как ПОЛНЫЙ JSON-body запроса:
-    // { message: { text, attachments }, source, userId, saId } — та же структура что в JSON-отправке.
-    // Файл отдельно в поле `attachment`. Отдельные form-поля source/userId/saId Умнико игнорирует.
-    const fullBody: Record<string, unknown> = {
-      message: { text: media.caption ?? '', attachments: [{ type }] },
-    };
-    if (target.source) fullBody.source = target.source;
-    if (senderId != null) fullBody.userId = senderId;
-    if (target.saId) fullBody.saId = /^\d+$/.test(target.saId) ? Number(target.saId) : target.saId;
-
+    // PHP-стиль: multipart-парсер Умнико восстанавливает объект message из вложенных полей.
+    // message[text]=... + message[attachments][0][type]=photo → { message:{text, attachments:[{type}]} }
+    // source/userId/saId — плоские поля верхнего уровня (то что валидатор требует как req.body свойства).
     const form = new FormData();
-    form.append('message', JSON.stringify(fullBody));
+    form.append('message[text]', media.caption ?? '');
+    form.append('message[attachments][0][type]', type);
+    if (target.source) form.append('source', target.source);
+    if (senderId != null) form.append('userId', String(senderId));
+    if (target.saId) form.append('saId', /^\d+$/.test(target.saId) ? String(Number(target.saId)) : target.saId);
     form.append('attachment', new Blob([bytes], { type: contentType }), `upload.${ext}`);
 
     const res = await fetch(
