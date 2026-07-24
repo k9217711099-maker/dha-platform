@@ -623,23 +623,32 @@ export class ChannelsAdminController {
         umnicoUserId = first?.id;
       } catch { /* не критично */ }
 
-      // Попытка 3: message как JSON-blob (Content-Type: application/json в части multipart)
-      try {
-        const form5 = new FormData();
-        form5.append('message', new Blob([JSON.stringify({ text: '', attachments: [{ type: 'photo' }] })], { type: 'application/json' }));
-        form5.append('source', '77010278');
-        if (umnicoUserId != null) form5.append('userId', String(umnicoUserId));
-        form5.append('saId', '111632');
-        form5.append('attachment', new Blob([fileBytes], { type: 'image/jpeg' }), 'test.jpg');
-        const r5 = await fetch(`${umnicoBase}/v1.3/messaging/65028025/send`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${umnicoToken}` },
-          body: form5,
-          signal: AbortSignal.timeout(20000),
-        });
-        const t5 = await r5.text().catch(() => '');
-        steps['umnico multipart json-blob message'] = { status: r5.status, body: t5.slice(0, 500) };
-      } catch (e) { steps['umnico multipart json-blob message'] = { error: (e as Error).message }; }
+      // Попытка 3: JSON-blob message (подтверждено: Умнико принимает, MAX отвечает 400)
+      // Вариации: разные имена поля файла + разные attachments
+      const msgVariants: [string, string, string, Record<string, unknown>][] = [
+        // [ключ результата, имя поля файла, имя файла, содержимое message]
+        ['mp:file=photo attachments=[]', 'photo', 'photo.jpg', { text: '', attachments: [] }],
+        ['mp:file=photo no-attachments', 'photo', 'photo.jpg', { text: '' }],
+        ['mp:file=file attachments=[photo]', 'file', 'file.jpg', { text: '', attachments: [{ type: 'photo' }] }],
+        ['mp:file=attachment no-attachments', 'attachment', 'photo.jpg', { text: '' }],
+        ['mp:file=photo attachments=[photo]', 'photo', 'photo.jpg', { text: '', attachments: [{ type: 'photo' }] }],
+      ];
+      for (const [key, fieldName, fileName, msgBody] of msgVariants) {
+        try {
+          const fv = new FormData();
+          fv.append('message', new Blob([JSON.stringify(msgBody)], { type: 'application/json' }));
+          fv.append('source', '77010278');
+          if (umnicoUserId != null) fv.append('userId', String(umnicoUserId));
+          fv.append('saId', '111632');
+          fv.append(fieldName, new Blob([fileBytes], { type: 'image/jpeg' }), fileName);
+          const rv = await fetch(`${umnicoBase}/v1.3/messaging/65028025/send`, {
+            method: 'POST', headers: { Authorization: `Bearer ${umnicoToken}` },
+            body: fv, signal: AbortSignal.timeout(15000),
+          });
+          const tv = await rv.text().catch(() => '');
+          steps[key] = { status: rv.status, body: tv.slice(0, 300) };
+        } catch (e) { steps[key] = { error: (e as Error).message }; }
+      }
 
       // Попытка 4: Data URI в JSON (base64 вместо URL) — если Умнико распакует и зальёт на CDN
       try {
