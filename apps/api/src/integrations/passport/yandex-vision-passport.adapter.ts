@@ -61,8 +61,7 @@ export class YandexVisionPassportAdapter extends PassportPort {
     const apiKey = this.envValue('YANDEX_VISION_API_KEY');
     const folderId = this.envValue('YANDEX_VISION_FOLDER_ID');
     if (!apiKey || !folderId) {
-      // ВРЕМЕННАЯ диагностика: полная трасса чтения в note (единственный надёжный канал).
-      return { fields: {}, confidence: 0, source: 'page', note: `Yandex не настроен. [TRACE ${this.lastTrace}]`.slice(0, 950) };
+      return { fields: {}, confidence: 0, source: 'page', note: 'Распознавание временно недоступно — заполните поля вручную.' };
     }
 
     const url =
@@ -156,28 +155,51 @@ export class YandexVisionPassportAdapter extends PassportPort {
     const bd = this.toIso(pick('birth_date', 'birthdate', 'date_of_birth'));
     if (bd) fields.birthDate = bd;
 
+    // Место рождения — оставляем как в документе (напр. «ГОР. МОСКВА»), гость проверит.
+    const birthPlace = pick('birth_place', 'place_of_birth', 'birthplace');
+    if (birthPlace) fields.birthPlace = birthPlace;
+
+    // Пол: Yandex отдаёт «МУЖ.»/«ЖЕН.» (или MALE/FEMALE) — приводим к M/F, как ждёт форма.
+    const gender = pick('gender', 'sex');
+    if (gender) {
+      const g = gender.toLowerCase();
+      if (/^(м|m)/.test(g)) fields.sex = 'M';
+      else if (/^(ж|f|w)/.test(g)) fields.sex = 'F';
+    }
+
+    const citizenship = pick('citizenship', 'nationality');
+    if (citizenship) fields.citizenship = citizenship;
+
     const issuedBy = pick('issued_by', 'authority', 'issuing_authority');
     if (issuedBy) fields.issuedBy = issuedBy;
     const issuedDate = this.toIso(pick('issue_date', 'issued_date', 'date_of_issue'));
     if (issuedDate) fields.issuedDate = issuedDate;
 
-    // Серия/номер: либо единым полем «4017 123456», либо раздельно.
-    const combined = pick('series_and_number', 'number_and_series', 'series_number');
-    const { series, number } = this.splitSeriesNumber(combined, pick('series'), pick('number', 'passport_number'));
+    // Серия(4)+номер(6). Для внутреннего паспорта РФ Yandex кладёт их ОДНИМ полем `number`
+    // (все 10 цифр, напр. «12 34 567890»), реже — раздельными `series`/`number`. Разбираем оба.
+    const { series, number } = this.splitSeriesNumber(
+      pick('series'),
+      pick('number', 'passport_number', 'series_and_number', 'number_and_series', 'series_number'),
+    );
     if (series) fields.series = series;
     if (number) fields.number = number;
     return fields;
   }
 
-  private splitSeriesNumber(combined?: string, series?: string, number?: string): { series?: string; number?: string } {
+  /**
+   * Серия(4)+номер(6) внутреннего паспорта РФ. Источники: раздельные `series`/`number`
+   * либо единое поле, где лежат все 10 цифр (Yandex обычно кладёт их в `number`). Если по
+   * отдельности формат не сходится — склеиваем цифры обоих полей и режем 4+6.
+   */
+  private splitSeriesNumber(series?: string, numberField?: string): { series?: string; number?: string } {
     const digits = (s?: string) => (s ? s.replace(/\D/g, '') : '');
     let s = digits(series);
-    let n = digits(number);
-    if ((!s || !n) && combined) {
-      const d = digits(combined);
-      if (d.length >= 10) {
-        s = s || d.slice(0, 4);
-        n = n || d.slice(4, 10);
+    let n = digits(numberField);
+    if (!/^\d{4}$/.test(s) || !/^\d{6}$/.test(n)) {
+      const all = s + n;
+      if (all.length === 10) {
+        s = all.slice(0, 4);
+        n = all.slice(4, 10);
       }
     }
     return { series: /^\d{4}$/.test(s) ? s : undefined, number: /^\d{6}$/.test(n) ? n : undefined };

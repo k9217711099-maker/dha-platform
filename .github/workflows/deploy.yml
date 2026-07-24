@@ -1,9 +1,11 @@
 name: Deploy
 
-# push в develop → staging-сервер (превью), push в main → production-сервер.
+# Единственный прод-сервер — 83.166.247.226 (обслуживает nomero.online). Деплой = push в develop.
+# Ветка main и второй бокс временно выведены из деплоя (решение владельца 2026-07-24) — вернёмся,
+# когда сервис будет готов и наведём «правильные» имена веток.
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
 
 # Только один деплой на ветку одновременно. Без этого несколько быстрых пушей (напр.
 # из разных чатов) запускали параллельные деплои, лезли по SSH на один сервер и дрались
@@ -17,21 +19,14 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Выбрать сервер по ветке
-        id: target
-        run: |
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            echo "host=${{ secrets.PROD_HOST }}" >> "$GITHUB_OUTPUT"
-            echo "env_name=PRODUCTION" >> "$GITHUB_OUTPUT"
-          else
-            echo "host=${{ secrets.STAGING_HOST }}" >> "$GITHUB_OUTPUT"
-            echo "env_name=STAGING" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Деплой по SSH (${{ steps.target.outputs.env_name }})
+      - name: Деплой по SSH (PRODUCTION — 83.166.247.226)
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ steps.target.outputs.host }}
+          # ЕДИНСТВЕННЫЙ прод-сервер, обслуживает nomero.online (проверено: DNS домена → этот IP,
+          # hostname cv7639865). Прописан ЯВНО, а не через секрет PROD_HOST/STAGING_HOST: имена
+          # тех секретов были инвертированы (STAGING_HOST = живой прод, PROD_HOST = простаивающий
+          # бокс) — из-за этого правки уходили не на тот сервер. SSH-доступ — по-прежнему из секретов.
+          host: 83.166.247.226
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           # Дефолт appleboy — 10 мин; запас на полную пересборку (реально ~2–3 мин).
@@ -43,9 +38,9 @@ jobs:
             # коммита, без лага самообновления deploy.sh).
             export PUBLIC_API_URL=https://api.nomero.online/api
             # Публичный адрес гостевого портала для ссылок заселения. Домен nomero.online
-            # обслуживается ЭТИМ боксом (ветка develop) — поэтому и для develop, и для main
-            # ссылки должны вести на https://nomero.online, а не на localhost. Задаём здесь
-            # (сразу, без лага deploy.sh); deploy.sh читает через ${GUEST_PORTAL_URL:-...}.
+            # обслуживается этим (единственным) боксом — ссылки должны вести на
+            # https://nomero.online, а не на localhost. Задаём здесь (сразу, без лага
+            # deploy.sh); deploy.sh читает через ${GUEST_PORTAL_URL:-...}.
             export GUEST_PORTAL_URL=https://nomero.online
             # ЧИСТИМ кэш turbo/Next ДО сборки (здесь, не в deploy.sh — без лага самообновления
             # скрипта). БЕЗ этого turbo отдавал «FULL TURBO cache hit» и восстанавливал ЗАЛИПШИЙ

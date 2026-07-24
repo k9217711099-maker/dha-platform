@@ -15,6 +15,9 @@ export interface PassportFields {
   firstName?: string;
   middleName?: string;
   birthDate?: string; // YYYY-MM-DD
+  birthPlace?: string; // место рождения (как в документе)
+  sex?: string; // 'M' | 'F'
+  citizenship?: string; // гражданство
   issuedBy?: string;
   issuedDate?: string; // YYYY-MM-DD
 }
