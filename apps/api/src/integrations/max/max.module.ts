@@ -28,6 +28,11 @@ export class MaxDispatchAdapter extends MaxPort {
     const useHttp = await this.cfg.hasToken();
     return (useHttp ? this.http : this.mock).sendMedia(chatId, media);
   }
+
+  async uploadMedia(fileUrl: string, kind: 'IMAGE' | 'VIDEO' | 'FILE'): Promise<string | null> {
+    const useHttp = await this.cfg.hasToken();
+    return (useHttp ? this.http : this.mock).uploadMedia(fileUrl, kind);
+  }
 }
 
 /** Реализация MaxPort — рантайм-диспетчер (см. MaxDispatchAdapter). */

@@ -13,4 +13,8 @@ export class MockMaxAdapter extends MaxPort {
   async sendMedia(chatId: number | string, media: MaxOutgoingMedia): Promise<void> {
     this.logger.log(`→ ${chatId} [${media.kind}]: ${media.url.slice(0, 100)}`);
   }
+
+  async uploadMedia(_fileUrl: string, _kind: 'IMAGE' | 'VIDEO' | 'FILE'): Promise<string | null> {
+    return null; // mock: не заменяем URL — оператор-инбокс оставит оригинальный
+  }
 }

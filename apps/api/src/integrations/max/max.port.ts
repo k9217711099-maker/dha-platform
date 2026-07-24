@@ -18,4 +18,10 @@ export abstract class MaxPort {
   abstract sendMessage(chatId: number | string, text: string): Promise<void>;
   /** Отправить фото/видео/файл по прямой ссылке. При ошибке бросает — оператор-инбокс фолбэкнет ссылкой. */
   abstract sendMedia(chatId: number | string, media: MaxOutgoingMedia): Promise<void>;
+  /**
+   * Загрузить файл на MAX CDN (Upload API) и вернуть i.oneme.ru URL.
+   * Нужно перед отправкой через Umnico: MAX Bot API принимает только файлы со своего CDN —
+   * внешние URL (напр. api.nomero.online) отклоняет 403. При сбое возвращает null.
+   */
+  abstract uploadMedia(fileUrl: string, kind: 'IMAGE' | 'VIDEO' | 'FILE'): Promise<string | null>;
 }

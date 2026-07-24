@@ -116,9 +116,24 @@ export class OperatorInboxService {
             userId?: string | null;
             saId?: string | null;
           };
+          // MAX через Umnico: MAX Bot API отклоняет (403) внешние URL (api.nomero.online).
+          // Сначала загружаем на MAX CDN, получаем i.oneme.ru URL, потом шлём через Umnico.
+          let sendMedia = media;
+          if (meta.saId) {
+            const chType = await this.umnico.channelTypeBySaId(meta.saId).catch(() => undefined);
+            if (chType === 'max') {
+              const cdnUrl = await this.max.uploadMedia(media.url, media.kind).catch(() => null);
+              if (cdnUrl) {
+                sendMedia = { ...media, url: cdnUrl };
+                this.logger.log(`MAX via Umnico: файл загружен на MAX CDN → ${cdnUrl.slice(0, 60)}`);
+              } else {
+                this.logger.warn('MAX via Umnico: uploadMedia вернул null, используем оригинальный URL');
+              }
+            }
+          }
           await this.umnico.sendAttachment(
             { leadId: to, source: meta.source ?? undefined, userId: meta.userId ?? undefined, saId: meta.saId ?? undefined },
-            media,
+            sendMedia,
           );
           break;
         }
