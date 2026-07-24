@@ -112,6 +112,9 @@ export function CreateTaskModal({ staff, groups, tags, options, defaultKind, onC
   const [guestRequest, setGuestRequest] = useState(false);
   const [requirePhotoResult, setRequirePhotoResult] = useState(false);
   const [requireConfirmation, setRequireConfirmation] = useState(false);
+  // Возвратный шаг (workflow-ТЗ §6): после закрытия вернуть автору задачу с этим текстом.
+  const [followUp, setFollowUp] = useState(false);
+  const [followUpText, setFollowUpText] = useState('');
   const [dueAt, setDueAt] = useState('');
   const [acceptBy, setAcceptBy] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
@@ -221,6 +224,7 @@ export function CreateTaskModal({ staff, groups, tags, options, defaultKind, onC
     groupId: assigneeMode === 'group' ? assigneeGroupId || undefined : undefined,
     watcherIds, tagIds, checklistIds,
     important, severity, blocksSale, guestRequest, requirePhotoResult, requireConfirmation,
+    followUpText: followUp && followUpText.trim() ? followUpText.trim() : undefined,
   });
 
   const submit = async () => {
@@ -506,6 +510,21 @@ export function CreateTaskModal({ staff, groups, tags, options, defaultKind, onC
             <select value={severity} onChange={(e) => setSeverity(e.target.value)} className="rounded-md border border-ink/20 bg-white px-3 py-2 text-sm">
               {Object.entries(SEVERITY_RU).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
+          </div>
+
+          {/* Возвратный шаг (workflow-ТЗ §6): после закрытия задача вернётся автору с этим текстом */}
+          <div className="rounded-lg border border-ink/10 bg-slate-50/60 p-3">
+            <label className="flex items-center gap-1.5 cursor-pointer text-sm text-ink" title="Например: исполнитель донесёт полотенце и закроет — а вам вернётся задача «перезвонить гостю, подтвердить»">
+              <input type="checkbox" checked={followUp} onChange={(e) => setFollowUp(e.target.checked)} />
+              ↩︎ После закрытия вернуть мне задачу
+            </label>
+            {followUp ? (
+              <input
+                value={followUpText} onChange={(e) => setFollowUpText(e.target.value)}
+                placeholder="Что сделать после закрытия — напр. «Позвонить гостю, подтвердить доставку»"
+                className="mt-2 w-full rounded-md border border-ink/20 px-3 py-2 text-sm"
+              />
+            ) : null}
           </div>
 
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}

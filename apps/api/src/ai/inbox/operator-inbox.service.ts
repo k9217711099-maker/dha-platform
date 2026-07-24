@@ -116,42 +116,38 @@ export class OperatorInboxService {
             userId?: string | null;
             saId?: string | null;
           };
-          // MAX через Umnico: MAX Bot API отклоняет (403) внешние URL (api.nomero.online).
-          // Сначала загружаем на MAX CDN, получаем i.oneme.ru URL, потом шлём через Umnico.
-          let sendMedia = media;
+          const umnicoTarget = {
+            leadId: to,
+            source: meta.source ?? undefined,
+            userId: meta.userId ?? undefined,
+            saId: meta.saId ?? undefined,
+          };
           const chType = meta.saId
             ? await this.umnico.channelTypeBySaId(meta.saId).catch(() => undefined)
             : undefined;
+
           if (chType === 'max') {
-            let cdnUrl: string | null = null;
-            let uploadError: string | undefined;
-            try {
-              cdnUrl = await this.max.uploadMedia(media.url, media.kind);
-            } catch (e) {
-              uploadError = (e as Error).message;
-            }
+            // MAX через Umnico: MAX Bot API отклоняет внешние URL с 403 (принимает только i.oneme.ru).
+            // Стратегия: сначала multipart — Умнико скачает файл сам и загрузит на MAX CDN.
+            // Если multipart не поддерживается — фолбэк через sendAttachment (JSON → текст-ссылка).
+            const mp = await this.umnico.sendAttachmentMultipart(umnicoTarget, media);
             void this.umnico.captureUpload({
               at: new Date().toISOString(),
               fileUrl: media.url,
               kind: media.kind,
               saId: meta.saId ?? null,
               chType,
-              result: cdnUrl,
-              error: uploadError,
+              result: mp.sent ? `multipart-ok-${mp.status}` : null,
+              error: mp.sent ? undefined : `mp:${mp.status} ${mp.response.slice(0, 80)}`,
             });
-            if (cdnUrl) {
-              sendMedia = { ...media, url: cdnUrl };
-              this.logger.log(`MAX via Umnico: загружено на MAX CDN → ${cdnUrl.slice(0, 60)}`);
-            } else {
-              this.logger.warn(`MAX via Umnico: uploadMedia вернул null (${uploadError ?? 'без ошибки'}), используем оригинальный URL`);
-            }
-          } else {
-            this.logger.debug(`MAX upload skip: saId=${meta.saId ?? 'нет'} chType=${chType ?? 'undefined'}`);
+            if (mp.sent) break; // успешно отправлено через multipart
+            // Фолбэк: sendAttachment с оригинальным URL (MAX 403 → текст-ссылка)
+            await this.umnico.sendAttachment(umnicoTarget, media);
+            break;
           }
-          await this.umnico.sendAttachment(
-            { leadId: to, source: meta.source ?? undefined, userId: meta.userId ?? undefined, saId: meta.saId ?? undefined },
-            sendMedia,
-          );
+
+          // Не MAX: обычная отправка ссылкой
+          await this.umnico.sendAttachment(umnicoTarget, media);
           break;
         }
         case AiChannel.MAX:

@@ -1381,6 +1381,13 @@ model OpsTask {
   /// Напоминания о приближении срока (эскалация за 7 и 2 дня; сбрасываются при смене dueAt/blockerUntil).
   notifiedDue7At DateTime?
   notifiedDue2At DateTime?
+  /// Возвратный шаг (workflow-ТЗ §6): после закрытия (DONE) автору/указанному сотруднику создаётся
+  /// новая задача с этим текстом — сценарий «полотенце → перезвонить гостю». firedAt защищает от повторов.
+  followUpText       String?
+  followUpAssigneeId String?
+  followUpFiredAt    DateTime?
+  /// Задача-источник: заполнено, если эта задача — возвратный шаг другой задачи.
+  parentTaskId       String?
   /// Правило ППР-цикла, породившее задачу (профилактика номерного фонда).
   pmRuleId       String?
   createdBy      String?

@@ -219,6 +219,70 @@ export class UmnicoConfigService {
     } catch { /* не критично */ }
   }
 
+  /**
+   * Отправка медиа в MAX через Umnico multipart-ом: скачиваем файл, отправляем байты напрямую.
+   * MAX Bot API не принимает внешние URL (отвечает 403). Умнико обрабатывает multipart и сам
+   * загружает на MAX CDN — в отличие от JSON-запроса с url, где Умнико передаёт URL дальше без
+   * перезаливки. Возвращает `{ sent: true }` если Умнико вернул 2xx.
+   */
+  async sendAttachmentMultipart(
+    target: { leadId: string; source?: string; userId?: string; saId?: string },
+    media: { url: string; kind: 'IMAGE' | 'VIDEO' | 'FILE'; name: string; caption?: string },
+  ): Promise<{ sent: boolean; status: number; response: string }> {
+    const token = await this.token();
+    if (!token) return { sent: false, status: 0, response: 'нет токена' };
+
+    // Скачиваем файл с нашего сервера (внутренняя сеть — быстро)
+    const fileRes = await fetch(media.url, { signal: AbortSignal.timeout(20_000) }).catch(() => null);
+    if (!fileRes?.ok) {
+      return { sent: false, status: fileRes?.status ?? 0, response: `не удалось скачать файл (${fileRes?.status ?? 'сеть'})` };
+    }
+    const bytes = await fileRes.arrayBuffer().catch(() => null);
+    if (!bytes) return { sent: false, status: 0, response: 'не удалось прочитать тело файла' };
+
+    const contentType = fileRes.headers.get('content-type') ?? 'application/octet-stream';
+    const ext = media.url.split('?')[0]?.split('.').pop() ?? 'bin';
+    const type = media.kind === 'IMAGE' ? 'photo' : media.kind === 'VIDEO' ? 'video' : 'file';
+    const senderId = await this.managerUserId();
+
+    const form = new FormData();
+    form.append('attachment', new Blob([bytes], { type: contentType }), `upload.${ext}`);
+    form.append('message', JSON.stringify({ text: media.caption ?? '', attachments: [{ type }] }));
+    if (target.source) form.append('source', target.source);
+    if (senderId != null) form.append('userId', String(senderId));
+    if (target.saId) form.append('saId', target.saId);
+
+    const res = await fetch(
+      `${this.base}/v1.3/messaging/${encodeURIComponent(target.leadId)}/send`,
+      {
+        method: 'POST',
+        // Не передаём content-type вручную — FormData сам выставит multipart/form-data с boundary
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+        signal: AbortSignal.timeout(30_000),
+      },
+    ).catch((e: unknown) => {
+      this.logger.error(`Umnico MAX multipart сеть: ${(e as Error).message}`);
+      return null;
+    });
+
+    const detail = res ? await res.text().catch(() => '') : 'network';
+    void this.captureSend({
+      at: new Date().toISOString(),
+      leadId: target.leadId,
+      body: { _method: 'multipart', type, sizeBytes: bytes.byteLength, saId: target.saId },
+      status: res?.status ?? 'network',
+      response: String(detail).slice(0, 300),
+    });
+
+    if (res?.ok) {
+      this.logger.log(`MAX via Umnico multipart: отправлено (${bytes.byteLength}b, ${type})`);
+      return { sent: true, status: res.status, response: detail };
+    }
+    this.logger.warn(`MAX via Umnico multipart ${res?.status ?? '—'}: ${String(detail).slice(0, 200)}`);
+    return { sent: false, status: res?.status ?? 0, response: String(detail) };
+  }
+
   async readDebug(): Promise<{ send: unknown[]; media: unknown[]; recent: unknown[]; upload: unknown[] }> {
     const parse = (r: string | null): unknown[] => {
       try { return r ? (JSON.parse(r) as unknown[]) : []; } catch { return []; }

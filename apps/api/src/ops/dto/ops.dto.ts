@@ -29,6 +29,10 @@ export class CreateOpsTaskDto {
   @ApiPropertyOptional({ description: 'Создать из шаблона (id)' }) @IsOptional() @IsString() templateId?: string;
   @ApiPropertyOptional({ description: 'Назначить на отдел (UserGroup.id); XOR assigneeIds' }) @IsOptional() @IsString() groupId?: string;
   @ApiPropertyOptional({ description: 'Заявка от гостя (LQA): жёстче SLA, callback перед закрытием' }) @IsOptional() @IsBoolean() guestRequest?: boolean;
+  // Возвратный шаг (workflow-ТЗ §6): что вернуть автору после закрытия задачи.
+  @ApiPropertyOptional({ description: 'После закрытия создать задачу с этим текстом (возвратный шаг)' }) @IsOptional() @IsString() followUpText?: string;
+  @ApiPropertyOptional({ description: 'Кому вернуть возвратный шаг (по умолчанию — автор)' }) @IsOptional() @IsString() followUpAssigneeId?: string;
+  @ApiPropertyOptional({ description: 'Задача-источник (для внутреннего создания возвратного шага)' }) @IsOptional() @IsString() parentTaskId?: string;
 }
 
 export class UpdateOpsTaskDto {

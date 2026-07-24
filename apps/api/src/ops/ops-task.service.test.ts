@@ -64,6 +64,51 @@ describe('OpsTaskService.changeStatus — статусная машина (§3.2
     ]);
     await expect(service.changeStatus('tn', 't1', { to: 'DONE' }, viewer())).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  // Блокер отложенной задачи (workflow-ТЗ §2.1)
+  const paused = (extra: Record<string, unknown> = {}) => ({ id: 't1', status: 'IN_PROGRESS', kind: 'TASK', roomId: null, blocksSale: false, inProgressSince: null, startedAt: new Date(), requirePhotoResult: false, requireConfirmation: false, dueAt: new Date(), createdBy: null, ...extra });
+
+  it('PAUSED без причины блокера отклоняется', async () => {
+    const { service } = setup(paused());
+    await expect(service.changeStatus('tn', 't1', { to: 'PAUSED' }, viewer())).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('PAUSED без срока и без ожидаемой даты отклоняется', async () => {
+    const { service } = setup(paused({ dueAt: null }));
+    await expect(service.changeStatus('tn', 't1', { to: 'PAUSED', blockerKind: 'PARTS' }, viewer())).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('PAUSED «на дату» без даты отклоняется', async () => {
+    const { service } = setup(paused());
+    await expect(service.changeStatus('tn', 't1', { to: 'PAUSED', blockerKind: 'SCHEDULED' }, viewer())).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('PAUSED c причиной и сроком пишет блокер и pausedSince', async () => {
+    const { service, opsTask } = setup(paused());
+    await service.changeStatus('tn', 't1', { to: 'PAUSED', blockerKind: 'PARTS', blockerNote: 'ждём фильтр' }, viewer());
+    expect(opsTask.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'PAUSED', blockerKind: 'PARTS', pausedSince: expect.any(Date) }) }));
+  });
+
+  it('выход из PAUSED снимает блокер', async () => {
+    const { service, opsTask } = setup(paused({ status: 'PAUSED' }));
+    await service.changeStatus('tn', 't1', { to: 'IN_PROGRESS' }, viewer());
+    expect(opsTask.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'IN_PROGRESS', blockerKind: null, pausedSince: null }) }));
+  });
+
+  // Возвратный шаг (workflow-ТЗ §6)
+  const withFollowUp = (extra: Record<string, unknown> = {}) => ({ id: 't1', status: 'IN_PROGRESS', kind: 'TASK', roomId: null, blocksSale: false, inProgressSince: null, startedAt: new Date(), requirePhotoResult: false, requireConfirmation: false, createdBy: 'author1', propertyId: 'p1', followUpText: 'Позвонить гостю', followUpFiredAt: null, ...extra });
+
+  it('закрытие задачи с возвратным шагом ставит followUpFiredAt', async () => {
+    const { service, opsTask } = setup(withFollowUp());
+    await service.changeStatus('tn', 't1', { to: 'DONE' }, viewer());
+    expect(opsTask.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'DONE', followUpFiredAt: expect.any(Date) }) }));
+  });
+
+  it('повторное закрытие (firedAt уже стоит) не порождает возврат снова', async () => {
+    const { service, opsTask } = setup(withFollowUp({ status: 'WAITING_CONFIRM', followUpFiredAt: new Date() }));
+    await service.changeStatus('tn', 't1', { to: 'DONE' }, viewer(['ops_manage']));
+    expect((opsTask.update.mock.calls[0]![0] as { data: Record<string, unknown> }).data.followUpFiredAt).toBeUndefined();
+  });
 });
 
 describe('OpsTaskService.isChecklistComplete', () => {

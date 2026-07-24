@@ -101,6 +101,7 @@ export default function OpsTasksPage() {
   const [propertyId, setPropertyId] = useState('');
   const [important, setImportant] = useState(false);
   const [overdue, setOverdue] = useState(false);
+  const [mine, setMine] = useState(false); // «Я поставил(а)»: задачи, где я автор (workflow-ТЗ §7.2)
   const [target, setTarget] = useState<'' | 'ADMIN' | 'LOCATED'>('');
   const [q, setQ] = useState('');
   const [from, setFrom] = useState('');
@@ -137,9 +138,10 @@ export default function OpsTasksPage() {
     zoneId: zoneIdF || undefined,
     important: important ? '1' : undefined,
     overdue: overdue ? '1' : undefined,
+    createdBy: mine ? (me?.id || undefined) : undefined,
     target: target || undefined,
     q: q || undefined, from: from || undefined, to: to || undefined,
-  }), [kind, statuses, assigneeId, groupId, tagIds, propertyId, roomId, zoneIdF, important, overdue, target, q, from, to]);
+  }), [kind, statuses, assigneeId, groupId, tagIds, propertyId, roomId, zoneIdF, important, overdue, mine, me?.id, target, q, from, to]);
 
   const load = () => adminApi.opsTasks(filters).then(setTasks).catch(() => undefined);
 
@@ -172,13 +174,13 @@ export default function OpsTasksPage() {
   }, []);
 
   const staffMap = useMemo(() => new Map(staff.map((s) => [s.id, s])), [staff]);
-  const hasFilters = Boolean(statuses.length || assigneeId || groupId || tagIds.length || propertyId || roomId || zoneIdF || important || overdue || target || q || from);
+  const hasFilters = Boolean(statuses.length || assigneeId || groupId || tagIds.length || propertyId || roomId || zoneIdF || important || overdue || mine || target || q || from);
   const canCreate = me?.permissions.includes('ops_create') ?? false;
   const canChangeStatus = me?.permissions.includes('ops_tasks') ?? false;
 
   const toggleStatus = (s: OpsStatus) => setStatuses((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
   const toggleTag = (id: string) => setTagIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-  const resetFilters = () => { setStatuses([]); setAssigneeId(''); setGroupId(''); setTagIds([]); setPropertyId(''); setRoomId(''); setZoneIdF(''); setImportant(false); setOverdue(false); setTarget(''); setQ(''); setFrom(''); setTo(''); };
+  const resetFilters = () => { setStatuses([]); setAssigneeId(''); setGroupId(''); setTagIds([]); setPropertyId(''); setRoomId(''); setZoneIdF(''); setImportant(false); setOverdue(false); setMine(false); setTarget(''); setQ(''); setFrom(''); setTo(''); };
 
   const doStatusChange = async (taskId: string, to: OpsStatus, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -419,6 +421,10 @@ export default function OpsTasksPage() {
           type="button" onClick={() => setOverdue((v) => !v)}
           className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${overdue ? 'border-transparent bg-rose-500 text-white shadow-sm' : 'border-rose-300 text-rose-600 hover:bg-rose-50'}`}
         >⏰ Просроченные</button>
+        <button
+          type="button" onClick={() => setMine((v) => !v)} title="Задачи, которые поставил(а) я — слежу за ними"
+          className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${mine ? 'border-transparent bg-sky-500 text-white shadow-sm' : 'border-ink/15 text-slate-500 hover:border-sky-300'}`}
+        >↩︎ Я поставил(а)</button>
         {hasFilters ? (
           <button type="button" className="flex items-center gap-1 text-sm text-rose-500 hover:text-rose-700" onClick={resetFilters}>
             <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />Сбросить фильтры
