@@ -23,6 +23,19 @@ const IMPORT_PALETTE = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '
 export class OpsSettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // ── Режим модуля задач (workflow-ТЗ §10): simple (как раньше) | advanced (дэшборды/блокеры) ──
+  //    Переключается на уровне сети (владелец), а не пер-юзер: данные единые, тумблер меняет только UI.
+  async getTasksMode(tenantId: string): Promise<'simple' | 'advanced'> {
+    const row = await this.prisma.setting.findUnique({ where: { key: `ops.tasksMode:${tenantId}` } });
+    return row?.value === 'advanced' ? 'advanced' : 'simple';
+  }
+  async setTasksMode(tenantId: string, mode: string): Promise<{ mode: 'simple' | 'advanced' }> {
+    const value: 'simple' | 'advanced' = mode === 'advanced' ? 'advanced' : 'simple';
+    const key = `ops.tasksMode:${tenantId}`;
+    await this.prisma.setting.upsert({ where: { key }, create: { key, value }, update: { value } });
+    return { mode: value };
+  }
+
   // ── Теги (§8.2) ──────────────────────────────────────────────────────────
   tags(tenantId: string, archived = false) {
     return this.prisma.opsTag.findMany({ where: { tenantId, archivedAt: archived ? { not: null } : null }, orderBy: { name: 'asc' } });

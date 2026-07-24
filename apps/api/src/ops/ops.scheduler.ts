@@ -28,8 +28,10 @@ export class OpsScheduler {
   async everyMinute(): Promise<void> {
     try {
       await this.activateScheduled();
+      await this.returnScheduled();
       await this.fireRecurring();
       await this.runAutomation();
+      await this.notifyDeadlines();
     } catch (e) {
       this.logger.warn(`ops scheduler: ${e instanceof Error ? e.message : e}`);
     }
@@ -153,6 +155,66 @@ export class OpsScheduler {
           update: { lastFiredAt: new Date() },
         });
       }
+    }
+  }
+
+  /** Приближение срока (workflow-ТЗ §8): напоминание за 7 и за 2 дня до срока — ответственному,
+   *  руководителю отдела и постановщику. «Срок» = dueAt, а для отложенных без срока — ожидаемая дата (blockerUntil). */
+  private async notifyDeadlines(): Promise<void> {
+    const now = Date.now();
+    const horizon = new Date(now + 7 * 86_400_000);
+    const candidates = await this.prisma.opsTask.findMany({
+      where: {
+        status: { notIn: ['DONE', 'CANCELLED', 'PLAN'] },
+        OR: [
+          { dueAt: { not: null, lte: horizon } },
+          { dueAt: null, blockerUntil: { not: null, lte: horizon } },
+        ],
+      },
+      include: { assignees: true, group: { select: { headUserId: true } } },
+      take: 200,
+    });
+    for (const t of candidates) {
+      const due = t.dueAt ?? t.blockerUntil;
+      if (!due) continue;
+      const days = (due.getTime() - now) / 86_400_000;
+      const ids = [...new Set([
+        ...t.assignees.map((a) => a.userId),
+        ...(t.group?.headUserId ? [t.group.headUserId] : []),
+        ...(t.createdBy ? [t.createdBy] : []),
+      ])];
+      if (ids.length === 0) continue;
+      const emit = (stage: 2 | 7) => this.events.emit({ kind: 'deadline', taskId: t.id, userIds: ids, payload: { title: t.title, important: t.important, severity: t.severity, days: stage } });
+      // За 2 дня и ближе — если ещё не слали «2д» (закрываем и «7д», чтобы не сработал следом).
+      if (days <= 2 && !t.notifiedDue2At) {
+        emit(2);
+        await this.prisma.opsTask.update({ where: { id: t.id }, data: { notifiedDue2At: new Date(), notifiedDue7At: t.notifiedDue7At ?? new Date() } });
+      } else if (days <= 7 && days > 2 && !t.notifiedDue7At) {
+        emit(7);
+        await this.prisma.opsTask.update({ where: { id: t.id }, data: { notifiedDue7At: new Date() } });
+      }
+    }
+  }
+
+  /** Авто-возврат отложенных «на дату» (workflow-ТЗ §2.1): PAUSED c blockerKind=SCHEDULED и наступившим
+   *  blockerUntil → NEW (снова в «Мой день»/«Свободные»), блокер снят, push исполнителю. */
+  private async returnScheduled(): Promise<void> {
+    const due = await this.prisma.opsTask.findMany({
+      where: { status: 'PAUSED', blockerKind: 'SCHEDULED', blockerUntil: { lte: new Date() } },
+      include: { assignees: true },
+      take: 100,
+    });
+    for (const t of due) {
+      await this.prisma.opsTask.update({
+        where: { id: t.id },
+        data: {
+          status: 'NEW',
+          blockerKind: null, blockerNote: null, blockerUntil: null, pausedSince: null,
+          notifiedDue7At: null, notifiedDue2At: null,
+          statusLog: { create: { from: 'PAUSED', to: 'NEW', note: 'авто-возврат: наступила дата' } },
+        },
+      });
+      this.events.emit({ kind: 'task_created', taskId: t.id, userIds: t.assignees.map((a) => a.userId), payload: { title: t.title, important: t.important, severity: t.severity } });
     }
   }
 

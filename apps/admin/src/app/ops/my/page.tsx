@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { Card } from '@dha/ui';
-import { adminApi, opsStreamUrl, type OpsKind, type OpsStaff, type OpsTask } from '../../../lib/api';
+import { adminApi, opsStreamUrl, type OpsKind, type OpsStaff, type OpsTask, type OpsTasksMode } from '../../../lib/api';
 import { useAdminMe, useRequireAdmin } from '../../../lib/use-admin';
-import { ACTION_LABEL, STATUS, TRANSITIONS, checklistProgress, fmtDT } from '../shared';
+import { ACTION_LABEL, BLOCKER, STATUS, TRANSITIONS, checklistProgress, fmtDT } from '../shared';
 import { TaskCard } from '../TaskCard';
 import { PushToggle } from '../PushToggle';
 
@@ -17,6 +17,8 @@ export default function MyTasksPage() {
   const [tasks, setTasks] = useState<OpsTask[]>([]);
   const [claimable, setClaimable] = useState<OpsTask[]>([]);
   const [staff, setStaff] = useState<OpsStaff[]>([]);
+  const [mode, setMode] = useState<OpsTasksMode>('simple');
+  const [showPaused, setShowPaused] = useState(false);
   // ?task=<id> — открыть карточку сразу (переход из push-уведомления).
   const [openTask, setOpenTask] = useState<string | null>(() => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('task')));
   const [error, setError] = useState('');
@@ -33,6 +35,7 @@ export default function MyTasksPage() {
     void adminApi.opsStaff().then(setStaff).catch(() => undefined);
   };
   useEffect(() => { if (ready && me) void load(); }, [ready, me, kind, showDone]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void adminApi.opsTasksMode().then((r) => setMode(r.mode)).catch(() => undefined); }, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -96,9 +99,12 @@ export default function MyTasksPage() {
         </div>
       ) : null}
 
-      <div className="space-y-2.5">
-        {tasks.length === 0 ? <p className="py-8 text-center text-sm text-dark-gray">Задач нет. {myDuty ? 'Хорошая смена!' : 'Включите смену, чтобы получать задания.'}</p> : null}
-        {tasks.map((t) => {
+      {(() => {
+        // Продвинутый режим (workflow-ТЗ §7.1): «Мой день» без отложенных, отложенные — отдельной сворачиваемой секцией.
+        const advanced = mode === 'advanced';
+        const active = advanced ? tasks.filter((t) => t.status !== 'PAUSED') : tasks;
+        const paused = advanced ? tasks.filter((t) => t.status === 'PAUSED') : [];
+        const renderTask = (t: OpsTask) => {
           const st = STATUS[t.status];
           const cl = t.checklists[0];
           let next = TRANSITIONS[t.status].filter((x) => x !== 'CANCELLED' && !(x === 'NEW' && (t.status === 'DONE' || t.status === 'CANCELLED')));
@@ -122,6 +128,10 @@ export default function MyTasksPage() {
                   {t.dueAt ? <span className={overdue ? 'font-semibold text-rose-600' : ''}> · срок {fmtDT(t.dueAt)}</span> : null}
                   {typeof t.standardMinutes === 'number' ? ` · норматив ${t.standardMinutes} мин` : ''}
                 </p>
+                {/* Блокер отложенной задачи — чтобы было видно, чего ждём (workflow-ТЗ §2.1) */}
+                {t.status === 'PAUSED' && t.blockerKind ? (
+                  <p className="mt-1 text-xs text-slate-500">{BLOCKER[t.blockerKind].icon} {BLOCKER[t.blockerKind].label}{t.blockerUntil ? ` · до ${fmtDT(t.blockerUntil)}` : ''}</p>
+                ) : null}
                 {cl ? (
                   <div className="mt-2 flex items-center gap-2">
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-emerald-500" style={{ width: `${checklistProgress(cl.itemsSnapshot, cl.answers)}%` }} /></div>
@@ -132,14 +142,32 @@ export default function MyTasksPage() {
               {next.length ? (
                 <div className="mt-3 flex gap-2">
                   {next.map((to) => (
-                    <button key={to} type="button" onClick={() => run(() => adminApi.opsStatus(t.id, to))} className="flex-1 rounded-full px-3 py-2 text-sm font-medium text-white transition hover:opacity-90" style={{ backgroundColor: STATUS[to].dot }}>{ACTION_LABEL[to]}</button>
+                    // «Отложить» ведёт в карточку — там выбирают причину блокера (иначе бэкенд отклонит).
+                    <button key={to} type="button" onClick={() => (to === 'PAUSED' ? setOpenTask(t.id) : run(() => adminApi.opsStatus(t.id, to)))} className="flex-1 rounded-full px-3 py-2 text-sm font-medium text-white transition hover:opacity-90" style={{ backgroundColor: STATUS[to].dot }}>{ACTION_LABEL[to]}</button>
                   ))}
                 </div>
               ) : null}
             </Card>
           );
-        })}
-      </div>
+        };
+        return (
+          <>
+            {advanced ? <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Мой день</h2> : null}
+            <div className="space-y-2.5">
+              {active.length === 0 ? <p className="py-8 text-center text-sm text-dark-gray">Задач нет. {myDuty ? 'Хорошая смена!' : 'Включите смену, чтобы получать задания.'}</p> : null}
+              {active.map(renderTask)}
+            </div>
+            {paused.length > 0 ? (
+              <div className="mt-4">
+                <button type="button" onClick={() => setShowPaused((v) => !v)} className="mb-2 flex w-full items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <span>{showPaused ? '▾' : '▸'}</span> Отложенные <span className="rounded-full bg-slate-200 px-1.5 text-xs normal-case text-slate-600">{paused.length}</span>
+                </button>
+                {showPaused ? <div className="space-y-2.5">{paused.map(renderTask)}</div> : null}
+              </div>
+            ) : null}
+          </>
+        );
+      })()}
 
       {openTask ? <TaskCard taskId={openTask} staff={staff} onClose={() => setOpenTask(null)} onChanged={load} /> : null}
     </main>

@@ -396,6 +396,9 @@ export class OpsTaskService {
         severity: dto.severity,
         dueAt: dto.dueAt !== undefined ? (dto.dueAt ? new Date(dto.dueAt) : null) : undefined,
         acceptBy: dto.acceptBy !== undefined ? (dto.acceptBy ? new Date(dto.acceptBy) : null) : undefined,
+        // Сменили срок — заново шлём напоминания «за 7 и 2 дня» под новую дату (workflow-ТЗ §8).
+        notifiedDue7At: dto.dueAt !== undefined ? null : undefined,
+        notifiedDue2At: dto.dueAt !== undefined ? null : undefined,
         supervisorId: dto.supervisorId,
         cleaningTypeId: dto.cleaningTypeId,
         requirePhotoResult: dto.requirePhotoResult,
@@ -437,6 +440,14 @@ export class OpsTaskService {
     if (reopen && !viewer.perms.includes('ops_manage')) throw new ForbiddenException('Переоткрытие — только с правом ops_manage');
     if (to === 'CANCELLED' && !dto.note?.trim()) throw new BadRequestException('Отмена требует комментария-причины');
 
+    // Блокер отложенной задачи (workflow-ТЗ §2.1): при переводе в «Отложена» нужна причина и дата,
+    // от которой считать напоминания «за 7 и 2 дня» — срок задачи либо ожидаемая дата решения.
+    if (to === 'PAUSED') {
+      if (!dto.blockerKind) throw new BadRequestException('Укажите причину, почему откладываете задачу');
+      if (dto.blockerKind === 'SCHEDULED' && !dto.blockerUntil) throw new BadRequestException('Для «отложено на дату» укажите дату');
+      if (!task.dueAt && !dto.blockerUntil) throw new BadRequestException('У задачи нет срока — укажите ожидаемую дату решения');
+    }
+
     // Подтверждение установщика (§3.2): при requireConfirmation завершать напрямую нельзя —
     // сначала «Ждёт подтверждения», затем установщик/супервайзер/руководитель подтверждает → DONE.
     const isConfirmer = task.createdBy === viewer.id || task.supervisorId === viewer.id || viewer.perms.includes('ops_manage');
@@ -475,6 +486,14 @@ export class OpsTaskService {
         workSeconds: leaveProgress ? { increment: leaveProgress } : undefined,
         completedAt: to === 'DONE' ? now : reopen ? null : undefined,
         cancelledBy: to === 'CANCELLED' ? viewer.id : undefined,
+        // Блокер: ставим при переводе в «Отложена», снимаем при выходе из неё (workflow-ТЗ §2.1).
+        blockerKind: to === 'PAUSED' ? dto.blockerKind : from === 'PAUSED' ? null : undefined,
+        blockerNote: to === 'PAUSED' ? (dto.blockerNote?.trim() || null) : from === 'PAUSED' ? null : undefined,
+        blockerUntil: to === 'PAUSED' ? (dto.blockerUntil ? new Date(dto.blockerUntil) : null) : from === 'PAUSED' ? null : undefined,
+        pausedSince: to === 'PAUSED' ? now : from === 'PAUSED' ? null : undefined,
+        // Пере-считываем напоминания под новую дату отсчёта.
+        notifiedDue7At: to === 'PAUSED' ? null : undefined,
+        notifiedDue2At: to === 'PAUSED' ? null : undefined,
         statusLog: { create: { from, to, actorId: viewer.id, note: dto.note ?? null } },
       };
       const t = await tx.opsTask.update({ where: { id }, data, include: TASK_INCLUDE });

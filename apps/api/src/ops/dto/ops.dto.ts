@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { CleaningRuleCondition, MaintenanceSeverity, OpsAutomationType, OpsNotifyTarget, OpsRecurFreq, OpsTaskKind, OpsTaskStatus } from '@prisma/client';
+import { CleaningRuleCondition, MaintenanceSeverity, OpsAutomationType, OpsBlockerKind, OpsNotifyTarget, OpsRecurFreq, OpsTaskKind, OpsTaskStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsEnum, IsInt, IsISO8601, IsObject, IsOptional, IsString, Min } from 'class-validator';
 
@@ -52,6 +52,10 @@ export class UpdateOpsTaskDto {
 export class ChangeStatusDto {
   @ApiProperty({ enum: OpsTaskStatus }) @IsEnum(OpsTaskStatus) to!: OpsTaskStatus;
   @ApiPropertyOptional({ description: 'Комментарий (обязателен при отмене)' }) @IsOptional() @IsString() note?: string;
+  // Блокер при переводе в «Отложена» (PAUSED, workflow-ТЗ §2.1).
+  @ApiPropertyOptional({ enum: OpsBlockerKind, description: 'Причина, почему откладываем (PAUSED)' }) @IsOptional() @IsEnum(OpsBlockerKind) blockerKind?: OpsBlockerKind;
+  @ApiPropertyOptional({ description: 'Заметка к блокеру' }) @IsOptional() @IsString() blockerNote?: string;
+  @ApiPropertyOptional({ description: 'Ожидаемая дата решения / авто-возврата (для SCHEDULED или если у задачи нет срока)' }) @IsOptional() @IsISO8601() blockerUntil?: string;
 }
 
 /** Делегирование задачи (§4.4): передать другому исполнителю/отделу. */

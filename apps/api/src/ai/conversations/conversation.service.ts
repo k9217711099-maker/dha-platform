@@ -151,9 +151,13 @@ export class ConversationService {
   async findGuestIdByPhone(tenantId: string, phone: string): Promise<string | null> {
     const tail = phone.replace(/\D/g, '').slice(-10);
     if (tail.length < 10) return null;
+    // Ограничение: берём не более 3000 гостей — защита от полного скана на больших тенантах.
+    // phone @unique — один уникальный индекс на всю таблицу, но LIKE '%tail' его не использует.
+    // Настоящий фикс — нормализованное поле phoneDigits + индекс; это — быстрый гвард.
     const rows = await this.prisma.guest.findMany({
       where: { tenantId, phone: { not: null } },
       select: { id: true, phone: true },
+      take: 3000,
     });
     const hit = rows.find((r) => (r.phone ?? '').replace(/\D/g, '').endsWith(tail));
     return hit?.id ?? null;
@@ -223,9 +227,17 @@ export class ConversationService {
    * ai_messages(conversationId, createdAt) — быстро даже при частом опросе.
    */
   async unreadEscalatedCount(tenantId: string): Promise<number> {
+    // Субзапрос явно фильтрует ai_conversations ДО LATERAL — гарантирует, что Postgres
+    // применяет индекс (tenantId, actorKind, status) вместо потенциального full-scan.
     const rows = await this.prisma.$queryRaw<Array<{ c: number }>>`
       SELECT count(*)::int AS c
-      FROM ai_conversations conv
+      FROM (
+        SELECT id, "operatorReadAt"
+        FROM ai_conversations
+        WHERE "tenantId" = ${tenantId}
+          AND "actorKind" = 'GUEST'
+          AND status = 'ESCALATED'
+      ) conv
       JOIN LATERAL (
         SELECT m.role, m."createdAt"
         FROM ai_messages m
@@ -234,20 +246,22 @@ export class ConversationService {
         ORDER BY m."createdAt" DESC
         LIMIT 1
       ) last ON true
-      WHERE conv."tenantId" = ${tenantId}
-        AND conv."actorKind" = 'GUEST'
-        AND conv.status = 'ESCALATED'
-        AND last.role = 'USER'
+      WHERE last.role = 'USER'
         AND (conv."operatorReadAt" IS NULL OR last."createdAt" > conv."operatorReadAt")`;
     return rows[0]?.c ?? 0;
   }
 
   /** История в формате LLM (для передачи модели). */
   async history(conversationId: string): Promise<LlmMessage[]> {
+    // Лимит: берём ПОСЛЕДНИЕ 200 сообщений (desc + take), затем разворачиваем.
+    // Без лимита длинные диалоги грузили тысячи строк при КАЖДОМ входящем вебхуке →
+    // держали соединение пула на секунды и засоряли контекст LLM (модели это не нужно).
     const rows = await this.prisma.aiMessage.findMany({
       where: { conversationId },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
     });
+    rows.reverse();
     return rows.map((m) => ({
       role: ROLE_TO_LLM[m.role],
       content: m.content,

@@ -174,6 +174,15 @@ enum OpsTaskStatus {
   CANCELLED
 }
 
+/// Причина блокера отложенной задачи (PAUSED, workflow-ТЗ §2.1):
+/// запчасть/материал, подрядчик, согласование, «отложено на дату» (авто-возврат к blockerUntil).
+enum OpsBlockerKind {
+  PARTS
+  CONTRACTOR
+  APPROVAL
+  SCHEDULED
+}
+
 /// Тип пункта чек-листа (§5.1): заголовок / пункт / подпункт.
 enum ChecklistItemKind {
   HEADER
@@ -1363,6 +1372,15 @@ model OpsTask {
   requireConfirmation Boolean  @default(false)
   /// Заявка от гостя (LQA-контур): жёстче SLA, callback перед закрытием.
   guestRequest   Boolean       @default(false)
+  /// Блокер отложенной задачи (PAUSED, workflow-ТЗ §2.1): причина / заметка / с какого момента отложена /
+  /// ожидаемая дата решения (для SCHEDULED — момент авто-возврата в активные). Очищаются при выходе из PAUSED.
+  blockerKind    OpsBlockerKind?
+  blockerNote    String?
+  pausedSince    DateTime?
+  blockerUntil   DateTime?
+  /// Напоминания о приближении срока (эскалация за 7 и 2 дня; сбрасываются при смене dueAt/blockerUntil).
+  notifiedDue7At DateTime?
+  notifiedDue2At DateTime?
   /// Правило ППР-цикла, породившее задачу (профилактика номерного фонда).
   pmRuleId       String?
   createdBy      String?
@@ -3005,6 +3023,8 @@ model AiConversation {
   qaReview   AiQaReview?
 
   @@index([tenantId])
+  @@index([tenantId, actorKind, updatedAt])
+  @@index([tenantId, actorKind, status])
   @@index([guestId])
   @@index([status])
   @@index([channel, externalId])

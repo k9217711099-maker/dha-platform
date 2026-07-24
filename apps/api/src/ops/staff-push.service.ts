@@ -85,6 +85,7 @@ export class StaffPushService implements OnModuleInit {
       case 'task_created': return { title: hot ? '‼️ Срочная задача' : 'Новая задача', body: t, urgent: hot };
       case 'reminder': return { title: '⏰ Напоминание по задаче', body: t, urgent: true };
       case 'escalation': return { title: '⚠️ Требует внимания руководителя', body: t, urgent: true };
+      case 'deadline': return { title: '⏳ Приближается срок задачи', body: t, urgent: true };
       case 'task_comment': return { title: 'Комментарий к задаче', body: t, urgent: false };
       case 'task_status': {
         const to = String(e.payload?.to ?? '');

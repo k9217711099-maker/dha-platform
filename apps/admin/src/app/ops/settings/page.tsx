@@ -5,9 +5,9 @@ import { Button, Card } from '@dha/ui';
 import {
   adminApi, type CleaningRule, type CleaningStandard, type CleaningType, type OpsAutomation,
   type OpsChecklist, type OpsGroup, type OpsPmRule, type OpsSlaPolicy, type OpsStaff, type OpsTag,
-  type OpsWriteoffList, type PmsRatePlan, type PmsRoomOption, type OpsZone, type OpsSection, type WhItem,
+  type OpsTasksMode, type OpsWriteoffList, type PmsRatePlan, type PmsRoomOption, type OpsZone, type OpsSection, type WhItem,
 } from '../../../lib/api';
-import { useRequireAdmin } from '../../../lib/use-admin';
+import { useAdminMe, useRequireAdmin } from '../../../lib/use-admin';
 import { CONDITION_RU, SEVERITY_RU, STATUS } from '../shared';
 
 const selectCls = 'rounded-md border border-ink/20 bg-white px-3 py-2 text-sm';
@@ -30,7 +30,10 @@ type Tab = (typeof TABS)[number][0];
 /** Настройки модуля «Задачи и Уборка» (§6.1–6.2, §8, §4.5–4.7, §7, §10). */
 export default function OpsSettingsPage() {
   const ready = useRequireAdmin();
+  const me = useAdminMe();
+  const canSettings = me?.permissions.includes('ops_settings') ?? false;
   const [tab, setTab] = useState<Tab>('types');
+  const [mode, setMode] = useState<OpsTasksMode>('simple');
   const [types, setTypes] = useState<CleaningType[]>([]);
   const [standards, setStandards] = useState<CleaningStandard[]>([]);
   const [rules, setRules] = useState<CleaningRule[]>([]);
@@ -68,6 +71,7 @@ export default function OpsSettingsPage() {
     void adminApi.pmsRatePlans().then(setRatePlans).catch(() => undefined);
   };
   useEffect(() => { if (ready) load(); }, [ready]);
+  useEffect(() => { void adminApi.opsTasksMode().then((r) => setMode(r.mode)).catch(() => undefined); }, []);
 
   const run = (fn: () => Promise<unknown>) => { setError(''); void fn().then(load).catch((e) => setError(e instanceof Error ? e.message : 'Ошибка')); };
   const roomTypes = useMemo(() => options.flatMap((p) => p.roomTypes.map((rt) => ({ ...rt, property: p.name }))), [options]);
@@ -78,6 +82,30 @@ export default function OpsSettingsPage() {
     <main className="px-8 py-8">
       <h1 className="mb-1 text-3xl font-light text-ink">Операции · Настройки</h1>
       <p className="mb-5 text-sm text-dark-gray">Типы и правила уборок, нормативы, SLA, ППР-циклы, теги, автоматизация. Планировщик и шаблоны задач — в разделе «Задачи».</p>
+
+      {/* Тумблер режима модуля задач (workflow-ТЗ §10): на уровне сети, переключает только интерфейс */}
+      <Card className="mb-5 !p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-ink">Режим модуля задач</p>
+            <p className="mt-0.5 max-w-xl text-xs text-dark-gray">
+              {mode === 'advanced'
+                ? '«Продвинутый»: «Мой день» без отложенных, отложенные с причиной блокера, напоминания за 7 и 2 дня до срока, «Свободные в отделе» отдельной секцией.'
+                : '«Обычный»: как сейчас, единый список задач. Продвинутые дэшборды и блокеры скрыты (данные сохраняются в любом режиме).'}
+            </p>
+          </div>
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-sm">
+            {(['simple', 'advanced'] as const).map((m) => (
+              <button key={m} type="button" disabled={!canSettings}
+                onClick={() => run(() => adminApi.opsSetTasksMode(m).then((r) => setMode(r.mode)))}
+                className={`rounded-md px-3.5 py-1.5 transition disabled:cursor-not-allowed disabled:opacity-50 ${mode === m ? 'bg-white font-medium text-ink shadow-sm' : 'text-slate-500 hover:text-ink'}`}>
+                {m === 'simple' ? 'Обычный' : 'Продвинутый'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {!canSettings ? <p className="mt-2 text-xs text-slate-400">Переключение доступно роли с правом настроек операций.</p> : null}
+      </Card>
 
       <div className="mb-5 flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1 text-sm" style={{ width: 'fit-content' }}>
         {TABS.map(([v, l]) => (

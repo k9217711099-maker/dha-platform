@@ -1,4 +1,12 @@
-import type { OpsStatus } from '../../lib/api';
+import type { OpsBlockerKind, OpsStatus } from '../../lib/api';
+
+/** Блокеры отложенной задачи (workflow-ТЗ §2.1): подпись + значок для UI. */
+export const BLOCKER: Record<OpsBlockerKind, { label: string; icon: string }> = {
+  PARTS:      { label: 'Ждём запчасть / материал', icon: '⏳' },
+  CONTRACTOR: { label: 'Ждём подрядчика',          icon: '👷' },
+  APPROVAL:   { label: 'Ждём согласования',        icon: '✅' },
+  SCHEDULED:  { label: 'Отложено на дату',         icon: '🕐' },
+};
 
 /** Статусы задач (§3.2) — подписи, цвета бейджей (яркие, как в TeamJet), dot-цвет и hex для контура/заливки кнопок. */
 export const STATUS: Record<OpsStatus, { label: string; cls: string; dot: string }> = {

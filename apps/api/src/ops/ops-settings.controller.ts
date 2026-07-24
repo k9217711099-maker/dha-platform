@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { AdminAuthGuard, type AdminRequest } from '../admin/admin-auth.guard.js';
@@ -27,6 +27,14 @@ export class OpsSettingsController {
   private tid() {
     return this.tenant.getDefaultTenantId();
   }
+
+  // ── Режим модуля задач (workflow-ТЗ §10) ─────────────────────────────────
+  /** Текущий режим (читают все — чтобы UI знал, что рендерить). */
+  @Get('tasks-mode') @RequirePermission('ops_tasks')
+  async tasksMode() { return { mode: await this.settings.getTasksMode(await this.tid()) }; }
+  /** Переключить режим сети — только с правом настроек (владелец/управляющий). */
+  @Put('tasks-mode') @RequirePermission('ops_settings')
+  async setTasksMode(@Body() body: { mode: string }) { return this.settings.setTasksMode(await this.tid(), body.mode); }
 
   // ── Теги ─────────────────────────────────────────────────────────────────
   @Get('tags') @RequirePermission('ops_tasks')

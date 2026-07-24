@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@dha/ui';
 import {
-  adminApi, fileUrl, type OpsGroup, type OpsStaff, type OpsStatus, type OpsTag, type OpsTaskChecklist, type OpsTaskFull,
+  adminApi, fileUrl, type OpsBlockerKind, type OpsGroup, type OpsStaff, type OpsStatus, type OpsTag, type OpsTaskChecklist, type OpsTaskFull,
   type OpsWriteoffList, type WhItem, type WhWarehouse,
 } from '../../lib/api';
 import { useAdminMe } from '../../lib/use-admin';
-import { SEVERITY_RU, STATUS, STATUS_PIPELINE, TRANSITIONS, checklistProgress, fmtDT, fmtMin } from './shared';
+import { BLOCKER, SEVERITY_RU, STATUS, STATUS_PIPELINE, TRANSITIONS, checklistProgress, fmtDT, fmtMin } from './shared';
+
+/** Значение по умолчанию для input[type=datetime-local]: локальное время без секунд. */
+const toLocalInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 /** Является ли вложение картинкой (по расширению) — иначе рисуем файловую плитку. */
 const isImage = (url: string) => /\.(jpe?g|png|gif|webp|heic)$/i.test(url);
@@ -26,6 +29,11 @@ export function TaskCard({ taskId, staff, onClose, onChanged }: {
   const [comment, setComment] = useState('');
   const [error, setError] = useState('');
   const [cancelNote, setCancelNote] = useState<string | null>(null);
+  // Диалог откладывания (workflow-ТЗ §2.1): причина блокера + необязательная заметка + ожидаемая дата.
+  const [pausing, setPausing] = useState(false);
+  const [blockerKind, setBlockerKind] = useState<OpsBlockerKind | ''>('');
+  const [blockerNote, setBlockerNote] = useState('');
+  const [blockerUntil, setBlockerUntil] = useState('');
   const [writeoff, setWriteoff] = useState(false);
   const [editing, setEditing] = useState(false);
   const [delegating, setDelegating] = useState(false);
@@ -56,7 +64,21 @@ export function TaskCard({ taskId, staff, onClose, onChanged }: {
 
   const changeStatus = (to: OpsStatus) => {
     if (to === 'CANCELLED') { setCancelNote(''); return; }
+    if (to === 'PAUSED') { setPausing(true); return; }
     run(() => adminApi.opsStatus(taskId, to));
+  };
+
+  // Отложить задачу: причина обязательна; дата нужна для «на дату» либо если у задачи нет срока.
+  const submitPause = () => {
+    if (!blockerKind || !task) return;
+    const needDate = blockerKind === 'SCHEDULED' || !task.dueAt;
+    if (needDate && !blockerUntil) { setError('Укажите ожидаемую дату решения'); return; }
+    run(() => adminApi.opsStatus(taskId, 'PAUSED', undefined, {
+      blockerKind,
+      blockerNote: blockerNote.trim() || undefined,
+      blockerUntil: blockerUntil ? new Date(blockerUntil).toISOString() : undefined,
+    }));
+    setPausing(false); setBlockerKind(''); setBlockerNote(''); setBlockerUntil('');
   };
 
   const canManage = me?.permissions.includes('ops_manage') ?? false;
@@ -150,6 +172,47 @@ export function TaskCard({ taskId, staff, onClose, onChanged }: {
                   <Button variant="secondary" onClick={() => changeStatus('IN_PROGRESS')}>Вернуть на доработку</Button>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {/* Блокер отложенной задачи (workflow-ТЗ §2.1): видно, почему и до какого срока «висит» */}
+          {task.status === 'PAUSED' && task.blockerKind ? (
+            <div className="rounded-lg border border-slate-300 bg-slate-50 p-3">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-slate-700"><span>{BLOCKER[task.blockerKind].icon}</span>Отложена: {BLOCKER[task.blockerKind].label}</p>
+              {task.blockerNote ? <p className="mt-1 text-sm text-slate-600">{task.blockerNote}</p> : null}
+              <p className="mt-1 text-xs text-slate-500">
+                {task.pausedSince ? `отложена ${fmtDT(task.pausedSince)}` : ''}
+                {task.blockerUntil ? ` · ${task.blockerKind === 'SCHEDULED' ? 'вернётся в работу' : 'ожидается решение'} ${fmtDT(task.blockerUntil)}` : ''}
+              </p>
+              <div className="mt-2"><Button variant="secondary" onClick={() => changeStatus('IN_PROGRESS')}>Возобновить</Button></div>
+            </div>
+          ) : null}
+
+          {/* Диалог откладывания: выбор причины блокера + заметка + ожидаемая дата */}
+          {pausing ? (
+            <div className="rounded-lg border border-slate-300 bg-slate-50 p-3">
+              <p className="mb-2 text-sm font-medium text-slate-700">Отложить задачу — почему?</p>
+              <div className="mb-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                {(Object.keys(BLOCKER) as OpsBlockerKind[]).map((k) => (
+                  <button key={k} type="button" onClick={() => setBlockerKind(k)}
+                    className={`rounded-lg border px-2 py-1.5 text-left text-xs transition ${blockerKind === k ? 'border-slate-500 bg-white font-medium text-ink shadow-sm' : 'border-ink/15 text-slate-600 hover:border-ink/30'}`}>
+                    <span className="mr-1">{BLOCKER[k].icon}</span>{BLOCKER[k].label}
+                  </button>
+                ))}
+              </div>
+              {blockerKind ? (
+                <div className="space-y-2">
+                  <input value={blockerNote} onChange={(e) => setBlockerNote(e.target.value)} placeholder="Заметка (необязательно): что ждём, номер заявки…" className="w-full rounded-md border border-ink/20 px-3 py-2 text-sm" />
+                  <label className="block text-xs text-slate-500">
+                    {blockerKind === 'SCHEDULED' ? 'Дата возврата в работу' : task.dueAt ? 'Ожидаемая дата решения (необязательно)' : 'Ожидаемая дата решения'}
+                    <input type="datetime-local" value={blockerUntil} min={toLocalInput(new Date())} onChange={(e) => setBlockerUntil(e.target.value)} className="mt-1 block w-full rounded-md border border-ink/20 px-3 py-2 text-sm text-ink" />
+                  </label>
+                </div>
+              ) : null}
+              <div className="mt-2 flex gap-2">
+                <Button variant="secondary" onClick={() => { setPausing(false); setBlockerKind(''); setBlockerNote(''); setBlockerUntil(''); }}>Отмена</Button>
+                <Button disabled={!blockerKind} onClick={submitPause}>Отложить</Button>
+              </div>
             </div>
           ) : null}
 

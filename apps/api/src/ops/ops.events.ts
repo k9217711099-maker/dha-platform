@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Observable, Subject, filter, map } from 'rxjs';
 
 export interface OpsEvent {
-  kind: 'task_created' | 'task_updated' | 'task_status' | 'task_comment' | 'plan_sent' | 'reminder' | 'escalation';
+  kind: 'task_created' | 'task_updated' | 'task_status' | 'task_comment' | 'plan_sent' | 'reminder' | 'escalation' | 'deadline';
   taskId?: string;
   /// Получатели (adminId). Пусто — всем подписчикам тенанта.
   userIds?: string[];

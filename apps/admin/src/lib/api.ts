@@ -1518,6 +1518,9 @@ export interface ChannelSyncLog {
 // --- Задачи и Уборка (TASKS-HOUSEKEEPING-TZ) ---
 export type OpsKind = 'TASK' | 'CLEANING';
 export type OpsStatus = 'PLAN' | 'NEW' | 'ACCEPTED' | 'IN_PROGRESS' | 'PAUSED' | 'WAITING_CONFIRM' | 'DONE' | 'CANCELLED';
+/** Причина блокера отложенной задачи (workflow-ТЗ §2.1). */
+export type OpsBlockerKind = 'PARTS' | 'CONTRACTOR' | 'APPROVAL' | 'SCHEDULED';
+export type OpsTasksMode = 'simple' | 'advanced';
 
 export interface OpsSnapshotItem {
   id: string;
@@ -1573,6 +1576,10 @@ export interface OpsTask {
   requirePhotoResult: boolean;
   requireConfirmation: boolean;
   guestRequest: boolean;
+  blockerKind: OpsBlockerKind | null;
+  blockerNote: string | null;
+  pausedSince: string | null;
+  blockerUntil: string | null;
   pmRuleId: string | null;
   createdBy: string | null;
   workSeconds: number;
@@ -2378,11 +2385,15 @@ export const adminApi = {
   opsCreateTask: (body: Record<string, unknown>) => request<OpsTask>('/v1/ops/tasks', { method: 'POST', body }),
   opsUpdateTask: (id: string, body: Record<string, unknown>) => request<OpsTask>(`/v1/ops/tasks/${id}`, { method: 'PATCH', body }),
   opsDeleteTask: (id: string) => request<{ ok: boolean }>(`/v1/ops/tasks/${id}`, { method: 'DELETE' }),
-  opsStatus: (id: string, to: OpsStatus, note?: string) => request<OpsTask>(`/v1/ops/tasks/${id}/status`, { method: 'POST', body: { to, note } }),
+  opsStatus: (id: string, to: OpsStatus, note?: string, blocker?: { blockerKind?: OpsBlockerKind; blockerNote?: string; blockerUntil?: string }) =>
+    request<OpsTask>(`/v1/ops/tasks/${id}/status`, { method: 'POST', body: { to, note, ...blocker } }),
   opsDelegate: (id: string, body: { toUserId?: string; toGroupId?: string; note?: string }) => request<OpsTask>(`/v1/ops/tasks/${id}/delegate`, { method: 'POST', body }),
   opsMarkRead: (id: string) => request<{ ok: boolean }>(`/v1/ops/tasks/${id}/read`, { method: 'POST' }),
   opsClaimable: () => request<OpsTask[]>('/v1/ops/tasks/claimable'),
   opsClaim: (id: string) => request<OpsTask>(`/v1/ops/tasks/${id}/claim`, { method: 'POST' }),
+  // Режим модуля задач (workflow-ТЗ §10): simple | advanced, на уровне сети.
+  opsTasksMode: () => request<{ mode: OpsTasksMode }>('/v1/ops/tasks-mode'),
+  opsSetTasksMode: (mode: OpsTasksMode) => request<{ mode: OpsTasksMode }>('/v1/ops/tasks-mode', { method: 'PUT', body: { mode } }),
   opsTasksByRoom: (roomId: string) => request<OpsTask[]>(`/v1/ops/tasks/by-room/${roomId}`),
   opsInspect: (id: string) => request<OpsTaskFull>(`/v1/ops/tasks/${id}/inspect`, { method: 'POST' }),
   opsComment: (id: string, body: string) => request(`/v1/ops/tasks/${id}/comments`, { method: 'POST', body: { body } }),
