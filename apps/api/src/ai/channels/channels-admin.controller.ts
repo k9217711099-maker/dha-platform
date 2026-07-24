@@ -612,21 +612,26 @@ export class ChannelsAdminController {
         steps['umnico /v1.3/files/upload'] = { status: r4.status, body: t4.slice(0, 300) };
       } catch (e) { steps['umnico /v1.3/files/upload'] = { error: (e as Error).message }; }
 
-      // Попытка 3: message как JSON-blob (Content-Type: application/json в части multipart)
+      // Получаем userId один раз — нужен для попыток 3 и 4
+      let umnicoUserId: number | undefined;
       try {
-        const leadId3 = '65028025';
-        const umnicoManagers = await fetch(`${umnicoBase}/v1.3/managers`, {
+        const mgrs = await fetch(`${umnicoBase}/v1.3/managers`, {
           headers: { Authorization: `Bearer ${umnicoToken}` },
           signal: AbortSignal.timeout(5000),
         }).then(r => r.json()).catch(() => null) as { id?: number }[] | null;
-        const uid = Array.isArray(umnicoManagers) ? umnicoManagers[0]?.id : undefined;
+        const first = Array.isArray(mgrs) ? mgrs[0] : undefined;
+        umnicoUserId = first?.id;
+      } catch { /* не критично */ }
+
+      // Попытка 3: message как JSON-blob (Content-Type: application/json в части multipart)
+      try {
         const form5 = new FormData();
         form5.append('message', new Blob([JSON.stringify({ text: '', attachments: [{ type: 'photo' }] })], { type: 'application/json' }));
         form5.append('source', '77010278');
-        if (uid != null) form5.append('userId', String(uid));
+        if (umnicoUserId != null) form5.append('userId', String(umnicoUserId));
         form5.append('saId', '111632');
         form5.append('attachment', new Blob([fileBytes], { type: 'image/jpeg' }), 'test.jpg');
-        const r5 = await fetch(`${umnicoBase}/v1.3/messaging/${leadId3}/send`, {
+        const r5 = await fetch(`${umnicoBase}/v1.3/messaging/65028025/send`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${umnicoToken}` },
           body: form5,
@@ -636,24 +641,21 @@ export class ChannelsAdminController {
         steps['umnico multipart json-blob message'] = { status: r5.status, body: t5.slice(0, 500) };
       } catch (e) { steps['umnico multipart json-blob message'] = { error: (e as Error).message }; }
 
-      // Попытка 4: Data URI в JSON-отправке (base64 вместо URL)
-      // Если Умнико декодирует data: URI сам, он загрузит на MAX CDN и пришлёт CDN-URL
-      if (fileBytes) {
+      // Попытка 4: Data URI в JSON (base64 вместо URL) — если Умнико распакует и зальёт на CDN
+      try {
         const b64 = Buffer.from(fileBytes).toString('base64');
         const dataUri = `data:image/jpeg;base64,${b64}`;
-        try {
-          const r6 = await fetch(`${umnicoBase}/v1.3/messaging/65028025/send`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${umnicoToken}`, 'content-type': 'application/json' },
-            body: JSON.stringify({ message: { text: '', attachments: [{ type: 'photo', url: dataUri }] }, source: '77010278', userId: uid ?? null, saId: 111632 }),
-            signal: AbortSignal.timeout(20000),
-          });
-          const t6 = await r6.text().catch(() => '');
-          steps['umnico json data-uri'] = { status: r6.status, body: t6.slice(0, 500) };
-        } catch (e) { steps['umnico json data-uri'] = { error: (e as Error).message }; }
-      }
+        const r6 = await fetch(`${umnicoBase}/v1.3/messaging/65028025/send`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${umnicoToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ message: { text: '', attachments: [{ type: 'photo', url: dataUri }] }, source: '77010278', userId: umnicoUserId ?? null, saId: 111632 }),
+          signal: AbortSignal.timeout(20000),
+        });
+        const t6 = await r6.text().catch(() => '');
+        steps['umnico json data-uri'] = { status: r6.status, body: t6.slice(0, 500) };
+      } catch (e) { steps['umnico json data-uri'] = { error: (e as Error).message }; }
 
-      // Попытка 5: Umnico /v1.3/files (без /upload), /v2/files/upload, /v1.3/messaging/{id}/file
+      // Попытка 5: другие Umnico upload-эндпоинты
       for (const [key, url] of [
         ['umnico /v1.3/files', `${umnicoBase}/v1.3/files`],
         ['umnico /v2/files/upload', `${umnicoBase}/v2/files/upload`],
@@ -669,11 +671,9 @@ export class ChannelsAdminController {
         } catch (e) { steps[key] = { error: (e as Error).message }; }
       }
 
-      // Попытка 6: botapi.max.ru — альтернативный хост MAX API (вместо platform-api2.max.ru)
-      const maxCreds = await this.max.resolve();
-      const altBase = 'https://botapi.max.ru';
+      // Попытка 6: botapi.max.ru — альтернативный хост MAX API
       try {
-        const gU = await fetch(`${altBase}/uploads?type=image&access_token=${encodeURIComponent(maxCreds.botToken)}`, { signal: AbortSignal.timeout(8000) });
+        const gU = await fetch(`https://botapi.max.ru/uploads?type=image&access_token=${encodeURIComponent(creds.botToken)}`, { signal: AbortSignal.timeout(8000) });
         const tU = await gU.text().catch(() => '');
         steps['max botapi.max.ru /uploads'] = { status: gU.status, body: tU.slice(0, 300) };
       } catch (e) { steps['max botapi.max.ru /uploads'] = { error: (e as Error).message }; }
