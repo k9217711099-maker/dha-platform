@@ -537,33 +537,84 @@ export class ChannelsAdminController {
     steps['adapterResult'] = adapterResult;
     steps['adapterError'] = adapterError;
 
-    // Шаг 2: попробуем оба варианта upload endpoint напрямую (для диагностики)
-    for (const path of ['/uploads?type=image', '/upload?type=image']) {
-      const testUrl = `${creds.apiBase}${path}`;
-      try {
-        // GET для /uploads (TamTam-стиль — получить endpoint), POST для /upload
-        const method = path.startsWith('/uploads') ? 'GET' : 'POST';
-        const form = new FormData();
-        if (method === 'POST') {
-          // Скачаем файл
-          const fRes = await fetch(fileUrl, { signal: AbortSignal.timeout(10000) }).catch(() => null);
-          if (fRes?.ok) {
-            const buf = await fRes.arrayBuffer();
-            form.append('data', new Blob([buf], { type: 'image/jpeg' }), 'test.jpg');
+    // Скачаем файл один раз — нужен для нескольких тестов
+    const fRes = await fetch(fileUrl, { signal: AbortSignal.timeout(10000) }).catch(() => null);
+    const fileBytes = fRes?.ok ? await fRes.arrayBuffer().catch(() => null) : null;
+    steps['fileDownload'] = fRes ? `${fRes.status} ${fileBytes ? fileBytes.byteLength + 'b' : 'read error'}` : 'network error';
+
+    // Шаг 2а: TamTam-стиль — GET /uploads?type=image → upload_endpoint URL, потом POST туда
+    try {
+      const getUrl = `${creds.apiBase}/uploads?type=image`;
+      const getR = await fetch(getUrl, {
+        headers: { Authorization: creds.botToken },
+        signal: AbortSignal.timeout(10000),
+      });
+      const getTxt = await getR.text().catch(() => '');
+      steps['/uploads GET (Authorization header)'] = { status: getR.status, body: getTxt.slice(0, 500) };
+
+      // Если получили upload_endpoint — попробуем залить файл туда
+      if (getR.ok && fileBytes) {
+        try {
+          const upData = JSON.parse(getTxt) as { upload_endpoint?: string };
+          if (upData.upload_endpoint) {
+            const form2 = new FormData();
+            form2.append('data', new Blob([fileBytes], { type: 'image/jpeg' }), 'test.jpg');
+            const upR = await fetch(upData.upload_endpoint, { method: 'POST', body: form2, signal: AbortSignal.timeout(20000) });
+            const upTxt = await upR.text().catch(() => '');
+            steps['upload_endpoint POST'] = { status: upR.status, body: upTxt.slice(0, 500) };
           }
-        }
-        const r = await fetch(testUrl, {
-          method,
-          headers: { Authorization: creds.botToken },
-          ...(method === 'POST' ? { body: form } : {}),
+        } catch { /* не JSON */ }
+      }
+    } catch (e) { steps['/uploads GET'] = { error: (e as Error).message }; }
+
+    // Шаг 2б: GET /uploads с access_token в query (некоторые MAX/TamTam API)
+    try {
+      const getUrl2 = `${creds.apiBase}/uploads?type=image&access_token=${encodeURIComponent(creds.botToken)}`;
+      const getR2 = await fetch(getUrl2, { signal: AbortSignal.timeout(10000) });
+      const getTxt2 = await getR2.text().catch(() => '');
+      steps['/uploads GET (access_token query)'] = { status: getR2.status, body: getTxt2.slice(0, 500) };
+    } catch (e) { steps['/uploads GET (query)'] = { error: (e as Error).message }; }
+
+    // Шаг 3: Umnico multipart — отправляем файл напрямую через Umnico send API
+    // (Umnico web-клиент отправляет фото в MAX через Umnico, а не через MAX Bot API напрямую)
+    const umnicoToken = await this.umnico.token().catch(() => null);
+    const umnicoBase = this.umnico.apiBase;
+    if (umnicoToken && fileBytes) {
+      // Попытка 1: multipart/form-data в send endpoint
+      const leadId = '65028025'; // тестовый leadId из debug
+      try {
+        const form3 = new FormData();
+        form3.append('attachment', new Blob([fileBytes], { type: 'image/jpeg' }), 'test.jpg');
+        form3.append('message', JSON.stringify({ text: 'test', attachments: [{ type: 'photo' }] }));
+        form3.append('saId', '111632');
+        const r3 = await fetch(`${umnicoBase}/v1.3/messaging/${leadId}/send`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${umnicoToken}` },
+          body: form3,
           signal: AbortSignal.timeout(15000),
         });
-        const txt = await r.text().catch(() => '');
-        steps[path] = { status: r.status, body: txt.slice(0, 500) };
-      } catch (e) {
-        steps[path] = { error: (e as Error).message };
-      }
+        const t3 = await r3.text().catch(() => '');
+        steps['umnico multipart send'] = { status: r3.status, body: t3.slice(0, 500) };
+      } catch (e) { steps['umnico multipart send'] = { error: (e as Error).message }; }
+
+      // Попытка 2: Umnico /v1.3/files/upload (если такой endpoint есть)
+      try {
+        const form4 = new FormData();
+        form4.append('file', new Blob([fileBytes], { type: 'image/jpeg' }), 'test.jpg');
+        form4.append('saId', '111632');
+        const r4 = await fetch(`${umnicoBase}/v1.3/files/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${umnicoToken}` },
+          body: form4,
+          signal: AbortSignal.timeout(15000),
+        });
+        const t4 = await r4.text().catch(() => '');
+        steps['umnico /v1.3/files/upload'] = { status: r4.status, body: t4.slice(0, 300) };
+      } catch (e) { steps['umnico /v1.3/files/upload'] = { error: (e as Error).message }; }
+    } else {
+      steps['umnico'] = { umnicoTokenSet: !!umnicoToken, fileBytesOk: !!fileBytes };
     }
+
     return steps;
   }
 
