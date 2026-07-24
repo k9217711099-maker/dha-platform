@@ -179,19 +179,30 @@ export function AdminSidebar() {
   useEffect(() => {
     if (!me) return;
     let alive = true;
+    // Гвард: не запускаем новый опрос бейджей, пока не завершился предыдущий. На активном
+    // Umnico-аккаунте SSE-события сыплются потоком → без гварда kick() наслаивал десятки
+    // параллельных запросов и исчерпывал пул соединений к БД (весь API вставал на 60с).
+    let polling = false;
     const poll = async () => {
-      const [chat, ops, inbox] = await Promise.all([
-        me.permissions.includes('staff_chat') ? adminApi.staffUnread().then((r) => r.unread).catch(() => 0) : Promise.resolve(0),
-        me.permissions.includes('ops_tasks') ? adminApi.opsBadge().then((r) => r.count).catch(() => 0) : Promise.resolve(0),
-        me.permissions.includes('guest_inbox') ? adminApi.inboxUnread().then((r) => r.count).catch(() => 0) : Promise.resolve(0),
-      ]);
-      if (alive) setBadges({ '/staff-chat': chat, '/ops/tasks': ops, '/ai/inbox': inbox });
+      if (polling) return;
+      polling = true;
+      try {
+        const [chat, ops, inbox] = await Promise.all([
+          me.permissions.includes('staff_chat') ? adminApi.staffUnread().then((r) => r.unread).catch(() => 0) : Promise.resolve(0),
+          me.permissions.includes('ops_tasks') ? adminApi.opsBadge().then((r) => r.count).catch(() => 0) : Promise.resolve(0),
+          me.permissions.includes('guest_inbox') ? adminApi.inboxUnread().then((r) => r.count).catch(() => 0) : Promise.resolve(0),
+        ]);
+        if (alive) setBadges({ '/staff-chat': chat, '/ops/tasks': ops, '/ai/inbox': inbox });
+      } finally {
+        polling = false;
+      }
     };
     void poll();
     const t = setInterval(() => void poll(), 25_000);
-    // Событие из SSE → пересчёт с лёгким дебаунсом (пачка событий = один запрос).
+    // Событие из SSE → пересчёт с дебаунсом. Дебаунс увеличен до 2с: на активном аккаунте
+    // пачка событий = один запрос, а не по запросу каждые 400мс (снимаем нагрузку с БД).
     let debounce: ReturnType<typeof setTimeout> | null = null;
-    const kick = () => { if (debounce) clearTimeout(debounce); debounce = setTimeout(() => void poll(), 400); };
+    const kick = () => { if (debounce) clearTimeout(debounce); debounce = setTimeout(() => void poll(), 2_000); };
     const sources: EventSource[] = [];
     const listen = (url: string | null) => {
       if (!url || typeof EventSource === 'undefined') return;
