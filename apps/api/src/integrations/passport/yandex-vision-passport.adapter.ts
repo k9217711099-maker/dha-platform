@@ -31,37 +31,48 @@ export class YandexVisionPassportAdapter extends PassportPort {
    * в файле — необъяснимо), поэтому чтение файла — главный надёжный путь. Пути к .env
    * пробуем несколько (cwd бывает не apps/api), включая относительный к dist/main.js.
    */
+  private lastTrace = '';
+
   private envValue(key: 'YANDEX_VISION_API_KEY' | 'YANDEX_VISION_FOLDER_ID' | 'YANDEX_VISION_OCR_URL'): string | undefined {
     const fromProc = process.env[key];
-    if (fromProc) return fromProc;
+    if (fromProc) {
+      this.lastTrace += `${key}=proc(${fromProc.length}); `;
+      return fromProc;
+    }
     const fromCfg = this.config.get(key, { infer: true });
-    if (fromCfg) return fromCfg;
+    if (fromCfg) {
+      this.lastTrace += `${key}=cfg(${fromCfg.length}); `;
+      return fromCfg;
+    }
     const script = process.argv[1] || '.';
     const candidates = [
-      join(process.cwd(), '.env'), // cwd = apps/api
-      join(process.cwd(), 'apps/api/.env'), // cwd = корень репо
-      resolve(dirname(script), '..', '.env'), // dist/main.js → apps/api/.env (не зависит от cwd)
-      '/var/www/dha/apps/api/.env', // прод-путь как последний фолбэк
+      join(process.cwd(), '.env'),
+      join(process.cwd(), 'apps/api/.env'),
+      resolve(dirname(script), '..', '.env'),
+      '/var/www/dha/apps/api/.env',
     ];
+    this.lastTrace += `${key}: cwd=${process.cwd()} argv1=${script} `;
     for (const p of candidates) {
       try {
-        const val = readFileSync(p, 'utf8').match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'm'))?.[1];
+        const content = readFileSync(p, 'utf8');
+        const m = content.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'm'));
+        this.lastTrace += `[${p} read=${content.length} m=${m?.[1]?.length ?? 'no'}] `;
+        const val = m?.[1];
         if (val) return val.replace(/^["']|["']$/g, '');
-      } catch {
-        /* следующий путь */
+      } catch (e) {
+        this.lastTrace += `[${p} ERR=${(e as Error).message.slice(0, 30)}] `;
       }
     }
     return undefined;
   }
 
   async recognize(scan: Buffer, contentType: string): Promise<RecognizeResult> {
+    this.lastTrace = '';
     const apiKey = this.envValue('YANDEX_VISION_API_KEY');
     const folderId = this.envValue('YANDEX_VISION_FOLDER_ID');
     if (!apiKey || !folderId) {
-      // Диагностика прямо в note (единственный надёжный канал — ответ виден в DevTools/curl).
-      const pk = process.env.YANDEX_VISION_API_KEY;
-      const dbg = `proc=${pk === undefined ? 'UNDEF' : pk.length} cfg=${(this.config.get('YANDEX_VISION_API_KEY', { infer: true }) ?? 'UNDEF').length} folder=${folderId ? 'ok' : 'НЕТ'}`;
-      return { fields: {}, confidence: 0, source: 'page', note: `Yandex Vision не настроен — заполните вручную. [dbg ${dbg}]` };
+      // ВРЕМЕННАЯ диагностика: полная трасса чтения в note (единственный надёжный канал).
+      return { fields: {}, confidence: 0, source: 'page', note: `Yandex не настроен. [TRACE ${this.lastTrace}]`.slice(0, 950) };
     }
 
     const url =
