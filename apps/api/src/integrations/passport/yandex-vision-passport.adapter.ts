@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 import { PassportPort, type PassportFields, type RecognizeResult, type VerifyInput, type VerifyResult } from './passport.port.js';
 import type { Env } from '../../config/env.schema.js';
@@ -25,42 +24,33 @@ export class YandexVisionPassportAdapter extends PassportPort {
     super();
   }
 
-  /**
-   * Значение переменной: process.env → ConfigService → ПРЯМОЕ чтение apps/api/.env.
-   * На этом проде и process.env, и config.get не отдавали ключ (хотя он есть в окружении и
-   * в файле — необъяснимо), поэтому чтение файла — главный надёжный путь. Пути к .env
-   * пробуем несколько (cwd бывает не apps/api), включая относительный к dist/main.js.
-   */
   private lastTrace = '';
 
+  /**
+   * Значение переменной: process.env → ConfigService → чтение .env СВЕЖИМ ДОЧЕРНИМ
+   * ПРОЦЕССОМ (grep). На этом сервере in-process readFileSync отдавал устаревшее
+   * содержимое .env (аномалия кэша страниц/overlayfs), а внешний grep/node читает диск
+   * верно — поэтому берём значение через execFileSync('grep').
+   */
   private envValue(key: 'YANDEX_VISION_API_KEY' | 'YANDEX_VISION_FOLDER_ID' | 'YANDEX_VISION_OCR_URL'): string | undefined {
     const fromProc = process.env[key];
     if (fromProc) {
-      this.lastTrace += `${key}=proc(${fromProc.length}); `;
+      this.lastTrace += `${key}=proc; `;
       return fromProc;
     }
     const fromCfg = this.config.get(key, { infer: true });
     if (fromCfg) {
-      this.lastTrace += `${key}=cfg(${fromCfg.length}); `;
+      this.lastTrace += `${key}=cfg; `;
       return fromCfg;
     }
-    const script = process.argv[1] || '.';
-    const candidates = [
-      join(process.cwd(), '.env'),
-      join(process.cwd(), 'apps/api/.env'),
-      resolve(dirname(script), '..', '.env'),
-      '/var/www/dha/apps/api/.env',
-    ];
-    this.lastTrace += `${key}: cwd=${process.cwd()} argv1=${script} `;
-    for (const p of candidates) {
+    for (const p of ['/var/www/dha/apps/api/.env', `${process.cwd()}/.env`]) {
       try {
-        const content = readFileSync(p, 'utf8');
-        const m = content.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, 'm'));
-        this.lastTrace += `[${p} read=${content.length} m=${m?.[1]?.length ?? 'no'}] `;
-        const val = m?.[1];
+        const line = execFileSync('grep', ['-m1', '-hE', `^${key}=`, p], { encoding: 'utf8', timeout: 3000 });
+        const val = line.replace(new RegExp(`^${key}=`), '').replace(/[\r\n]+/g, '').trim();
+        this.lastTrace += `[${p} grep=${val.length}] `;
         if (val) return val.replace(/^["']|["']$/g, '');
       } catch (e) {
-        this.lastTrace += `[${p} ERR=${(e as Error).message.slice(0, 30)}] `;
+        this.lastTrace += `[${p} ERR=${(e as Error).message.slice(0, 25)}] `;
       }
     }
     return undefined;

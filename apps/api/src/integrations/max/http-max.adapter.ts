@@ -108,7 +108,7 @@ export class HttpMaxAdapter extends MaxPort {
     }
 
     const type = kind === 'IMAGE' ? 'image' : kind === 'VIDEO' ? 'video' : 'file';
-    const ext = fileUrl.split('?')[0].split('.').pop() ?? 'bin';
+    const ext = fileUrl.split('?')[0]?.split('.').pop() ?? 'bin';
     const filename = `upload.${ext}`;
 
     const form = new FormData();
