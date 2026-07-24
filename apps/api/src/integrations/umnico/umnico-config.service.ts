@@ -240,13 +240,22 @@ export class UmnicoConfigService {
       // Держим последние 500 клиентов, чтобы Setting не рос бесконечно.
       const entries = Object.entries(map).sort((a, b) => b[1].at - a[1].at).slice(0, 500);
       await this.settings.set('ai.umnico.customers', JSON.stringify(Object.fromEntries(entries)));
+      this.customerMapCache = null; // сбросить память-кэш — новые телефон/фото/ник подхватятся сразу
     } catch {
       /* не критично */
     }
   }
+  // Память-кэш карты клиентов (TTL 30с): getCustomer/getCustomers зовутся на каждый тред/список,
+  // а раньше каждый раз читали Setting и парсили большой JSON (до 500 записей). Сброс — в saveCustomer.
+  private customerMapCache: { at: number; map: Record<string, UmnicoCustomer> } | null = null;
   private async customerMap(): Promise<Record<string, UmnicoCustomer>> {
+    const now = Date.now();
+    if (this.customerMapCache && now - this.customerMapCache.at < 30_000) return this.customerMapCache.map;
     const raw = await this.settings.get('ai.umnico.customers');
-    try { return raw ? (JSON.parse(raw) as Record<string, UmnicoCustomer>) : {}; } catch { return {}; }
+    let map: Record<string, UmnicoCustomer> = {};
+    try { map = raw ? (JSON.parse(raw) as Record<string, UmnicoCustomer>) : {}; } catch { map = {}; }
+    this.customerMapCache = { at: now, map };
+    return map;
   }
   async getCustomer(id: string | null | undefined): Promise<UmnicoCustomer | null> {
     if (!id) return null;

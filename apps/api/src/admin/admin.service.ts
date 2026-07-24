@@ -170,17 +170,15 @@ export class AdminService {
    * с содержательными сообщениями. Показывается в карточке гостя.
    */
   async guestConversations(guestId: string) {
-    // История переписки гостя (#4/#7): берём диалоги, привязанные к гостю (guestId), И диалоги,
-    // где телефон канала совпал с телефоном гостя, но привязка ещё не проставилась (входящие из
-    // мессенджера часто без guestId). Иначе в карточке видно только исходящие «написать первым».
-    const guest = await this.prisma.guest.findUnique({ where: { id: guestId }, select: { phone: true } });
-    const tail = guest?.phone?.replace(/\D/g, '').slice(-10);
-    const where =
-      tail && tail.length === 10
-        ? { OR: [{ guestId }, { channelMeta: { path: ['phone'], string_contains: tail } }] }
-        : { guestId };
+    // История переписки гостя (#4/#7): диалоги, привязанные к гостю (guestId — индексирован).
+    // ВАЖНО (производительность): раньше здесь был OR с `channelMeta.phone string_contains` —
+    // это LIKE '%…%' по JSON-полю, который НЕ использует индекс → полный скан ai_conversations
+    // на КАЖДЫЙ опрос карточки (каждые 15с). На активной базе это держало соединения пула и
+    // вешало API. Входящие из мессенджеров теперь привязываются к гостю по телефону ещё при
+    // получении (umnico-agent → setGuestId), поэтому фильтра по guestId достаточно. Старые
+    // непривязанные диалоги при необходимости добираются разовым бэкфиллом guestId.
     const convos = await this.prisma.aiConversation.findMany({
-      where,
+      where: { guestId },
       orderBy: { updatedAt: 'desc' },
       take: 50,
       select: {

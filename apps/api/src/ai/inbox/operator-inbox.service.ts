@@ -208,12 +208,13 @@ export class OperatorInboxService {
     });
   }
 
-  /** Число непрочитанных эскалированных диалогов — для бейджа в сайдборе (#1). */
+  /**
+   * Число непрочитанных эскалированных диалогов — для бейджа в сайдбаре (#1). Лёгкий COUNT
+   * в БД (раньше тянул 200 диалогов с сообщениями и фильтровал в JS — дорого для частого
+   * опроса бейджа, вносило вклад в исчерпание пула).
+   */
   async unreadCount(tenantId: string): Promise<{ count: number }> {
-    const rows = await this.conversations.listGuestConversations(tenantId, {
-      status: AiConversationStatus.ESCALATED,
-    });
-    return { count: rows.filter((r) => r.unread).length };
+    return { count: await this.conversations.unreadEscalatedCount(tenantId) };
   }
 
   async thread(id: string) {

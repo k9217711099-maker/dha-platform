@@ -217,6 +217,31 @@ export class ConversationService {
     return { active, indexes, sizes };
   }
 
+  /**
+   * Лёгкий счётчик непрочитанных эскалаций для бейджа (#1): один COUNT с LATERAL «последнее
+   * сообщение» вместо выборки 200 диалогов с сообщениями и фильтрации в JS. По индексу
+   * ai_messages(conversationId, createdAt) — быстро даже при частом опросе.
+   */
+  async unreadEscalatedCount(tenantId: string): Promise<number> {
+    const rows = await this.prisma.$queryRaw<Array<{ c: number }>>`
+      SELECT count(*)::int AS c
+      FROM ai_conversations conv
+      JOIN LATERAL (
+        SELECT m.role, m."createdAt"
+        FROM ai_messages m
+        WHERE m."conversationId" = conv.id
+          AND m.role IN ('USER','ASSISTANT','STAFF')
+        ORDER BY m."createdAt" DESC
+        LIMIT 1
+      ) last ON true
+      WHERE conv."tenantId" = ${tenantId}
+        AND conv."actorKind" = 'GUEST'
+        AND conv.status = 'ESCALATED'
+        AND last.role = 'USER'
+        AND (conv."operatorReadAt" IS NULL OR last."createdAt" > conv."operatorReadAt")`;
+    return rows[0]?.c ?? 0;
+  }
+
   /** История в формате LLM (для передачи модели). */
   async history(conversationId: string): Promise<LlmMessage[]> {
     const rows = await this.prisma.aiMessage.findMany({

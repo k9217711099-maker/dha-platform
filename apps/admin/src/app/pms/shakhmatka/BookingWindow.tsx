@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { adminApi, fileUrl, type BookingAuditEntry, type BookingKeyDoor, type BookingKeyView, type BookingTag, type Extra, type GuestConversation, type LockRecord, type MarketingKind, type MarketingOption, type OpsTask, type PmsBooking, type PmsRatePlan, type PmsRoom, type RoomFundCategory, type UmnicoReachChannel } from '../../../lib/api';
 import { STATUS as OPS_STATUS } from '../../ops/shared';
 import { CheckinFunnelPanel } from './CheckinFunnelPanel';
@@ -407,8 +407,17 @@ function GuestSection({ b, onSaved }: { b: PmsBooking; onSaved: () => void }) {
     if (!gid) return; setBusy(true);
     try { await adminApi.updateGuest(gid, { firstName, lastName, phone: normalizePhone(phone), email, guestNotes: notes }); setSavedNotes(notes); setEdit(false); onSaved(); } catch { /* ignore */ } finally { setBusy(false); }
   };
+  const histBusy = useRef(false);
   const reloadHistory = () => {
-    if (gid) void adminApi.guestConversations(gid).then(setConvos).catch(() => setConvos([]));
+    if (!gid || histBusy.current) return; // гвард: не наслаивать опросы истории
+    histBusy.current = true;
+    void adminApi
+      .guestConversations(gid)
+      .then(setConvos)
+      .catch(() => setConvos([]))
+      .finally(() => {
+        histBusy.current = false;
+      });
   };
   const toggleHistory = () => {
     setShowHistory((v) => !v);
