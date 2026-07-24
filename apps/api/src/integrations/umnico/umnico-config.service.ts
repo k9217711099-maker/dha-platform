@@ -245,12 +245,19 @@ export class UmnicoConfigService {
     const type = media.kind === 'IMAGE' ? 'photo' : media.kind === 'VIDEO' ? 'video' : 'file';
     const senderId = await this.managerUserId();
 
+    // Умнико читает поле `message` как JSON-тело и валидирует его схемой:
+    // "body should NOT have fewer than 3 properties" = нужны source, userId, saId внутри message.
+    const msgBody: Record<string, unknown> = {
+      text: media.caption ?? '',
+      attachments: [{ type }],
+    };
+    if (target.source) msgBody.source = target.source;
+    if (senderId != null) msgBody.userId = senderId;
+    if (target.saId) msgBody.saId = /^\d+$/.test(target.saId) ? Number(target.saId) : target.saId;
+
     const form = new FormData();
     form.append('attachment', new Blob([bytes], { type: contentType }), `upload.${ext}`);
-    form.append('message', JSON.stringify({ text: media.caption ?? '', attachments: [{ type }] }));
-    if (target.source) form.append('source', target.source);
-    if (senderId != null) form.append('userId', String(senderId));
-    if (target.saId) form.append('saId', target.saId);
+    form.append('message', JSON.stringify(msgBody));
 
     const res = await fetch(
       `${this.base}/v1.3/messaging/${encodeURIComponent(target.leadId)}/send`,
