@@ -206,16 +206,30 @@ export class UmnicoConfigService {
       /* не критично */
     }
   }
-  async readDebug(): Promise<{ send: unknown[]; media: unknown[]; recent: unknown[] }> {
+  async captureUpload(entry: {
+    at: string; fileUrl: string; kind: string; saId: string | null | undefined; chType: string | undefined;
+    result: string | null; error?: string;
+  }): Promise<void> {
+    try {
+      const raw = await this.settings.get('ai.umnico.debug.upload');
+      let arr: unknown[] = [];
+      try { arr = raw ? (JSON.parse(raw) as unknown[]) : []; } catch { arr = []; }
+      arr.unshift(entry);
+      await this.settings.set('ai.umnico.debug.upload', JSON.stringify(arr.slice(0, 5)));
+    } catch { /* не критично */ }
+  }
+
+  async readDebug(): Promise<{ send: unknown[]; media: unknown[]; recent: unknown[]; upload: unknown[] }> {
     const parse = (r: string | null): unknown[] => {
       try { return r ? (JSON.parse(r) as unknown[]) : []; } catch { return []; }
     };
-    const [sraw, mraw, raw] = await Promise.all([
+    const [sraw, mraw, raw, uraw] = await Promise.all([
       this.settings.get('ai.umnico.debug.send'),
       this.settings.get('ai.umnico.debug.media'),
       this.settings.get('ai.umnico.debug'),
+      this.settings.get('ai.umnico.debug.upload'),
     ]);
-    return { send: parse(sraw), media: parse(mraw), recent: parse(raw) };
+    return { send: parse(sraw), media: parse(mraw), recent: parse(raw), upload: parse(uraw) };
   }
 
   /**

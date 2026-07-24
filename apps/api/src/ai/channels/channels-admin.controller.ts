@@ -1,10 +1,11 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AdminAuthGuard } from '../../admin/admin-auth.guard.js';
 import { RequirePermission } from '../../admin/require-permission.decorator.js';
 import { CurrentAdminId } from '../../admin/current-admin.decorator.js';
 import { TelegramConfigService } from '../../integrations/telegram/telegram-config.service.js';
 import { MaxConfigService } from '../../integrations/max/max-config.service.js';
+import { MaxPort } from '../../integrations/max/max.port.js';
 import { WhatsAppService, type WaState } from '../../integrations/whatsapp/whatsapp.service.js';
 import {
   TelegramUserbotService,
@@ -82,6 +83,7 @@ export class ChannelsAdminController {
   constructor(
     private readonly telegram: TelegramConfigService,
     private readonly max: MaxConfigService,
+    private readonly maxPort: MaxPort,
     private readonly whatsapp: WhatsAppService,
     private readonly userbot: TelegramUserbotService,
     private readonly emailCfg: EmailConfigService,
@@ -509,6 +511,60 @@ export class ChannelsAdminController {
   @ApiOperation({ summary: 'Последние сырые вебхуки Umnico (диагностика телефона/канала/фото)' })
   umnicoDebug() {
     return this.umnico.readDebug();
+  }
+
+  /**
+   * Тест загрузки файла на MAX CDN через MAX Bot API Upload.
+   * Передай ?url=https://api.nomero.online/uploads/<uuid>.jpg
+   * Вернёт сырой ответ MAX API, чтобы понять правильность endpoint/формата.
+   */
+  @Get('max/test-upload')
+  @RequirePermission('guests')
+  @ApiOperation({ summary: 'Тест MAX Upload API (диагностика)' })
+  async maxTestUpload(@Query('url') fileUrl?: string): Promise<unknown> {
+    const creds = await this.max.resolve();
+    const steps: Record<string, unknown> = { apiBase: creds.apiBase, tokenSet: !!creds.botToken };
+    if (!fileUrl) return { ...steps, error: 'Передайте ?url=https://... с URL файла' };
+
+    // Шаг 1: попробуем uploadMedia через наш адаптер
+    let adapterResult: string | null = null;
+    let adapterError: string | null = null;
+    try {
+      adapterResult = await this.maxPort.uploadMedia(fileUrl, 'IMAGE');
+    } catch (e) {
+      adapterError = (e as Error).message;
+    }
+    steps['adapterResult'] = adapterResult;
+    steps['adapterError'] = adapterError;
+
+    // Шаг 2: попробуем оба варианта upload endpoint напрямую (для диагностики)
+    for (const path of ['/uploads?type=image', '/upload?type=image']) {
+      const testUrl = `${creds.apiBase}${path}`;
+      try {
+        // GET для /uploads (TamTam-стиль — получить endpoint), POST для /upload
+        const method = path.startsWith('/uploads') ? 'GET' : 'POST';
+        const form = new FormData();
+        if (method === 'POST') {
+          // Скачаем файл
+          const fRes = await fetch(fileUrl, { signal: AbortSignal.timeout(10000) }).catch(() => null);
+          if (fRes?.ok) {
+            const buf = await fRes.arrayBuffer();
+            form.append('data', new Blob([buf], { type: 'image/jpeg' }), 'test.jpg');
+          }
+        }
+        const r = await fetch(testUrl, {
+          method,
+          headers: { Authorization: creds.botToken },
+          ...(method === 'POST' ? { body: form } : {}),
+          signal: AbortSignal.timeout(15000),
+        });
+        const txt = await r.text().catch(() => '');
+        steps[path] = { status: r.status, body: txt.slice(0, 500) };
+      } catch (e) {
+        steps[path] = { error: (e as Error).message };
+      }
+    }
+    return steps;
   }
 
   @Post('umnico/reach-out')

@@ -119,17 +119,34 @@ export class OperatorInboxService {
           // MAX через Umnico: MAX Bot API отклоняет (403) внешние URL (api.nomero.online).
           // Сначала загружаем на MAX CDN, получаем i.oneme.ru URL, потом шлём через Umnico.
           let sendMedia = media;
-          if (meta.saId) {
-            const chType = await this.umnico.channelTypeBySaId(meta.saId).catch(() => undefined);
-            if (chType === 'max') {
-              const cdnUrl = await this.max.uploadMedia(media.url, media.kind).catch(() => null);
-              if (cdnUrl) {
-                sendMedia = { ...media, url: cdnUrl };
-                this.logger.log(`MAX via Umnico: файл загружен на MAX CDN → ${cdnUrl.slice(0, 60)}`);
-              } else {
-                this.logger.warn('MAX via Umnico: uploadMedia вернул null, используем оригинальный URL');
-              }
+          const chType = meta.saId
+            ? await this.umnico.channelTypeBySaId(meta.saId).catch(() => undefined)
+            : undefined;
+          if (chType === 'max') {
+            let cdnUrl: string | null = null;
+            let uploadError: string | undefined;
+            try {
+              cdnUrl = await this.max.uploadMedia(media.url, media.kind);
+            } catch (e) {
+              uploadError = (e as Error).message;
             }
+            void this.umnico.captureUpload({
+              at: new Date().toISOString(),
+              fileUrl: media.url,
+              kind: media.kind,
+              saId: meta.saId ?? null,
+              chType,
+              result: cdnUrl,
+              error: uploadError,
+            });
+            if (cdnUrl) {
+              sendMedia = { ...media, url: cdnUrl };
+              this.logger.log(`MAX via Umnico: загружено на MAX CDN → ${cdnUrl.slice(0, 60)}`);
+            } else {
+              this.logger.warn(`MAX via Umnico: uploadMedia вернул null (${uploadError ?? 'без ошибки'}), используем оригинальный URL`);
+            }
+          } else {
+            this.logger.debug(`MAX upload skip: saId=${meta.saId ?? 'нет'} chType=${chType ?? 'undefined'}`);
           }
           await this.umnico.sendAttachment(
             { leadId: to, source: meta.source ?? undefined, userId: meta.userId ?? undefined, saId: meta.saId ?? undefined },
