@@ -123,7 +123,7 @@ export class OperatorInboxService {
           break;
         }
         case AiChannel.MAX:
-          if (to) await this.max.sendMessage(to, asText); // нативное медиа MAX — позже
+          if (to) await this.max.sendMedia(to, media);
           break;
         case AiChannel.WEB:
         case AiChannel.APP:

@@ -1,5 +1,5 @@
 import { Global, Injectable, Module } from '@nestjs/common';
-import { MaxPort } from './max.port.js';
+import { MaxPort, type MaxOutgoingMedia } from './max.port.js';
 import { MockMaxAdapter } from './mock-max.adapter.js';
 import { HttpMaxAdapter } from './http-max.adapter.js';
 import { MaxConfigService } from './max-config.service.js';
@@ -22,6 +22,11 @@ export class MaxDispatchAdapter extends MaxPort {
   async sendMessage(chatId: number | string, text: string): Promise<void> {
     const useHttp = await this.cfg.hasToken();
     return (useHttp ? this.http : this.mock).sendMessage(chatId, text);
+  }
+
+  async sendMedia(chatId: number | string, media: MaxOutgoingMedia): Promise<void> {
+    const useHttp = await this.cfg.hasToken();
+    return (useHttp ? this.http : this.mock).sendMedia(chatId, media);
   }
 }
 
