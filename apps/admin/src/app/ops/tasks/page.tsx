@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button, Card } from '@dha/ui';
 import {
   adminApi, opsStreamUrl,
@@ -87,6 +88,7 @@ function TagFilter({ tags, selected, onToggle, onClear }: { tags: OpsTag[]; sele
 export default function OpsTasksPage() {
   const ready = useRequireAdmin();
   const me = useAdminMe();
+  const router = useRouter();
   const searchRef = useRef<HTMLInputElement>(null);
 
   const param = (key: string) => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get(key) ?? '');
@@ -341,6 +343,8 @@ export default function OpsTasksPage() {
       <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-light text-ink">Операции · Задачи</h1>
         <div className="flex gap-2">
+          {/* Личный экран сотрудника: своя смена, свободные задачи, «Слежу·срочное» (workflow-ТЗ §7) */}
+          <Button variant="secondary" onClick={() => router.push('/ops/my')}>👤 Задачи на смену</Button>
           <Button variant="secondary" onClick={() => void adminApi.opsExportTasks(filters)}>Excel</Button>
           <Button variant="secondary" onClick={() => setShowPlanner(true)}>🗓 Планировщик</Button>
           <Button variant="secondary" onClick={() => setShowTemplates(true)}>📋 Шаблоны</Button>

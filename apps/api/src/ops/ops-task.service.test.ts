@@ -128,3 +128,30 @@ describe('OpsTaskService.isChecklistComplete', () => {
     expect(svc.isChecklistComplete(items, [{ itemId: 'a', photoUrl: null, answer: '' }, { itemId: 'b', photoUrl: '/uploads/x.jpg', answer: 'YES' }])).toBe(false);
   });
 });
+
+describe('OpsTaskService.comment — @упоминания (workflow §8.1)', () => {
+  const mockPrisma = (over: Record<string, unknown> = {}) => ({
+    opsTask: { findFirst: vi.fn().mockResolvedValue({ id: 't1', title: 'T', createdBy: 'author', status: 'NEW' }), update: vi.fn().mockResolvedValue({}) },
+    opsTaskComment: { create: vi.fn().mockResolvedValue({ id: 'c1' }) },
+    opsTaskAssignee: { findMany: vi.fn().mockResolvedValue([]) },
+    opsTaskWatcher: { upsert: vi.fn().mockResolvedValue({}), findMany: vi.fn().mockResolvedValue([]) },
+    adminUser: { findMany: vi.fn().mockResolvedValue([{ id: 'u2' }]) },
+    ...over,
+  }) as unknown as PrismaService;
+
+  it('упомянутый становится наблюдателем и получает mention-событие', async () => {
+    const emit = vi.fn();
+    const prisma = mockPrisma();
+    const svc = new OpsTaskService(prisma, audit(), { emit } as unknown as OpsEvents);
+    await svc.comment('tn', 't1', 'смотри @Иван', viewer(), ['u2']);
+    expect((prisma.opsTaskWatcher.upsert as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(expect.objectContaining({ create: { taskId: 't1', userId: 'u2' } }));
+    expect(emit).toHaveBeenCalledWith(expect.objectContaining({ kind: 'mention', userIds: ['u2'], taskId: 't1' }));
+  });
+
+  it('упоминание самого себя игнорируется (mention не шлётся)', async () => {
+    const emit = vi.fn();
+    const svc = new OpsTaskService(mockPrisma({ adminUser: { findMany: vi.fn().mockResolvedValue([]) } }), audit(), { emit } as unknown as OpsEvents);
+    await svc.comment('tn', 't1', 'сам себе', viewer(), ['u1']); // u1 = viewer.id
+    expect(emit).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'mention' }));
+  });
+});

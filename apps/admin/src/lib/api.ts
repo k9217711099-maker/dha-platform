@@ -2400,7 +2400,7 @@ export const adminApi = {
   opsSetTasksMode: (mode: OpsTasksMode) => request<{ mode: OpsTasksMode }>('/v1/ops/tasks-mode', { method: 'PUT', body: { mode } }),
   opsTasksByRoom: (roomId: string) => request<OpsTask[]>(`/v1/ops/tasks/by-room/${roomId}`),
   opsInspect: (id: string) => request<OpsTaskFull>(`/v1/ops/tasks/${id}/inspect`, { method: 'POST' }),
-  opsComment: (id: string, body: string) => request(`/v1/ops/tasks/${id}/comments`, { method: 'POST', body: { body } }),
+  opsComment: (id: string, body: string, mentionIds?: string[]) => request(`/v1/ops/tasks/${id}/comments`, { method: 'POST', body: { body, mentionIds } }),
   opsAttach: (id: string, file: File) => upload(`/v1/ops/tasks/${id}/attachments`, file),
   opsAnswer: (taskId: string, clId: string, itemId: string, answer?: string, comment?: string) =>
     request<OpsChecklistAnswer>(`/v1/ops/tasks/${taskId}/checklists/${clId}/answers/${itemId}`, { method: 'POST', body: { answer, comment } }),

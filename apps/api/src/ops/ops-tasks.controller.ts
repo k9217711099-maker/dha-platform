@@ -155,7 +155,7 @@ export class OpsTasksController {
 
   @Post(':id/comments')
   async comment(@Param('id') id: string, @Body() dto: CommentDto, @Req() req: AdminRequest) {
-    return this.tasks.comment(await this.tenant.getDefaultTenantId(), id, dto.body, viewer(req));
+    return this.tasks.comment(await this.tenant.getDefaultTenantId(), id, dto.body, viewer(req), dto.mentionIds);
   }
 
   @Post(':id/attachments')

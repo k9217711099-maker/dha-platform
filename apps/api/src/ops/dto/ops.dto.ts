@@ -71,6 +71,9 @@ export class DelegateDto {
 
 export class CommentDto {
   @ApiProperty() @IsString() body!: string;
+  // @упоминания (workflow-ТЗ §8.1): «вызвать» — пуш адресату + подписка наблюдателем.
+  @ApiPropertyOptional({ type: [String], description: 'Кого упомянули (AdminUser.id) — получат пуш и станут наблюдателями' })
+  @IsOptional() @IsArray() @IsString({ each: true }) mentionIds?: string[];
 }
 
 export class AnswerChecklistDto {

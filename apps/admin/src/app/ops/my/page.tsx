@@ -19,6 +19,8 @@ export default function MyTasksPage() {
   const [staff, setStaff] = useState<OpsStaff[]>([]);
   const [mode, setMode] = useState<OpsTasksMode>('simple');
   const [showPaused, setShowPaused] = useState(false);
+  // «Слежу · срочное» (workflow-ТЗ §7.2): гостевые задачи, что я поставил и они ещё в работе у другого.
+  const [watching, setWatching] = useState<OpsTask[]>([]);
   // ?task=<id> — открыть карточку сразу (переход из push-уведомления).
   const [openTask, setOpenTask] = useState<string | null>(() => (typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('task')));
   const [error, setError] = useState('');
@@ -33,6 +35,10 @@ export default function MyTasksPage() {
     // Свободные задачи моего отдела — можно «взять» (§7-E).
     void adminApi.opsClaimable().then((all) => setClaimable(kind ? all.filter((t) => t.kind === kind) : all)).catch(() => undefined);
     void adminApi.opsStaff().then(setStaff).catch(() => undefined);
+    // «Слежу · срочное»: гостевые задачи, что я поставил, ещё активны и делает их не я.
+    void adminApi.opsTasks({ createdBy: me.id }).then((all) => setWatching(
+      all.filter((t) => t.guestRequest && !['DONE', 'CANCELLED', 'PLAN'].includes(t.status) && !t.assignees.some((a) => a.userId === me.id)),
+    )).catch(() => undefined);
   };
   useEffect(() => { if (ready && me) void load(); }, [ready, me, kind, showDone]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void adminApi.opsTasksMode().then((r) => setMode(r.mode)).catch(() => undefined); }, []);
@@ -47,13 +53,15 @@ export default function MyTasksPage() {
   }, [ready, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = (fn: () => Promise<unknown>) => { setError(''); void fn().then(load).catch((e) => setError(e instanceof Error ? e.message : 'Ошибка')); };
+  // «Подтолкнуть»: комментарий с @упоминанием исполнителей — им прилетит пуш, что гость ждёт.
+  const nudge = (t: OpsTask) => run(() => adminApi.opsComment(t.id, 'Гость ждёт — ускорьте, пожалуйста 🙏', t.assignees.map((a) => a.userId)));
 
   if (!ready || !me) return <main className="px-4 py-12 text-dark-gray">Загрузка…</main>;
 
   return (
     <main className="mx-auto max-w-xl px-4 py-5">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-light text-ink">Мои задачи</h1>
+        <h1 className="text-2xl font-light text-ink">Задачи на смену</h1>
         <div className="flex items-center gap-1.5">
           {/* Push-уведомления (Web Push): приходят и при закрытой вкладке. */}
           <PushToggle />
@@ -75,6 +83,30 @@ export default function MyTasksPage() {
         <label className="flex items-center gap-1.5 text-xs text-dark-gray"><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />архив</label>
       </div>
       {error ? <p className="mb-2 text-sm text-rose-600">{error}</p> : null}
+
+      {/* «Слежу · срочное» (workflow-ТЗ §7.2): гостевые задачи, что я поставил, ещё в работе у другого */}
+      {mode === 'advanced' && watching.length > 0 ? (
+        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
+          <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-rose-800">👁 Слежу · срочное <span className="rounded-full bg-rose-200 px-1.5 text-xs text-rose-800">{watching.length}</span></p>
+          <div className="space-y-1.5">
+            {watching.map((t) => {
+              const who = t.assignees.length ? t.assignees.map((a) => staff.find((s) => s.id === a.userId)?.name ?? '—').join(', ') : (t.group ? t.group.name : 'без исполнителя');
+              return (
+                <div key={t.id} className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 shadow-sm">
+                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setOpenTask(t.id)}>
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                      <span>🛎️</span>{t.room ? <span>№{t.room.number}</span> : null}
+                      <span className="truncate">{t.title}</span>
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-dark-gray">{STATUS[t.status].label} · {who}{t.dueAt ? ` · срок ${fmtDT(t.dueAt)}` : ''}</p>
+                  </button>
+                  <button type="button" onClick={() => nudge(t)} title="Отправить исполнителю пуш: гость ждёт" className="shrink-0 rounded-full bg-rose-500 px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90">Подтолкнуть</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {/* Свободные задачи моего отдела — самозабор (§7-E) */}
       {claimable.length > 0 ? (

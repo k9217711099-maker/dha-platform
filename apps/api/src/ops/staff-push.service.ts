@@ -87,6 +87,7 @@ export class StaffPushService implements OnModuleInit {
       case 'escalation': return { title: '⚠️ Требует внимания руководителя', body: t, urgent: true };
       case 'deadline': return { title: '⏳ Приближается срок задачи', body: t, urgent: true };
       case 'task_comment': return { title: 'Комментарий к задаче', body: t, urgent: false };
+      case 'mention': return { title: '💬 Вас упомянули в задаче', body: t, urgent: false };
       case 'task_status': {
         const to = String(e.payload?.to ?? '');
         // Пушим только значимые для адресатов переходы, чтобы не спамить.

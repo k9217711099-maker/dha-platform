@@ -562,12 +562,27 @@ export class OpsTaskService {
     return this.get(tenantId, id);
   }
 
-  async comment(tenantId: string, id: string, body: string, viewer: OpsViewer) {
+  async comment(tenantId: string, id: string, body: string, viewer: OpsViewer, mentionIds?: string[]) {
     const task = await this.getRaw(tenantId, id);
     const created = await this.prisma.opsTaskComment.create({ data: { taskId: id, authorId: viewer.id, body } });
     await this.prisma.opsTask.update({ where: { id }, data: { lastActivityAt: new Date() } });
+
+    // @упоминания (workflow-ТЗ §8.1): «вызвать» конкретного человека — он становится наблюдателем
+    // (чтобы дальше следить за задачей) и получает отдельный пуш, даже если не участник.
+    const mentioned = [...new Set((mentionIds ?? []).filter((u) => u && u !== viewer.id))];
+    if (mentioned.length) {
+      const valid = await this.prisma.adminUser.findMany({ where: { id: { in: mentioned }, tenantId }, select: { id: true } });
+      const ids = valid.map((u) => u.id);
+      for (const userId of ids) {
+        await this.prisma.opsTaskWatcher.upsert({ where: { taskId_userId: { taskId: id, userId } }, create: { taskId: id, userId }, update: {} });
+      }
+      if (ids.length) this.events.emit({ kind: 'mention', taskId: id, userIds: ids, payload: { title: task.title } });
+    }
+
+    // Обычные участники (кроме автора комментария и уже упомянутых) — тихое уведомление о комментарии.
     const notifyIds = await this.participantIds(id, task.createdBy);
-    this.events.emit({ kind: 'task_comment', taskId: id, userIds: notifyIds.filter((u) => u !== viewer.id), payload: { title: task.title } });
+    const commentIds = notifyIds.filter((u) => u !== viewer.id && !mentioned.includes(u));
+    if (commentIds.length) this.events.emit({ kind: 'task_comment', taskId: id, userIds: commentIds, payload: { title: task.title } });
     return created;
   }
 

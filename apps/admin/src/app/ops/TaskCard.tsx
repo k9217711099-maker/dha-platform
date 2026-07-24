@@ -27,6 +27,10 @@ export function TaskCard({ taskId, staff, onClose, onChanged }: {
   const me = useAdminMe();
   const [task, setTask] = useState<OpsTaskFull | null>(null);
   const [comment, setComment] = useState('');
+  // @упоминания (workflow-ТЗ §8.1): выбранные для «вызова» + выпадающий пикер.
+  const [mentions, setMentions] = useState<{ id: string; name: string }[]>([]);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
   const [error, setError] = useState('');
   const [cancelNote, setCancelNote] = useState<string | null>(null);
   // Диалог откладывания (workflow-ТЗ §2.1): причина блокера + необязательная заметка + ожидаемая дата.
@@ -60,6 +64,20 @@ export function TaskCard({ taskId, staff, onClose, onChanged }: {
   const run = (fn: () => Promise<unknown>) => {
     setError('');
     void fn().then(() => { void load(); onChanged(); }).catch((e) => setError(e instanceof Error ? e.message : 'Ошибка'));
+  };
+
+  // Отправка комментария с @упоминаниями: упомянутые получат пуш и станут наблюдателями.
+  const sendComment = () => {
+    if (!comment.trim()) return;
+    const ids = mentions.map((m) => m.id);
+    run(() => adminApi.opsComment(taskId, comment.trim(), ids.length ? ids : undefined));
+    setComment(''); setMentions([]); setMentionOpen(false); setMentionQuery('');
+  };
+  // Добавить упоминание: вставляет @Имя в текст и запоминает id (для пуша/подписки).
+  const addMention = (u: { id: string; name: string }) => {
+    setMentions((prev) => (prev.some((m) => m.id === u.id) ? prev : [...prev, u]));
+    setComment((t) => `${t}${t && !t.endsWith(' ') ? ' ' : ''}@${u.name} `);
+    setMentionQuery('');
   };
 
   const changeStatus = (to: OpsStatus) => {
@@ -303,20 +321,59 @@ export function TaskCard({ taskId, staff, onClose, onChanged }: {
             />
           </div>
 
-          {/* Комментарии (§4.3) */}
+          {/* Комментарии (§4.3) — с @упоминаниями (workflow-ТЗ §8.1) */}
           <div>
             <p className="mb-1.5 text-sm font-medium text-ink">Комментарии</p>
             <div className="space-y-2">
               {task.comments.map((c) => (
                 <div key={c.id} className="rounded-lg bg-slate-50 px-3 py-2">
                   <p className="text-xs text-slate-400">{userName(c.authorId)} · {fmtDT(c.createdAt)}</p>
-                  <p className="whitespace-pre-wrap text-sm text-ink">{c.body}</p>
+                  <p className="whitespace-pre-wrap text-sm text-ink">
+                    {c.body.split(/(@[^\s@]+)/g).map((part, i) => (part.startsWith('@') ? <span key={i} className="font-medium text-primary-700">{part}</span> : <span key={i}>{part}</span>))}
+                  </p>
                 </div>
               ))}
             </div>
+            {mentions.length ? (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {mentions.map((m) => (
+                  <span key={m.id} className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700">
+                    @{m.name}
+                    <button type="button" onClick={() => setMentions((prev) => prev.filter((x) => x.id !== m.id))} className="leading-none text-primary-700/50 hover:text-primary-700">×</button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <div className="mt-2 flex gap-2">
-              <input value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && comment.trim()) { run(() => adminApi.opsComment(taskId, comment.trim())); setComment(''); } }} placeholder="Написать комментарий…" className="w-full rounded-md border border-ink/20 px-3 py-2 text-sm" />
-              <Button disabled={!comment.trim()} onClick={() => { run(() => adminApi.opsComment(taskId, comment.trim())); setComment(''); }}>Отправить</Button>
+              {/* Кнопка «@»: упомянуть сотрудника — он получит пуш и станет наблюдателем */}
+              <div className="relative">
+                <button type="button" onClick={() => setMentionOpen((v) => !v)} title="Упомянуть сотрудника (пуш + подписка на задачу)"
+                  className={`h-full rounded-md border px-2.5 text-sm transition ${mentionOpen ? 'border-primary bg-primary-50 text-primary-700' : 'border-ink/20 text-slate-500 hover:bg-slate-50'}`}>@</button>
+                {mentionOpen ? (
+                  <>
+                    <div className="fixed inset-0 z-30" onClick={() => { setMentionOpen(false); setMentionQuery(''); }} />
+                    <div className="absolute bottom-full left-0 z-40 mb-1 w-64 rounded-lg border border-ink/10 bg-white p-2 shadow-xl">
+                      <input autoFocus value={mentionQuery} onChange={(e) => setMentionQuery(e.target.value)} placeholder="Кого упомянуть…" className="mb-1 w-full rounded-md border border-ink/15 px-2 py-1 text-sm focus:border-primary focus:outline-none" />
+                      <div className="max-h-48 overflow-y-auto">
+                        {staff
+                          .filter((s) => s.id !== me?.id && !mentions.some((m) => m.id === s.id) && (s.name ?? s.email).toLowerCase().includes(mentionQuery.toLowerCase()))
+                          .slice(0, 30)
+                          .map((s) => (
+                            <button key={s.id} type="button" onClick={() => addMention({ id: s.id, name: (s.name ?? s.email).split(' ')[0] ?? s.email })}
+                              className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-slate-50">
+                              <span className="truncate text-ink">{s.name ?? s.email}</span>
+                            </button>
+                          ))}
+                        {staff.filter((s) => s.id !== me?.id && (s.name ?? s.email).toLowerCase().includes(mentionQuery.toLowerCase())).length === 0 ? (
+                          <p className="px-2 py-1 text-xs text-slate-400">Никого не найдено</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+              <input value={comment} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendComment(); }} placeholder="Написать комментарий…" className="w-full rounded-md border border-ink/20 px-3 py-2 text-sm" />
+              <Button disabled={!comment.trim()} onClick={sendComment}>Отправить</Button>
             </div>
           </div>
 
